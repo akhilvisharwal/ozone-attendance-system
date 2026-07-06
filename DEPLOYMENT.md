@@ -60,6 +60,8 @@ This runs migrations and seeds the admin account. **Save the printed admin crede
 
 ## 3. Frontend (Vercel)
 
+**Live URL:** https://frontend-zeta-gray-81.vercel.app
+
 1. Import the GitHub repo in [Vercel](https://vercel.com/new)
 2. Set **Root Directory** to `frontend`
 3. Framework preset: **Vite** (auto-detected)
