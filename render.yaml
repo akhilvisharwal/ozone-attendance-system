@@ -1,0 +1,40 @@
+# Render Blueprint — deploy the Express API (backend/)
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Pair with:
+#   - Frontend on Vercel (set VITE_API_URL to this service URL)
+#   - PostgreSQL on Neon or Render (set DATABASE_URL)
+
+services:
+  - type: web
+    name: ozone-attendance-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run build && npm run migrate
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CLIENT_URL
+        sync: false
+      - key: TZ
+        value: Asia/Kolkata
+      - key: STORAGE_DRIVER
+        value: local
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: ADMIN_EMPLOYEE_ID
+        value: OZNADMIN
+      - key: ADMIN_PASSWORD
+        generateValue: true
+    disk:
+      name: uploads
+      mountPath: /opt/render/project/src/uploads
+      sizeGB: 1

@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+}
+
+html {
+  /* Prevent iOS from auto-adjusting text size on orientation change */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+  /* Avoid rubber-band horizontal scroll on small screens */
+  overflow-x: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* On touch/mobile screens, form controls must be >=16px to stop iOS Safari
+   from zooming the viewport when a field gains focus. Desktop keeps the
+   smaller, denser text via the component-level `sm:text-sm` classes. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Smooth momentum scrolling for horizontally-scrollable tables on iOS */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Safe-area helpers for notched devices */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ── Brand logo — fixed 40 × 165 px everywhere (see components/Logo.tsx) ── */
+.logo-brand {
+  --logo-h: 40px;
+  --logo-w: 165px;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.logo-brand__img {
+  display: block;
+  height: var(--logo-h);
+  width: var(--logo-w);
+  max-width: 100%;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.logo-brand--hero {
+  justify-content: center;
+}
+
+.logo-brand--hero .logo-brand__img {
+  object-position: center;
+}
+
+.logo-brand--header {
+  flex: 0 1 auto;
+}
+
+/* Interactive affordance */
+.logo-brand--interactive {
+  border-radius: 0.375rem;
+  text-decoration: none;
+  color: inherit;
+  transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.logo-brand--interactive:hover {
+  opacity: 0.88;
+}
+
+.logo-brand--interactive:active {
+  opacity: 0.78;
+  transform: scale(0.985);
+}
+
+.logo-brand--interactive:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-brand--interactive {
+    transition: none;
+  }
+  .logo-brand--interactive:active {
+    transform: none;
+  }
+}
+
+@media print {
+  .logo-brand--interactive {
+    pointer-events: none;
+  }
+}
