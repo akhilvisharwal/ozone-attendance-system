@@ -7,7 +7,11 @@ import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const brandingDir = path.resolve(__dirname, "../branding");
+const frontendBrandingDir = path.resolve(__dirname, "branding");
+const repoBrandingDir = path.resolve(__dirname, "../branding");
+const brandingDir = fs.existsSync(path.join(frontendBrandingDir, "logo.png"))
+  ? frontendBrandingDir
+  : repoBrandingDir;
 const logoSource = path.join(brandingDir, "logo.png");
 const faviconSource = path.join(brandingDir, "favicon.png");
 

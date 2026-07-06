@@ -10,11 +10,15 @@ import toIco from "to-ico";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(frontendRoot, "..");
-const source = path.join(repoRoot, "branding", "favicon.png");
+const sourceCandidates = [
+  path.join(frontendRoot, "branding", "favicon.png"),
+  path.join(repoRoot, "branding", "favicon.png"),
+];
+const source = sourceCandidates.find((p) => fs.existsSync(p));
 const publicDir = path.join(frontendRoot, "public");
 
-if (!fs.existsSync(source)) {
-  console.warn("[favicons] branding/favicon.png not found — skipping favicon generation.");
+if (!source) {
+  console.warn("[favicons] favicon.png not found — skipping favicon generation.");
   process.exit(0);
 }
 
