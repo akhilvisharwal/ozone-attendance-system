@@ -12,6 +12,7 @@
     "deploy:setup": "npm run migrate && npm run seed",
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
+    "reset-admin-password": "node scripts/reset-admin-password.js",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
