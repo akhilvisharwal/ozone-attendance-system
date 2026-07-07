@@ -19,7 +19,7 @@ export interface Employee {
   updated_at: string;
 }
 
-export type TaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
+export type TaskStatus = "not_started" | "in_progress" | "on_hold" | "completed";
 export type TaskPriority = "low" | "medium" | "high";
 
 export interface Task {
@@ -42,7 +42,10 @@ export interface ScoreboardEntry {
   name: string;
   profile_photo_path: string | null;
   total_days_present: number;
-  total_days_8h: number;
+  half_days: number;
+  absent_days: number;
+  late_arrivals: number;
+  leave_days: number;
   total_tasks: number;
   completed_tasks: number;
   score: number;
@@ -119,6 +122,7 @@ export interface AttendanceRecord {
   check_out_latitude: number | null;
   check_out_longitude: number | null;
   check_out_address: string | null;
+  check_out_gps_accuracy: number | null;
 
   site_id: string | null;
   work_summary: string | null;

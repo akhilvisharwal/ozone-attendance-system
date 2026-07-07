@@ -18,8 +18,47 @@ export interface Employee {
   updated_at: string;
 }
 
-export type TaskStatus = "pending" | "in_progress" | "completed" | "cancelled";
+export type TaskStatus = "not_started" | "in_progress" | "on_hold" | "completed";
 export type TaskPriority = "low" | "medium" | "high";
+
+export interface TaskGroupAssignee {
+  task_id: string;
+  employee_id: string;
+  employee_name: string;
+  employee_code: string;
+  status: TaskStatus;
+  progress_remarks: string | null;
+  is_overdue: boolean;
+}
+
+export interface TaskGroupSummary {
+  group_id: string;
+  title: string;
+  description: string | null;
+  priority: TaskPriority;
+  site_id: string | null;
+  site_name: string | null;
+  start_date: string | null;
+  due_date: string | null;
+  effective_due_date: string | null;
+  expected_duration_days: number;
+  assigned_by_name: string | null;
+  assignee_count: number;
+  completed_count: number;
+  completion_percentage: number;
+  is_overdue: boolean;
+  assignees: TaskGroupAssignee[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskGroupDetail {
+  group: TaskGroupSummary;
+  attachments: TaskAttachment[];
+  comments: TaskComment[];
+  assignees: TaskGroupAssignee[];
+  extensions?: TaskExtensionRequest[];
+}
 
 export interface Task {
   id: string;
@@ -34,8 +73,98 @@ export interface Task {
   priority: TaskPriority;
   status: TaskStatus;
   completed_at: string | null;
+  site_id: string | null;
+  site_name?: string | null;
+  start_date: string | null;
+  due_date: string | null;
+  extended_due_date: string | null;
+  effective_due_date?: string | null;
+  expected_duration_days: number;
+  progress_remarks: string | null;
+  group_id: string | null;
+  is_overdue?: boolean;
+  assignee_count?: number;
+  completed_count?: number;
+  completion_percentage?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface TaskAttachment {
+  id: string;
+  task_group_id: string;
+  file_path: string;
+  file_name: string;
+  mime_type: string;
+  file_size: number | null;
+  uploaded_by: string | null;
+  uploaded_by_name?: string | null;
+  created_at: string;
+}
+
+export interface TaskComment {
+  id: string;
+  task_group_id: string;
+  author_id: string;
+  author_name?: string;
+  body: string;
+  created_at: string;
+}
+
+export interface TaskExtensionRequest {
+  id: string;
+  task_id: string;
+  requested_due_date: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  admin_remarks: string | null;
+  created_at: string;
+  updated_at: string;
+  employee_name?: string;
+  task_title?: string;
+}
+
+export interface TaskAnalytics {
+  total: number;
+  not_started: number;
+  in_progress: number;
+  on_hold: number;
+  completed: number;
+  overdue: number;
+  completion_percentage: number;
+}
+
+export interface TaskTeamMember {
+  employee_id: string;
+  employee_name: string;
+  employee_code: string;
+  status: TaskStatus;
+  is_current_user?: boolean;
+}
+
+export interface TaskDetail {
+  task: Task;
+  attachments: TaskAttachment[];
+  comments: TaskComment[];
+  assignees?: Task[];
+  teamMembers?: TaskTeamMember[];
+  isGroupTask?: boolean;
+  assigneeCount?: number;
+  extensions?: TaskExtensionRequest[];
+}
+
+export interface AppNotification {
+  id: string;
+  employee_id: string;
+  type: string;
+  title: string;
+  body: string | null;
+  link_path: string | null;
+  entity_id: string | null;
+  read_at: string | null;
+  created_at: string;
 }
 
 export interface ScoreboardEntry {
@@ -44,7 +173,10 @@ export interface ScoreboardEntry {
   name: string;
   profile_photo_path: string | null;
   total_days_present: number;
-  total_days_8h: number;
+  half_days: number;
+  absent_days: number;
+  late_arrivals: number;
+  leave_days: number;
   total_tasks: number;
   completed_tasks: number;
   score: number;
@@ -121,6 +253,7 @@ export interface AttendanceRecord {
   check_out_latitude: number | null;
   check_out_longitude: number | null;
   check_out_address: string | null;
+  check_out_gps_accuracy: number | null;
 
   site_id: string | null;
   work_summary: string | null;

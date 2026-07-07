@@ -5,6 +5,7 @@ import {
   SettingsCategory,
   buildDefaultSettings,
 } from "./settings.types";
+import { normalizeLeaveSettings } from "../../utils/leaveSettings";
 
 function deepMerge<T extends Record<string, unknown>>(base: T, patch: Partial<T>): T {
   const out = { ...base };
@@ -51,6 +52,7 @@ export async function getMergedSettings(): Promise<AppSettings> {
       );
     }
   }
+  out.leave = normalizeLeaveSettings(out.leave);
   return out as unknown as AppSettings;
 }
 

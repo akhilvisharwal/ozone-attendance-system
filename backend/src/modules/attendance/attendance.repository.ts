@@ -80,10 +80,11 @@ export async function createCheckIn(input: {
 export async function completeCheckOut(input: {
   id: string;
   checkOutTime: Date;
-  latitude: number | null;
-  longitude: number | null;
+  latitude: number;
+  longitude: number;
   address: string | null;
-  workSummary: string;
+  gpsAccuracy: number;
+  workSummary: string | null;
   workStatus: WorkStatus;
   remarks: string | null;
   sitePhotoPaths: string[];
@@ -99,22 +100,24 @@ export async function completeCheckOut(input: {
        check_out_latitude = $2,
        check_out_longitude = $3,
        check_out_address = $4,
-       work_summary = $5,
-       work_status = $6,
-       remarks = $7,
-       site_photo_paths = $8,
-       total_minutes = $9,
-       check_out_status = $10,
-       day_status = $11,
-       is_half_day = $12,
+       check_out_gps_accuracy = $5,
+       work_summary = $6,
+       work_status = $7,
+       remarks = $8,
+       site_photo_paths = $9,
+       total_minutes = $10,
+       check_out_status = $11,
+       day_status = $12,
+       is_half_day = $13,
        status = 'checked_out'
-     WHERE id = $13
+     WHERE id = $14
      RETURNING *`,
     [
       input.checkOutTime,
       input.latitude,
       input.longitude,
       input.address,
+      input.gpsAccuracy,
       input.workSummary,
       input.workStatus,
       input.remarks,
@@ -172,16 +175,45 @@ export interface AdminAttendanceFilters {
   employeeId?: string;
   from?: string;
   to?: string;
-  status?: "checked_in" | "checked_out";
+  status?: "present" | "half_day" | "absent" | "pending" | "checked_in" | "checked_out";
   page: number;
   limit: number;
 }
 
-export async function listAllAttendance(
-  filters: AdminAttendanceFilters
-): Promise<{ items: any[]; total: number }> {
-  const conditions: string[] = [];
-  const values: any[] = [];
+function appendAdminAttendanceStatusFilter(
+  status: AdminAttendanceFilters["status"],
+  conditions: string[]
+): void {
+  if (!status) return;
+
+  switch (status) {
+    case "present":
+      conditions.push(`a.day_status = 'present'`);
+      break;
+    case "half_day":
+      conditions.push(`a.day_status = 'half_day'`);
+      break;
+    case "absent":
+      conditions.push(`(a.status = 'absent' OR a.day_status = 'absent')`);
+      break;
+    case "pending":
+      conditions.push(`a.status = 'checked_in' AND a.day_status IS NULL`);
+      break;
+    case "checked_in":
+      conditions.push(`a.status = 'checked_in'`);
+      break;
+    case "checked_out":
+      conditions.push(`a.status = 'checked_out'`);
+      break;
+  }
+}
+
+function buildAdminAttendanceWhereClause(filters: AdminAttendanceFilters): {
+  whereClause: string;
+  values: unknown[];
+} {
+  const conditions: string[] = ["e.deleted_at IS NULL"];
+  const values: unknown[] = [];
 
   if (filters.employeeId) {
     values.push(filters.employeeId);
@@ -195,20 +227,30 @@ export async function listAllAttendance(
     values.push(filters.to);
     conditions.push(`a.attendance_date <= $${values.length}`);
   }
-  if (filters.status) {
-    values.push(filters.status);
-    conditions.push(`a.status = $${values.length}`);
-  }
+  appendAdminAttendanceStatusFilter(filters.status, conditions);
 
-  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  return {
+    whereClause: `WHERE ${conditions.join(" AND ")}`,
+    values,
+  };
+}
+
+export async function listAllAttendance(
+  filters: AdminAttendanceFilters
+): Promise<{ items: any[]; total: number }> {
+  const { whereClause, values } = buildAdminAttendanceWhereClause(filters);
 
   const countResult = await pool.query<{ count: string }>(
-    `SELECT COUNT(*) FROM attendance a ${whereClause}`,
+    `SELECT COUNT(*) AS count
+     FROM attendance a
+     JOIN employees e ON e.id = a.employee_id
+     ${whereClause}`,
     values
   );
 
-  const offset = (filters.page - 1) * filters.limit;
-  values.push(filters.limit, offset);
+  const listValues = [...values, filters.limit, (filters.page - 1) * filters.limit];
+  const limitParam = listValues.length - 1;
+  const offsetParam = listValues.length;
 
   const itemsResult = await pool.query(
     `SELECT ${ADMIN_LIST_SELECT}
@@ -216,9 +258,9 @@ export async function listAllAttendance(
      JOIN employees e ON e.id = a.employee_id
      LEFT JOIN sites s ON s.id = a.site_id
      ${whereClause}
-     ORDER BY a.attendance_date DESC, a.check_in_time DESC
-     LIMIT $${values.length - 1} OFFSET $${values.length}`,
-    values
+     ORDER BY a.attendance_date DESC, a.check_in_time DESC NULLS LAST
+     LIMIT $${limitParam} OFFSET $${offsetParam}`,
+    listValues
   );
 
   return { items: itemsResult.rows, total: parseInt(countResult.rows[0].count, 10) };
@@ -294,67 +336,6 @@ export async function findAttendanceWithEmployeeById(id: string): Promise<any | 
   return result.rows[0] ?? null;
 }
 
-export async function getDashboardSummary(today: string, lateCutoff: string) {
-  const totalEmployeesResult = await pool.query<{ count: string }>(
-    "SELECT COUNT(*) FROM employees WHERE role = 'employee' AND is_active = true"
-  );
-
-  const todayStatsResult = await pool.query<{
-    present: string;
-    half_day: string;
-    absent_marked: string;
-    attended: string;
-    checked_in: string;
-    checked_out: string;
-    late: string;
-  }>(
-    `SELECT
-       COUNT(*) FILTER (WHERE day_status = 'present') AS present,
-       COUNT(*) FILTER (WHERE day_status = 'half_day') AS half_day,
-       COUNT(*) FILTER (WHERE day_status = 'absent') AS absent_marked,
-       -- attended = showed up and not classified absent (includes those still checked in)
-       COUNT(*) FILTER (WHERE status = 'checked_in' OR day_status IN ('present', 'half_day')) AS attended,
-       COUNT(*) FILTER (WHERE status = 'checked_in') AS checked_in,
-       COUNT(*) FILTER (WHERE status = 'checked_out') AS checked_out,
-       COUNT(*) FILTER (
-         WHERE status <> 'absent'
-           AND is_admin_marked = false
-           AND check_in_time::time > $2::time
-       ) AS late
-     FROM attendance
-     WHERE attendance_date = $1`,
-    [today, lateCutoff]
-  );
-
-  const totalEmployees = parseInt(totalEmployeesResult.rows[0].count, 10);
-  const stats = todayStatsResult.rows[0];
-  const attended = parseInt(stats?.attended ?? "0", 10);
-  const halfDay = parseInt(stats?.half_day ?? "0", 10);
-
-  return {
-    totalEmployees,
-    presentToday: attended,
-    halfDayToday: halfDay,
-    absentToday: Math.max(0, totalEmployees - attended),
-    lateArrivals: parseInt(stats?.late ?? "0", 10),
-    currentlyCheckedIn: parseInt(stats?.checked_in ?? "0", 10),
-    checkedOutToday: parseInt(stats?.checked_out ?? "0", 10),
-  };
-}
-
-export async function listTodayAttendanceWithEmployees(today: string) {
-  const result = await pool.query(
-    `SELECT ${ADMIN_LIST_SELECT}
-     FROM attendance a
-     JOIN employees e ON e.id = a.employee_id
-     LEFT JOIN sites s ON s.id = a.site_id
-     WHERE a.attendance_date = $1
-     ORDER BY a.check_in_time ASC`,
-    [today]
-  );
-  return result.rows;
-}
-
 /**
  * Marks an employee Present for the day. Upserts on (employee_id,
  * attendance_date) so an admin can explicitly override a previously recorded
@@ -396,11 +377,63 @@ export async function adminMarkPresent(input: {
 }
 
 /**
- * Marks an employee Absent for the day. Upserts on (employee_id,
- * attendance_date) and clears any prior check-in/out detail so the record is a
- * clean absent entry, allowing the admin to explicitly override an earlier
- * Present status.
+ * Marks an employee Half Day for the day. Upserts on (employee_id,
+ * attendance_date) so an admin can override a previously recorded status.
  */
+export async function adminMarkHalfDay(input: {
+  employeeId: string;
+  date: string;
+  adminId: string;
+  reason: string | null;
+  totalMinutes: number;
+}): Promise<AttendanceRecord> {
+  const now = new Date();
+  const mins = input.totalMinutes;
+  const result = await pool.query<AttendanceRecord>(
+    `INSERT INTO attendance (
+       employee_id, attendance_date,
+       check_in_time, check_out_time,
+       check_in_status, is_half_day, check_out_status,
+       total_minutes, status, day_status,
+       is_admin_marked, admin_marked_by, admin_mark_reason
+     ) VALUES ($1, $2, $3, $3, 'half_day', true, NULL, $6, 'checked_out', 'half_day', true, $4, $5)
+     ON CONFLICT (employee_id, attendance_date) DO UPDATE SET
+       check_in_time     = EXCLUDED.check_in_time,
+       check_out_time    = EXCLUDED.check_out_time,
+       check_in_status   = 'half_day',
+       is_half_day       = true,
+       check_out_status  = NULL,
+       total_minutes     = $6,
+       status            = 'checked_out',
+       day_status        = 'half_day',
+       is_admin_marked   = true,
+       admin_marked_by   = EXCLUDED.admin_marked_by,
+       admin_mark_reason = EXCLUDED.admin_mark_reason
+     RETURNING *`,
+    [input.employeeId, input.date, now, input.adminId, input.reason, mins]
+  );
+  return result.rows[0];
+}
+
+/** Inserts absent records for employees with no attendance row that day. Skips conflicts. */
+export async function insertAutoAbsentRecords(
+  employeeIds: string[],
+  date: string
+): Promise<number> {
+  if (employeeIds.length === 0) return 0;
+
+  const result = await pool.query(
+    `INSERT INTO attendance (
+       employee_id, attendance_date,
+       status, day_status, is_admin_marked, admin_mark_reason
+     )
+     SELECT unnest($1::uuid[]), $2, 'absent', 'absent', false, 'Auto-marked absent at end of day'
+     ON CONFLICT (employee_id, attendance_date) DO NOTHING`,
+    [employeeIds, date]
+  );
+  return result.rowCount ?? 0;
+}
+
 export async function adminMarkAbsent(input: {
   employeeId: string;
   date: string;
@@ -425,6 +458,7 @@ export async function adminMarkAbsent(input: {
        check_out_latitude   = NULL,
        check_out_longitude  = NULL,
        check_out_address    = NULL,
+       check_out_gps_accuracy = NULL,
        site_id              = NULL,
        work_summary         = NULL,
        work_status          = NULL,

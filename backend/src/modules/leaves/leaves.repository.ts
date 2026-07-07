@@ -1,5 +1,6 @@
 import { pool } from "../../config/db";
 import { LeaveRequest, LeaveStatus, LeaveType } from "../../types";
+import { getCategoryMatchValues } from "../../utils/leaveSettings";
 
 const LEAVE_COLS = `
   lr.*,
@@ -43,14 +44,15 @@ export async function countApprovedLeaveDays(
   category: string,
   year: number
 ): Promise<number> {
+  const matchValues = getCategoryMatchValues(category).map((value) => value.toLowerCase());
   const result = await pool.query<{ days: string }>(
     `SELECT COALESCE(SUM(CASE WHEN leave_type = 'half' THEN 0.5 ELSE 1 END), 0)::text AS days
      FROM leave_requests
      WHERE employee_id = $1
-       AND leave_category ILIKE $2
        AND status = 'approved'
-       AND EXTRACT(YEAR FROM leave_date::date) = $3`,
-    [employeeId, category, year]
+       AND EXTRACT(YEAR FROM leave_date::date) = $2
+       AND lower(trim(leave_category)) = ANY($3::text[])`,
+    [employeeId, year, matchValues]
   );
   return parseFloat(result.rows[0]?.days ?? "0");
 }
@@ -156,5 +158,18 @@ export async function deleteMyLeaveRequest(id: string, employeeId: string): Prom
      WHERE id = $1 AND employee_id = $2 AND status = 'pending'`,
     [id, employeeId]
   );
-  return (result.rowCount ?? 0) > 0;
+  if ((result.rowCount ?? 0) > 0) {
+    await pool.query("DELETE FROM app_notifications WHERE entity_id = $1", [id]);
+    return true;
+  }
+  return false;
+}
+
+export async function adminDeleteLeaveRequest(id: string): Promise<LeaveRequestRow | null> {
+  const existing = await findLeaveById(id);
+  if (!existing) return null;
+
+  await pool.query("DELETE FROM app_notifications WHERE entity_id = $1", [id]);
+  await pool.query("DELETE FROM leave_requests WHERE id = $1", [id]);
+  return existing;
 }

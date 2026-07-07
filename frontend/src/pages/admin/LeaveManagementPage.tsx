@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
-import { CalendarCheck, Check, X, Filter, ChevronDown, ChevronUp } from "lucide-react";
+import { CalendarCheck, Check, X, Filter, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import type { LeaveRequest, LeaveStatus } from "../../types";
 import * as leavesApi from "../../api/leaves";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Card, CardBody } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
-import { Modal } from "../../components/ui/Modal";
+import { Modal, ModalFooterActions } from "../../components/ui/Modal";
 import { Alert } from "../../components/ui/Alert";
 import { Spinner } from "../../components/ui/Spinner";
 import { Textarea, FieldWrapper, Select } from "../../components/ui/Input";
+import { TaskDeleteConfirmModal } from "@/components/tasks/TaskDeleteConfirmModal";
 
 const STATUS_COLORS: Record<string, "amber" | "green" | "red"> = {
   pending:  "amber",
@@ -40,6 +41,7 @@ export default function LeaveManagementPage() {
   const [reviewNote, setReviewNote]   = useState("");
   const [reviewing, setReviewing]     = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<LeaveRequest | null>(null);
 
   const limit = 15;
 
@@ -85,6 +87,29 @@ export default function LeaveManagementPage() {
     } finally {
       setReviewing(false);
     }
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    try {
+      await leavesApi.adminDeleteLeave(id);
+      setSuccess("Leave request deleted.");
+      setDeleteTarget(null);
+      if (reviewModal?.id === id) setReviewModal(null);
+      fetchLeaves();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
+      setError(msg ?? "Failed to delete leave request.");
+    }
+  }
+
+  function deleteMessage(leave: LeaveRequest): string {
+    const base = `Delete the ${leave.status} leave request for ${leave.employee_name ?? "this employee"} on ${leave.leave_date}?`;
+    if (leave.status === "approved") {
+      return `${base} This will restore their leave balance and remove the leave from attendance records. This cannot be undone.`;
+    }
+    return `${base} This cannot be undone.`;
   }
 
   const totalPages = Math.ceil(total / limit);
@@ -170,6 +195,15 @@ export default function LeaveManagementPage() {
                       Review Request
                     </Button>
                   )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 w-full border-red-200 text-red-600 hover:bg-red-50"
+                    onClick={() => setDeleteTarget(lr)}
+                  >
+                    <Trash2 className="mr-1 h-4 w-4" />
+                    Delete
+                  </Button>
                 </div>
               ))}
             </div>
@@ -219,6 +253,13 @@ export default function LeaveManagementPage() {
                                 Review
                               </button>
                             )}
+                            <button
+                              onClick={() => setDeleteTarget(lr)}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700"
+                              title="Delete leave request"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -260,7 +301,36 @@ export default function LeaveManagementPage() {
 
       {/* Review modal */}
       {reviewModal && (
-        <Modal open={true} onClose={() => setReviewModal(null)} title="Review Leave Request">
+        <Modal
+          open={true}
+          onClose={() => setReviewModal(null)}
+          title="Review Leave Request"
+          widthClassName="max-w-lg"
+          footer={
+            <ModalFooterActions>
+              <Button type="button" variant="secondary" onClick={() => setReviewModal(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                isLoading={reviewing}
+                onClick={() => handleReview("rejected")}
+                className="border-red-300 text-red-600 hover:bg-red-50"
+              >
+                <X className="w-4 h-4 mr-1" />
+                Reject
+              </Button>
+              <Button
+                isLoading={reviewing}
+                onClick={() => handleReview("approved")}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Check className="w-4 h-4 mr-1" />
+                Approve
+              </Button>
+            </ModalFooterActions>
+          }
+        >
           <div className="space-y-4">
             {reviewError && <Alert variant="error">{reviewError}</Alert>}
 
@@ -291,32 +361,18 @@ export default function LeaveManagementPage() {
                 onChange={e => setReviewNote(e.target.value)}
               />
             </FieldWrapper>
-
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-              <Button type="button" variant="secondary" onClick={() => setReviewModal(null)}>
-                Cancel
-              </Button>
-              <Button
-                variant="secondary"
-                isLoading={reviewing}
-                onClick={() => handleReview("rejected")}
-                className="border-red-300 text-red-600 hover:bg-red-50"
-              >
-                <X className="w-4 h-4 mr-1" />
-                Reject
-              </Button>
-              <Button
-                isLoading={reviewing}
-                onClick={() => handleReview("approved")}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                <Check className="w-4 h-4 mr-1" />
-                Approve
-              </Button>
-            </div>
           </div>
         </Modal>
       )}
+
+      <TaskDeleteConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Delete Leave Request?"
+        message={deleteTarget ? deleteMessage(deleteTarget) : ""}
+        confirmLabel="Delete"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

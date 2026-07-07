@@ -23,6 +23,7 @@ router.get("/",                                requireRole("admin"), controller.
 router.get("/admin/monthly",                   requireRole("admin"), controller.adminMonthly);
 router.get("/admin/monthly/export",            requireRole("admin"), controller.adminMonthlyExport);
 router.post("/admin/mark-present",             requireRole("admin"), controller.adminMarkPresent);
+router.post("/admin/mark-half-day",            requireRole("admin"), controller.adminMarkHalfDay);
 router.post("/admin/mark-absent",              requireRole("admin"), controller.adminMarkAbsent);
 router.get("/admin/check/:employeeId",         requireRole("admin"), controller.adminCheckToday);
 router.get("/:id",                             requireRole("admin"), controller.adminGetById);

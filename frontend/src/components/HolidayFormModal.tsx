@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Modal } from "@/components/ui/Modal";
+import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { Input, Select, Textarea, FieldWrapper } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
@@ -22,6 +22,8 @@ const MONTHS = [
   { value: 11, label: "November" },
   { value: 12, label: "December" },
 ];
+
+const HOLIDAY_FORM_ID = "holiday-form";
 
 export function HolidayFormModal({
   open,
@@ -106,8 +108,16 @@ export function HolidayFormModal({
       open={open}
       onClose={onClose}
       title={editTarget ? "Edit Holiday" : initialDate ? `Mark Holiday — ${initialDate}` : "Add Holiday"}
+      footer={
+        <ModalFooterActions>
+          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" form={HOLIDAY_FORM_ID} isLoading={saving}>
+            {editTarget ? "Save Changes" : "Create Holiday"}
+          </Button>
+        </ModalFooterActions>
+      }
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <form id={HOLIDAY_FORM_ID} onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && <Alert variant="error">{error}</Alert>}
 
         <Input
@@ -169,13 +179,6 @@ export function HolidayFormModal({
             onChange={(e) => setDescription(e.target.value)}
           />
         </FieldWrapper>
-
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" isLoading={saving}>
-            {editTarget ? "Save Changes" : "Create Holiday"}
-          </Button>
-        </div>
       </form>
     </Modal>
   );

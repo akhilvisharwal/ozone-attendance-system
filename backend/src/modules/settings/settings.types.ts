@@ -1,4 +1,5 @@
 import { env } from "../../config/env";
+import { buildDefaultLeaveCategories } from "../../utils/leaveSettings";
 
 export interface CompanySettings {
   name: string;
@@ -26,11 +27,14 @@ export interface AttendanceSettings {
   halfDayCutoff: string;
 }
 
+export interface LeaveCategoryConfig {
+  name: string;
+  enabled: boolean;
+  yearlyLimit: number;
+}
+
 export interface LeaveSettings {
-  leaveTypes: string[];
-  annualLimit: number;
-  sickLimit: number;
-  casualLimit: number;
+  categories: LeaveCategoryConfig[];
   approvalRequired: boolean;
   halfDayAllowed: boolean;
 }
@@ -137,10 +141,7 @@ export function buildDefaultSettings(): AppSettings {
       halfDayCutoff: env.halfDayCutoff,
     },
     leave: {
-      leaveTypes: ["Annual", "Sick", "Casual"],
-      annualLimit: 12,
-      sickLimit: 6,
-      casualLimit: 6,
+      categories: buildDefaultLeaveCategories(),
       approvalRequired: true,
       halfDayAllowed: true,
     },
@@ -156,7 +157,7 @@ export function buildDefaultSettings(): AppSettings {
     },
     mobile: {
       gpsRequiredCheckIn: true,
-      gpsRequiredCheckOut: false,
+      gpsRequiredCheckOut: true,
       selfieRequiredCheckIn: true,
       selfieRequiredCheckOut: false,
       allowCameraSwitch: true,

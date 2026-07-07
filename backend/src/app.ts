@@ -14,6 +14,7 @@ import dashboardRoutes from "./modules/dashboard/dashboard.routes";
 import reportsRoutes from "./modules/reports/reports.routes";
 import filesRoutes from "./modules/files/files.routes";
 import tasksRoutes from "./modules/tasks/tasks.routes";
+import notificationsRoutes from "./modules/notifications/notifications.routes";
 import scoreboardRoutes from "./modules/scoreboard/scoreboard.routes";
 import leavesRoutes from "./modules/leaves/leaves.routes";
 import holidaysRoutes from "./modules/holidays/holidays.routes";
@@ -52,6 +53,7 @@ export function createApp() {
   app.use("/api/reports", reportsRoutes);
   app.use("/api/files", filesRoutes);
   app.use("/api/tasks", tasksRoutes);
+  app.use("/api/notifications", notificationsRoutes);
   app.use("/api/scoreboard", scoreboardRoutes);
   app.use("/api/leaves", leavesRoutes);
   app.use("/api/holidays", holidaysRoutes);

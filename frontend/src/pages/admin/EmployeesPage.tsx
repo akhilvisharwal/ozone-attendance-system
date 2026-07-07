@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
-  KeyRound, Pencil, UserCheck, UserX, Power, Plus, Search, ShieldAlert,
+  KeyRound, Pencil, UserCheck, UserMinus, UserX, Power, Plus, Search, ShieldAlert,
   Image as ImageIcon, Trash2, Upload, RefreshCcw, Eye, EyeOff, User, CalendarOff,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -26,10 +26,30 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** A record counts as "present" unless it is explicitly an absent entry. */
-function presentEquivalent(record: AttendanceRecord): "present" | "absent" {
-  return record.status === "absent" ? "absent" : "present";
+type MarkAction = "present" | "half_day" | "absent";
+
+/** Resolves the effective day bucket for manual marking and menu labels. */
+function dayStatusEquivalent(record: AttendanceRecord): MarkAction {
+  if (record.status === "absent" || record.day_status === "absent") return "absent";
+  if (record.day_status === "half_day" || record.is_half_day || record.check_in_status === "half_day") {
+    return "half_day";
+  }
+  return "present";
 }
+
+function currentStatusLabel(existing: AttendanceRecord): string {
+  if (existing.status === "absent" || existing.day_status === "absent") return "Absent";
+  if (existing.day_status === "half_day" || existing.is_half_day) return "Half Day";
+  if (existing.is_admin_marked) return "Present";
+  if (existing.status === "checked_in") return "Checked in";
+  return "Checked out / Present";
+}
+
+const MARK_ACTION_LABELS: Record<MarkAction, string> = {
+  present: "Present",
+  half_day: "Half Day",
+  absent: "Absent",
+};
 
 function generatePassword(length = 10): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -42,11 +62,13 @@ function generatePassword(length = 10): string {
 
 function TodayStatusBadge({ record }: { record?: AttendanceRecord | null }) {
   if (!record) return <span className="text-xs text-slate-400">Not marked</span>;
-  if (record.status === "absent") {
+  if (record.status === "absent" || record.day_status === "absent") {
     return <Badge tone="red">Absent{record.is_admin_marked ? " (admin)" : ""}</Badge>;
   }
+  if (record.day_status === "half_day" || record.is_half_day || record.check_in_status === "half_day") {
+    return <Badge tone="amber">Half Day{record.is_admin_marked ? " (admin)" : ""}</Badge>;
+  }
   if (record.status === "checked_in") return <Badge tone="blue">Checked in</Badge>;
-  // checked_out
   return <Badge tone="green">{record.is_admin_marked ? "Present (admin)" : "Checked out"}</Badge>;
 }
 
@@ -72,7 +94,7 @@ export function EmployeesPage() {
   const [pwTarget, setPwTarget]           = useState<Employee | null>(null);
   const [photoTarget, setPhotoTarget]     = useState<Employee | null>(null);
   const [weeklyOffTarget, setWeeklyOffTarget] = useState<Employee | null>(null);
-  const [markTarget, setMarkTarget]       = useState<{ employee: Employee; action: "present" | "absent" } | null>(null);
+  const [markTarget, setMarkTarget]       = useState<{ employee: Employee; action: MarkAction } | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<Employee | null>(null);
   const [deleteTarget, setDeleteTarget]   = useState<Employee | null>(null);
 
@@ -125,7 +147,7 @@ export function EmployeesPage() {
       ...(manualOverride
         ? [
             {
-              label: marked && presentEquivalent(marked) === "present" ? "Marked Present" : "Mark as Present",
+              label: marked && dayStatusEquivalent(marked) === "present" ? "Marked Present" : "Mark as Present",
               icon: <UserCheck className="h-4 w-4" />,
               divider: true as const,
               onClick: () => setMarkTarget({ employee, action: "present" }),
@@ -133,7 +155,14 @@ export function EmployeesPage() {
               disabledReason: !employee.is_active ? "Inactive" : undefined,
             },
             {
-              label: marked && presentEquivalent(marked) === "absent" ? "Marked Absent" : "Mark as Absent",
+              label: marked && dayStatusEquivalent(marked) === "half_day" ? "Marked Half Day" : "Mark as Half Day",
+              icon: <UserMinus className="h-4 w-4" />,
+              onClick: () => setMarkTarget({ employee, action: "half_day" }),
+              disabled: !employee.is_active,
+              disabledReason: !employee.is_active ? "Inactive" : undefined,
+            },
+            {
+              label: marked && dayStatusEquivalent(marked) === "absent" ? "Marked Absent" : "Mark as Absent",
               icon: <UserX className="h-4 w-4" />,
               onClick: () => setMarkTarget({ employee, action: "absent" }),
               disabled: !employee.is_active,
@@ -311,7 +340,7 @@ export function EmployeesPage() {
         />
       )}
 
-      {/* Mark present / absent (with override) */}
+      {/* Mark present / half day / absent (with override) */}
       {markTarget && (
         <MarkAttendanceModal
           employee={markTarget.employee}
@@ -813,7 +842,52 @@ function WeeklyOffModal({
   );
 }
 
-// ─── Mark Present / Absent (with lock + override) ───────────────────────────
+// ─── Mark Present / Half Day / Absent (with lock + override) ─────────────────
+
+const MARK_ACTION_META: Record<
+  MarkAction,
+  {
+    title: string;
+    confirmLabel: string;
+    overrideLabel: string;
+    info: string;
+    icon: typeof UserCheck;
+    iconClass: string;
+    buttonClass: string;
+    placeholder: string;
+  }
+> = {
+  present: {
+    title: "Mark as Present",
+    confirmLabel: "Mark Present",
+    overrideLabel: "Present",
+    info: "This records a full-day present entry on behalf of the employee.",
+    icon: UserCheck,
+    iconClass: "text-green-500",
+    buttonClass: "",
+    placeholder: "e.g. Employee forgot to check in",
+  },
+  half_day: {
+    title: "Mark as Half Day",
+    confirmLabel: "Mark Half Day",
+    overrideLabel: "Half Day",
+    info: "This records a half-day attendance entry on behalf of the employee.",
+    icon: UserMinus,
+    iconClass: "text-amber-500",
+    buttonClass: "bg-amber-500 hover:bg-amber-600 text-white",
+    placeholder: "e.g. Employee left early with approval",
+  },
+  absent: {
+    title: "Mark as Absent",
+    confirmLabel: "Mark Absent",
+    overrideLabel: "Absent",
+    info: "This records an absent entry for the employee for this day.",
+    icon: UserX,
+    iconClass: "text-red-500",
+    buttonClass: "bg-red-600 hover:bg-red-700 text-white",
+    placeholder: "e.g. On leave, no prior request submitted",
+  },
+};
 
 function MarkAttendanceModal({
   employee,
@@ -824,7 +898,7 @@ function MarkAttendanceModal({
   onDone,
 }: {
   employee: Employee;
-  action: "present" | "absent";
+  action: MarkAction;
   existing: AttendanceRecord | null;
   date: string;
   onClose: () => void;
@@ -834,11 +908,10 @@ function MarkAttendanceModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]       = useState<string | null>(null);
 
-  const isPresent = action === "present";
-  const title = isPresent ? "Mark as Present" : "Mark as Absent";
-  const Icon = isPresent ? UserCheck : UserX;
+  const meta = MARK_ACTION_META[action];
+  const Icon = meta.icon;
 
-  const currentEquiv = existing ? presentEquivalent(existing) : null;
+  const currentEquiv = existing ? dayStatusEquivalent(existing) : null;
   const alreadySame = currentEquiv === action;
   const isOverride = Boolean(existing) && !alreadySame;
 
@@ -847,9 +920,12 @@ function MarkAttendanceModal({
     setSubmitting(true);
     try {
       const payload = { employeeId: employee.id, date, reason: reason || undefined, override: Boolean(existing) };
-      const record = isPresent
-        ? await attendanceApi.adminMarkPresent(payload)
-        : await attendanceApi.adminMarkAbsent(payload);
+      const record =
+        action === "present"
+          ? await attendanceApi.adminMarkPresent(payload)
+          : action === "half_day"
+            ? await attendanceApi.adminMarkHalfDay(payload)
+            : await attendanceApi.adminMarkAbsent(payload);
       onDone(record);
     } catch (err) {
       setError(extractErrorMessage(err, "Failed to record attendance."));
@@ -858,23 +934,13 @@ function MarkAttendanceModal({
     }
   }
 
-  const currentLabel = existing
-    ? existing.status === "absent"
-      ? "Absent"
-      : existing.is_admin_marked
-        ? "Present"
-        : existing.status === "checked_in"
-          ? "Checked in"
-          : "Checked out / Present"
-    : null;
-
   return (
-    <Modal open onClose={onClose} title={title}>
+    <Modal open onClose={onClose} title={meta.title}>
       <div className="flex flex-col gap-4">
         {error && <Alert variant="error">{error}</Alert>}
 
         <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-4">
-          <Icon className={`h-8 w-8 flex-shrink-0 ${isPresent ? "text-green-500" : "text-red-500"}`} />
+          <Icon className={`h-8 w-8 flex-shrink-0 ${meta.iconClass}`} />
           <div>
             <p className="font-medium text-slate-900">{employee.name}</p>
             <p className="text-sm text-slate-500">{employee.employee_code} · {date}</p>
@@ -887,8 +953,8 @@ function MarkAttendanceModal({
               <ShieldAlert className="h-5 w-5 flex-shrink-0" />
               <p>
                 <strong>{employee.name}</strong> is already marked as{" "}
-                <strong>{isPresent ? "Present" : "Absent"}</strong> for today. This status is locked for the day.
-                To change it, use the “Mark as {isPresent ? "Absent" : "Present"}” option.
+                <strong>{MARK_ACTION_LABELS[action]}</strong> for today. This status is locked for the day.
+                To change it, choose Mark as Present, Mark as Half Day, or Mark as Absent.
               </p>
             </div>
             <div className="flex justify-end">
@@ -901,8 +967,8 @@ function MarkAttendanceModal({
               <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                 <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <p>
-                  Currently recorded as <strong>{currentLabel}</strong>. Confirming will override it and set the
-                  status to <strong>{isPresent ? "Present" : "Absent"}</strong> for {date}.
+                  Currently recorded as <strong>{existing ? currentStatusLabel(existing) : ""}</strong>. Confirming will override it and set the
+                  status to <strong>{meta.overrideLabel}</strong> for {date}.
                 </p>
               </div>
             )}
@@ -910,27 +976,23 @@ function MarkAttendanceModal({
             <FieldWrapper label="Reason (optional)">
               <Textarea
                 rows={2}
-                placeholder={isPresent ? "e.g. Employee forgot to check in" : "e.g. On leave, no prior request submitted"}
+                placeholder={meta.placeholder}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
             </FieldWrapper>
 
-            <Alert variant="info">
-              {isPresent
-                ? "This records a full-day present entry on behalf of the employee."
-                : "This records an absent entry for the employee for this day."}
-            </Alert>
+            <Alert variant="info">{meta.info}</Alert>
 
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
               <Button variant="secondary" onClick={onClose}>Cancel</Button>
               <Button
                 isLoading={submitting}
                 onClick={handleConfirm}
-                className={isPresent ? "" : "bg-red-600 hover:bg-red-700 text-white"}
+                className={meta.buttonClass}
                 icon={<Icon className="h-4 w-4" />}
               >
-                {isOverride ? "Confirm Change" : isPresent ? "Mark Present" : "Mark Absent"}
+                {isOverride ? "Confirm Change" : meta.confirmLabel}
               </Button>
             </div>
           </>

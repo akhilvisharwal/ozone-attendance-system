@@ -4,6 +4,8 @@ import { APP_TITLE } from "./config/branding";
 import { pool } from "./config/db";
 import { runMigrations } from "./db/migrate";
 import { initSettingsCache } from "./modules/settings/settings.cache";
+import { startAutoAbsenceScheduler } from "./services/autoAbsence.scheduler";
+import { startTaskReminderScheduler } from "./services/taskReminders.service";
 
 async function main() {
   if (env.isProduction) {
@@ -16,6 +18,11 @@ async function main() {
 
   await initSettingsCache();
   console.log("Application settings loaded.");
+
+  startTaskReminderScheduler();
+  console.log("Task reminder scheduler started.");
+
+  startAutoAbsenceScheduler();
 
   const app = createApp();
   app.listen(env.port, () => {

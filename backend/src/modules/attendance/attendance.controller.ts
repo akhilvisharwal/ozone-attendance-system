@@ -19,13 +19,10 @@ import * as repo from "./attendance.repository";
 import * as sitesRepo from "../sites/sites.repository";
 import {
   buildMonthlyGrid,
-  fetchMonthlyExportRows,
-  buildMonthlyCsv,
-  buildMonthlyExcel,
-  monthLabel,
   resolveMonth,
 } from "./attendance.monthly";
 import { buildMonthlyCalendarPdf } from "./attendance.monthlyPdf";
+import { buildMonthlyCalendarExcel } from "./attendance.monthlyExcel";
 import * as employeesRepo from "../employees/employees.repository";
 import { logAudit } from "../audit/audit.repository";
 
@@ -113,8 +110,16 @@ export const checkOut = asyncHandler(async (req: Request, res: Response) => {
   const mobile = getSettings().mobile;
   const attendanceSettings = getSettings().attendance;
 
-  if (mobile.gpsRequiredCheckOut && (input.latitude === undefined || input.longitude === undefined)) {
-    throw ApiError.badRequest("GPS location is required to check out");
+  if (input.latitude === undefined || input.longitude === undefined) {
+    throw ApiError.badRequest(
+      "GPS location is required to check out. Please enable location services in your browser and try again."
+    );
+  }
+
+  if (input.accuracy === undefined) {
+    throw ApiError.badRequest(
+      "GPS location is required to check out. Please enable location services in your browser and try again."
+    );
   }
 
   if (
@@ -161,10 +166,11 @@ export const checkOut = asyncHandler(async (req: Request, res: Response) => {
   const record = await repo.completeCheckOut({
     id: existing.id,
     checkOutTime,
-    latitude: input.latitude ?? null,
-    longitude: input.longitude ?? null,
+    latitude: input.latitude,
+    longitude: input.longitude,
     address,
-    workSummary: input.workSummary,
+    gpsAccuracy: input.accuracy,
+    workSummary: input.workSummary?.trim() || existing.work_summary || null,
     workStatus: input.workStatus,
     remarks: input.remarks ?? null,
     sitePhotoPaths,
@@ -234,57 +240,37 @@ export const adminMonthly = asyncHandler(async (req: Request, res: Response) => 
   res.json(grid);
 });
 
-/** Downloads a detailed monthly attendance report (Excel / CSV / PDF). */
+/** Downloads a monthly attendance report (Excel / PDF). */
 export const adminMonthlyExport = asyncHandler(async (req: Request, res: Response) => {
   const query = monthlyExportQuerySchema.parse(req.query);
   const format =
     query.format ??
     (getSettings().reports.defaultFormat === "pdf" ? "pdf" : "excel");
   const { year, month } = resolveMonth(query.month);
-  const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-  const rows = await fetchMonthlyExportRows({
+  const grid = await buildMonthlyGrid({
     year,
     month,
     employeeId: query.employeeId,
     siteId: query.siteId,
-    baseUrl,
   });
 
-  const label = monthLabel(year, month);
+  let generatedBy = req.user!.employeeCode;
+  const admin = await employeesRepo.findEmployeeById(req.user!.id);
+  if (admin?.name) generatedBy = admin.name;
+
+  const meta = { generatedBy, generatedAt: new Date() };
   const filenameBase = `attendance-${year}-${String(month).padStart(2, "0")}`;
 
-  if (format === "csv") {
-    const buffer = buildMonthlyCsv(rows);
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.csv"`);
-    res.send(buffer);
-    return;
-  }
-
   if (format === "pdf") {
-    const grid = await buildMonthlyGrid({
-      year,
-      month,
-      employeeId: query.employeeId,
-      siteId: query.siteId,
-    });
-
-    let generatedBy = req.user!.employeeCode;
-    const admin = await employeesRepo.findEmployeeById(req.user!.id);
-    if (admin?.name) generatedBy = admin.name;
-
-    const buffer = await buildMonthlyCalendarPdf(grid, {
-      generatedBy,
-      generatedAt: new Date(),
-    });
+    const buffer = await buildMonthlyCalendarPdf(grid, meta);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.pdf"`);
     res.send(buffer);
     return;
   }
 
-  const buffer = await buildMonthlyExcel(rows, `Monthly Attendance — ${label}`);
+  const buffer = await buildMonthlyCalendarExcel(grid, meta);
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.xlsx"`);
   res.send(buffer);
@@ -343,6 +329,28 @@ export const adminMarkPresent = asyncHandler(async (req: Request, res: Response)
   });
 
   await logAudit(req, "attendance.admin_mark_present", "attendance", record.id, {
+    employeeId: input.employeeId, date: input.date, reason: input.reason, overrode: !!existing,
+  });
+
+  res.status(existing ? 200 : 201).json({ attendance: record });
+});
+
+export const adminMarkHalfDay = asyncHandler(async (req: Request, res: Response) => {
+  if (!getSettings().attendance.allowManualOverride) {
+    throw ApiError.forbidden("Manual attendance override is disabled in system settings");
+  }
+  const input = adminMarkSchema.parse(req.body);
+  const existing = await ensureCanMark(input.employeeId, input.date, input.override);
+
+  const record = await repo.adminMarkHalfDay({
+    employeeId: input.employeeId,
+    date: input.date,
+    adminId: req.user!.id,
+    reason: input.reason ?? null,
+    totalMinutes: Math.round(getSettings().attendance.minHoursHalfDay * 60),
+  });
+
+  await logAudit(req, "attendance.admin_mark_half_day", "attendance", record.id, {
     employeeId: input.employeeId, date: input.date, reason: input.reason, overrode: !!existing,
   });
 

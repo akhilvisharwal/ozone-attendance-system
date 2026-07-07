@@ -12,6 +12,7 @@ router.patch("/me/avatar", requireRole("employee"), upload.single("avatar"), con
 
 // Admin-only management routes
 router.post("/", requireRole("admin"), controller.createEmployee);
+router.get("/active", requireRole("admin"), controller.listActiveEmployees);
 router.get("/", requireRole("admin"), controller.listEmployees);
 router.get("/:id", requireRole("admin"), controller.getEmployee);
 router.patch("/:id", requireRole("admin"), controller.updateEmployee);

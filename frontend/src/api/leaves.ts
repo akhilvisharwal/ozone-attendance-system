@@ -8,11 +8,14 @@ export interface CreateLeavePayload {
   reason: string;
 }
 
+export interface LeaveCategoryUsage {
+  name: string;
+  yearlyLimit: number;
+  used: number;
+}
+
 export interface LeaveLimits {
-  annual: number;
-  sick: number;
-  casual: number;
-  leaveTypes: string[];
+  categories: LeaveCategoryUsage[];
 }
 
 export interface MyLeavesParams {
@@ -33,9 +36,9 @@ export async function submitLeave(payload: CreateLeavePayload): Promise<LeaveReq
 }
 
 export async function myLeaves(params?: MyLeavesParams): Promise<
-  PaginatedResponse<LeaveRequest> & { limits?: LeaveLimits }
+  PaginatedResponse<LeaveRequest> & { categories?: LeaveCategoryUsage[] }
 > {
-  const { data } = await apiClient.get<PaginatedResponse<LeaveRequest> & { limits?: LeaveLimits }>(
+  const { data } = await apiClient.get<PaginatedResponse<LeaveRequest> & { categories?: LeaveCategoryUsage[] }>(
     "/leaves/mine",
     { params }
   );
@@ -56,6 +59,10 @@ export async function adminListLeaves(
 export async function adminGetLeave(id: string): Promise<LeaveRequest> {
   const { data } = await apiClient.get<{ leave: LeaveRequest }>(`/leaves/${id}`);
   return data.leave;
+}
+
+export async function adminDeleteLeave(id: string): Promise<void> {
+  await apiClient.delete(`/leaves/${id}/admin`);
 }
 
 export async function adminReviewLeave(

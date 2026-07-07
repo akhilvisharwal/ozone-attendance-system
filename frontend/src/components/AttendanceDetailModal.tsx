@@ -3,7 +3,7 @@ import { Modal } from "@/components/ui/Modal";
 import { SecureImage } from "@/components/SecureImage";
 import { WorkStatusBadge, AttendanceStatusBadge, DayStatusBadge } from "@/components/ui/Badge";
 import type { AttendanceRecord } from "@/types";
-import { formatDate, formatMinutesAsHours, formatTime } from "@/utils/format";
+import { formatDate, formatDateTime, formatMinutesAsHours, formatTime } from "@/utils/format";
 
 function osmEmbedUrl(lat: number, lng: number): string {
   const delta = 0.004;
@@ -14,6 +14,55 @@ function osmEmbedUrl(lat: number, lng: number): string {
 interface DetailAttendance extends AttendanceRecord {
   employee_code?: string;
   employee_name?: string;
+}
+
+function LocationSection({
+  title,
+  time,
+  address,
+  latitude,
+  longitude,
+  accuracy,
+}: {
+  title: string;
+  time: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy?: number | null;
+}) {
+  const hasCoords = latitude != null && longitude != null;
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h4 className="text-sm font-semibold text-slate-700">{title}</h4>
+      <p className="text-sm text-slate-600">
+        Time: {time ? formatDateTime(time) : "—"}
+      </p>
+      {address && (
+        <p className="flex items-start gap-1.5 text-sm text-slate-500">
+          <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          {address}
+        </p>
+      )}
+      {hasCoords && (
+        <p className="text-xs text-slate-400">
+          Coordinates: {latitude.toFixed(6)}, {longitude.toFixed(6)}
+          {accuracy != null ? ` · Accuracy: ${Math.round(accuracy)}m` : ""}
+        </p>
+      )}
+      {!hasCoords && !address && (
+        <p className="text-sm text-slate-400">No location recorded.</p>
+      )}
+      {hasCoords && (
+        <iframe
+          title={`${title} map`}
+          className="h-48 w-full rounded-lg border border-slate-200"
+          src={osmEmbedUrl(latitude, longitude)}
+        />
+      )}
+    </section>
+  );
 }
 
 export function AttendanceDetailModal({
@@ -64,11 +113,6 @@ export function AttendanceDetailModal({
                 className="h-40 w-40 rounded-lg object-cover"
               />
               <p className="text-sm text-slate-600">Time: {formatTime(attendance.check_in_time)}</p>
-              {attendance.check_in_address && (
-                <p className="flex items-start gap-1.5 text-sm text-slate-500">
-                  <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0" /> {attendance.check_in_address}
-                </p>
-              )}
               {attendance.check_in_device_info && (
                 <p className="truncate text-xs text-slate-400" title={attendance.check_in_device_info}>
                   Device: {attendance.check_in_device_info}
@@ -77,27 +121,29 @@ export function AttendanceDetailModal({
             </section>
 
             <section className="flex flex-col gap-3">
-              <h4 className="text-sm font-semibold text-slate-700">Check-out</h4>
+              <h4 className="text-sm font-semibold text-slate-700">Check-out Summary</h4>
               <p className="text-sm text-slate-600">Time: {formatTime(attendance.check_out_time)}</p>
               <p className="text-sm text-slate-600">Total Hours: {formatMinutesAsHours(attendance.total_minutes)}</p>
-              {attendance.check_out_address && (
-                <p className="flex items-start gap-1.5 text-sm text-slate-500">
-                  <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0" /> {attendance.check_out_address}
-                </p>
-              )}
             </section>
           </div>
 
-          {attendance.check_in_latitude && attendance.check_in_longitude && (
-            <section>
-              <h4 className="mb-2 text-sm font-semibold text-slate-700">Check-in Location</h4>
-              <iframe
-                title="Check-in location map"
-                className="h-56 w-full rounded-lg border border-slate-200"
-                src={osmEmbedUrl(attendance.check_in_latitude, attendance.check_in_longitude)}
-              />
-            </section>
-          )}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <LocationSection
+              title="Check-in Location"
+              time={attendance.check_in_time}
+              address={attendance.check_in_address}
+              latitude={attendance.check_in_latitude}
+              longitude={attendance.check_in_longitude}
+            />
+            <LocationSection
+              title="Check-out Location"
+              time={attendance.check_out_time}
+              address={attendance.check_out_address}
+              latitude={attendance.check_out_latitude}
+              longitude={attendance.check_out_longitude}
+              accuracy={attendance.check_out_gps_accuracy}
+            />
+          </div>
 
           <section className="flex flex-col gap-2">
             <h4 className="text-sm font-semibold text-slate-700">Work Report</h4>
@@ -105,12 +151,12 @@ export function AttendanceDetailModal({
               <span className="font-medium text-slate-700">Project / Site: </span>
               {attendance.site_name ?? "-"}
             </p>
-            <p className="text-sm text-slate-600 whitespace-pre-wrap">
+            <p className="whitespace-pre-wrap text-sm text-slate-600">
               <span className="font-medium text-slate-700">Summary: </span>
               {attendance.work_summary ?? "-"}
             </p>
             {attendance.remarks && (
-              <p className="text-sm text-slate-600 whitespace-pre-wrap">
+              <p className="whitespace-pre-wrap text-sm text-slate-600">
                 <span className="font-medium text-slate-700">Remarks: </span>
                 {attendance.remarks}
               </p>

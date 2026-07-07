@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Medal, Star, Trophy } from "lucide-react";
+import { Medal, Star, Trophy, User } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
@@ -9,7 +9,6 @@ import { SecureImage } from "@/components/SecureImage";
 import { ResponsiveTable, FilterBar, type Column } from "@/components/ui/ResponsiveTable";
 import * as scoreboardApi from "@/api/scoreboard";
 import type { ScoreboardEntry } from "@/types";
-import { User } from "lucide-react";
 
 const RANK_ICONS = [
   <Trophy className="h-5 w-5 text-yellow-500" />,
@@ -22,6 +21,7 @@ type RankedEntry = ScoreboardEntry & { rank: number };
 export function ScoreboardPage() {
   const [entries, setEntries] = useState<ScoreboardEntry[]>([]);
   const [period, setPeriod] = useState<{ from: string; to: string } | null>(null);
+  const [legend, setLegend] = useState("");
   const [loading, setLoading] = useState(true);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -33,6 +33,7 @@ export function ScoreboardPage() {
       .then((res) => {
         setEntries(res.entries);
         setPeriod(res.period);
+        setLegend(res.legend);
       })
       .finally(() => setLoading(false));
   }
@@ -74,8 +75,11 @@ export function ScoreboardPage() {
         </div>
       ),
     },
-    { header: "Days Present", align: "center", cell: (entry) => entry.total_days_present },
-    { header: "Full 8h Days", align: "center", cell: (entry) => entry.total_days_8h },
+    { header: "Present", align: "center", cell: (entry) => entry.total_days_present },
+    { header: "Half Day", align: "center", cell: (entry) => entry.half_days },
+    { header: "Absent", align: "center", cell: (entry) => entry.absent_days },
+    { header: "Late", align: "center", cell: (entry) => entry.late_arrivals },
+    { header: "Leave", align: "center", cell: (entry) => entry.leave_days },
     {
       header: "Tasks Done",
       align: "center",
@@ -96,7 +100,7 @@ export function ScoreboardPage() {
     <div>
       <PageHeader
         title="Employee Scoreboard"
-        subtitle="Rankings based on attendance, working hours, and task completion"
+        subtitle="Rankings based on attendance, leave, and task completion"
       />
 
       <Card className="mb-4">
@@ -120,7 +124,6 @@ export function ScoreboardPage() {
           <EmptyState title="No employee data available yet" />
         ) : (
           <>
-            {/* Top 3 podium */}
             {entries.length >= 1 && (
               <div className="flex flex-wrap justify-center gap-4 border-b border-slate-100 px-5 py-6">
                 {entries.slice(0, 3).map((entry, idx) => (
@@ -129,12 +132,13 @@ export function ScoreboardPage() {
               </div>
             )}
 
-            {/* Full ranking table */}
             <ResponsiveTable columns={rankColumns} data={rankedEntries} rowKey={(e) => e.employee_id} />
 
-            <div className="border-t border-slate-100 px-4 py-3 text-xs text-slate-400 lg:px-5">
-              Scoring: +5 per day present · +3 for ≥8h workday · +2 per completed task · −1 per absent day
-            </div>
+            {legend && (
+              <div className="border-t border-slate-100 px-4 py-3 text-xs text-slate-400 lg:px-5">
+                Scoring: {legend}
+              </div>
+            )}
           </>
         )}
       </Card>

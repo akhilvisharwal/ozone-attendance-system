@@ -23,6 +23,12 @@ export async function listEmployees(params: { search?: string; isActive?: boolea
   return res.data;
 }
 
+/** All active employees for filter dropdowns (sorted by name, no pagination cap issues). */
+export async function listActiveEmployees() {
+  const res = await apiClient.get<{ items: Employee[]; total: number }>("/employees/active");
+  return res.data.items;
+}
+
 export async function getEmployeeById(id: string) {
   const res = await apiClient.get<{ employee: Employee }>(`/employees/${id}`);
   return res.data.employee;

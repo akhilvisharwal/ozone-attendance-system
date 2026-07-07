@@ -10,9 +10,10 @@ router.post("/",       requireRole("employee"), controller.submitLeave);
 router.get("/mine",    requireRole("employee"), controller.myLeaves);
 router.delete("/:id",  requireRole("employee"), controller.cancelLeave);
 
-// Admin: list all, get single, approve/reject
+// Admin: list all, get single, approve/reject, delete any status
 router.get("/",         requireRole("admin"), controller.adminListLeaves);
 router.get("/:id",      requireRole("admin"), controller.adminGetLeave);
 router.patch("/:id/review", requireRole("admin"), controller.adminReviewLeave);
+router.delete("/:id/admin", requireRole("admin"), controller.adminDeleteLeave);
 
 export default router;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
-import { CalendarRange, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, FileDown } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, FileSpreadsheet, FileText } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
@@ -8,10 +8,10 @@ import { Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { FilterBar } from "@/components/ui/ResponsiveTable";
 import { HolidayFormModal } from "@/components/HolidayFormModal";
+import { EmployeeCombobox } from "@/components/EmployeeCombobox";
 import * as attendanceApi from "@/api/attendance";
-import * as employeesApi from "@/api/employees";
 import * as sitesApi from "@/api/sites";
-import type { Employee, MonthlyCellStatus, MonthlyGrid, Site } from "@/types";
+import type { MonthlyCellStatus, MonthlyGrid, Site } from "@/types";
 import { formatMinutesAsHours } from "@/utils/format";
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -49,7 +49,6 @@ export function MonthlyAttendancePage() {
   const [siteId, setSiteId] = useState("");
   const [statusFilter, setStatusFilter] = useState<MonthlyCellStatus | "">("");
 
-  const [employees, setEmployees] = useState<Employee[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [grid, setGrid] = useState<MonthlyGrid | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,7 +68,6 @@ export function MonthlyAttendancePage() {
   }
 
   useEffect(() => {
-    employeesApi.listEmployees({ isActive: true, limit: 200 }).then((res) => setEmployees(res.items));
     sitesApi.listSites().then(setSites).catch(() => setSites([]));
   }, []);
 
@@ -78,7 +76,7 @@ export function MonthlyAttendancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, employeeId, siteId]);
 
-  async function handleDownload(format: "excel" | "csv" | "pdf") {
+  async function handleDownload(format: "excel" | "pdf") {
     setDownloading(format);
     try {
       await attendanceApi.downloadMonthlyReport({
@@ -125,14 +123,12 @@ export function MonthlyAttendancePage() {
           </div>
 
           <FilterBar>
-            <Select label="Employee" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-              <option value="">All employees</option>
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name} ({e.employee_code})
-                </option>
-              ))}
-            </Select>
+            <EmployeeCombobox
+              label="Employee"
+              value={employeeId}
+              onChange={setEmployeeId}
+              hideHint
+            />
             <Select label="Site" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
               <option value="">All sites</option>
               {sites.map((s) => (
@@ -176,15 +172,6 @@ export function MonthlyAttendancePage() {
               onClick={() => handleDownload("excel")}
             >
               Excel
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              icon={<FileDown className="h-4 w-4" />}
-              isLoading={downloading === "csv"}
-              onClick={() => handleDownload("csv")}
-            >
-              CSV
             </Button>
             <Button
               variant="outline"

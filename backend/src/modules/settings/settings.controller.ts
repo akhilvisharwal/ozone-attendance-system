@@ -4,6 +4,8 @@ import path from "path";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/errors";
 import { normalizeAttendanceSettings } from "../../utils/settingsHelpers";
+import { normalizeLeaveSettings } from "../../utils/leaveSettings";
+import { getEnabledLeaveCategories } from "../../utils/leaveSettings";
 import { logAudit } from "../audit/audit.repository";
 import { getSettings, refreshSettingsCache, updateCategory } from "./settings.cache";
 import type { AttendanceSettings } from "./settings.types";
@@ -39,12 +41,12 @@ export const getPublicSettings = asyncHandler(async (_req: Request, res: Respons
       sidebarCollapsed: s.appearance.sidebarCollapsed,
     },
     leave: {
-      leaveTypes: s.leave.leaveTypes,
+      categories: getEnabledLeaveCategories(s.leave).map((cat) => ({
+        name: cat.name,
+        yearlyLimit: cat.yearlyLimit,
+      })),
       halfDayAllowed: s.leave.halfDayAllowed,
       approvalRequired: s.leave.approvalRequired,
-      annualLimit: s.leave.annualLimit,
-      sickLimit: s.leave.sickLimit,
-      casualLimit: s.leave.casualLimit,
     },
     weeklyOff: { defaultWeeklyOffDays: s.weeklyOff.defaultWeeklyOffDays },
     employee: {
@@ -66,7 +68,9 @@ export const updateSettings = asyncHandler(async (req: Request, res: Response) =
   const parsed =
     category === "attendance"
       ? normalizeAttendanceSettings(raw as AttendanceSettings)
-      : raw;
+      : category === "leave"
+        ? normalizeLeaveSettings(raw)
+        : raw;
   const previous = getSettings()[category];
   const settings = await updateCategory(category, parsed as never, req.user!.id);
   await logAudit(req, "settings.update", "settings", undefined, {

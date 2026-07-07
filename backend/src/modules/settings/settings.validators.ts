@@ -28,14 +28,21 @@ export const attendanceSettingsSchema = z.object({
   halfDayCutoff: hhmm,
 });
 
-export const leaveSettingsSchema = z.object({
-  leaveTypes: z.array(z.string().min(1).max(50)).min(1),
-  annualLimit: z.number().int().min(0).max(365),
-  sickLimit: z.number().int().min(0).max(365),
-  casualLimit: z.number().int().min(0).max(365),
-  approvalRequired: z.boolean(),
-  halfDayAllowed: z.boolean(),
+export const leaveCategorySchema = z.object({
+  name: z.string().min(1).max(80),
+  enabled: z.boolean(),
+  yearlyLimit: z.number().int().min(0).max(366),
 });
+
+export const leaveSettingsSchema = z
+  .object({
+    categories: z.array(leaveCategorySchema).min(1),
+    approvalRequired: z.boolean(),
+    halfDayAllowed: z.boolean(),
+  })
+  .refine((value) => value.categories.some((cat) => cat.enabled), {
+    message: "At least one leave category must be enabled",
+  });
 
 export const weeklyOffSettingsSchema = z.object({
   defaultWeeklyOffDays: z.array(z.number().int().min(0).max(6)),

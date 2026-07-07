@@ -26,11 +26,17 @@ export function EmployeeCombobox({
   onChange,
   label,
   hint,
+  className,
+  triggerClassName,
+  hideHint = false,
 }: {
   value: string;
   onChange: (employeeId: string) => void;
   label?: string;
   hint?: string;
+  className?: string;
+  triggerClassName?: string;
+  hideHint?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -47,16 +53,31 @@ export function EmployeeCombobox({
   const fetchEmployees = (search: string) => {
     const requestId = ++requestIdRef.current;
     setLoading(true);
-    employeesApi
-      .listEmployees({ search: search || undefined, isActive: true, limit: 50 })
-      .then((res) => {
-        if (requestId !== requestIdRef.current) return; // stale response, ignore
-        setOptions(res.items);
+    const request = search
+      ? employeesApi
+          .listEmployees({ search, isActive: true, limit: 100 })
+          .then((res) => res.items)
+      : employeesApi.listActiveEmployees();
+
+    request
+      .then((items) => {
+        if (requestId !== requestIdRef.current) return;
+        setOptions(items);
+      })
+      .catch(() => {
+        if (requestId !== requestIdRef.current) return;
+        setOptions([]);
       })
       .finally(() => {
         if (requestId === requestIdRef.current) setLoading(false);
       });
   };
+
+  // Load active employees as soon as the filter mounts so the picker is ready.
+  useEffect(() => {
+    fetchEmployees("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keep the displayed label in sync with the live database. If the parent
   // clears the value (e.g. "Reset" elsewhere) or the currently selected
@@ -155,16 +176,18 @@ export function EmployeeCombobox({
   }
 
   return (
-    <div ref={containerRef} className="relative flex flex-col gap-1.5">
-      {label && <label className="text-sm font-medium text-slate-700">{label}</label>}
+    <div ref={containerRef} className={clsx("relative flex flex-col gap-1.5", className)}>
+      {label && <label className="text-sm font-medium leading-5 text-slate-700">{label}</label>}
 
       <button
         type="button"
         onClick={() => (open ? closeDropdown() : openDropdown())}
         onKeyDown={handleKeyDown}
         className={clsx(
-          "flex w-full min-w-[240px] items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-900",
-          "focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          "flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-900",
+          "min-h-[42px] sm:min-h-[38px]",
+          "focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100",
+          triggerClassName
         )}
       >
         <span className={clsx("flex items-center gap-1.5 truncate", !selectedEmployee && "text-slate-500")}>
@@ -174,7 +197,7 @@ export function EmployeeCombobox({
         <ChevronDown className={clsx("h-4 w-4 flex-shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
       </button>
 
-      {hint && !open && <span className="text-xs text-slate-400">{hint}</span>}
+      {hint && !hideHint && !open && <span className="text-xs text-slate-400">{hint}</span>}
 
       {open && (
         <div className="absolute top-full z-20 mt-1 w-full min-w-[280px] rounded-lg border border-slate-200 bg-white shadow-lg">

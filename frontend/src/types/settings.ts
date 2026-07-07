@@ -24,13 +24,21 @@ export interface AttendanceSettings {
   halfDayCutoff: string;
 }
 
+export interface LeaveCategoryConfig {
+  name: string;
+  enabled: boolean;
+  yearlyLimit: number;
+}
+
 export interface LeaveSettings {
-  leaveTypes: string[];
-  annualLimit: number;
-  sickLimit: number;
-  casualLimit: number;
+  categories: LeaveCategoryConfig[];
   approvalRequired: boolean;
   halfDayAllowed: boolean;
+}
+
+export interface PublicLeaveCategory {
+  name: string;
+  yearlyLimit: number;
 }
 
 export interface WeeklyOffSettings {
@@ -102,7 +110,9 @@ export interface PublicSettings {
   company: Pick<CompanySettings, "name" | "logoPath" | "timeFormat" | "timezone" | "dateFormat">;
   mobile: MobileSettings;
   appearance: Pick<AppearanceSettings, "theme" | "accentColor" | "sidebarCollapsed">;
-  leave: Pick<LeaveSettings, "leaveTypes" | "halfDayAllowed" | "approvalRequired" | "annualLimit" | "sickLimit" | "casualLimit">;
+  leave: Pick<LeaveSettings, "halfDayAllowed" | "approvalRequired"> & {
+    categories: PublicLeaveCategory[];
+  };
   weeklyOff: WeeklyOffSettings;
   employee: Pick<EmployeeSettings, "idFormat" | "profilePhotoRequired">;
   attendance: Pick<AttendanceSettings, "allowManualOverride" | "minHoursPresent" | "minHoursHalfDay">;

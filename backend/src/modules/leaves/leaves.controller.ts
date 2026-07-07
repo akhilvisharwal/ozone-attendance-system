@@ -5,7 +5,8 @@ import * as repo from "./leaves.repository";
 import { buildCreateLeaveSchema, reviewLeaveSchema, adminListLeavesQuerySchema, myLeavesQuerySchema } from "./leaves.validators";
 import { logAudit } from "../audit/audit.repository";
 import { getSettings } from "../settings/settings.cache";
-import { getLeaveLimitForCategory } from "../../utils/settingsHelpers";
+import { getLeaveLimitForCategory, getLeaveSettings, isValidLeaveCategory } from "../../utils/settingsHelpers";
+import { getEnabledLeaveCategories } from "../../utils/leaveSettings";
 import { notifyLeaveReviewed, notifyLeaveSubmitted } from "../../services/notifications.service";
 
 export const submitLeave = asyncHandler(async (req: Request, res: Response) => {
@@ -22,11 +23,15 @@ export const submitLeave = asyncHandler(async (req: Request, res: Response) => {
     throw ApiError.conflict("A leave request for this date already exists");
   }
 
+  if (!isValidLeaveCategory(input.leaveCategory)) {
+    throw ApiError.badRequest("This leave category is disabled or invalid");
+  }
+
   const year = new Date(input.leaveDate).getFullYear();
   const used = await repo.countApprovedLeaveDays(employeeId, input.leaveCategory, year);
   const increment = input.leaveType === "half" ? 0.5 : 1;
   const limit = getLeaveLimitForCategory(input.leaveCategory);
-  if (used + increment > limit) {
+  if (limit > 0 && used + increment > limit) {
     throw ApiError.badRequest(
       `Leave limit exceeded for ${input.leaveCategory}. Used ${used}/${limit} days this year.`
     );
@@ -60,18 +65,22 @@ export const submitLeave = asyncHandler(async (req: Request, res: Response) => {
 export const myLeaves = asyncHandler(async (req: Request, res: Response) => {
   const query = myLeavesQuerySchema.parse(req.query);
   const { items, total } = await repo.listMyLeaveRequests(req.user!.id, query);
-  const leaveSettings = getSettings().leave;
+  const leaveSettings = getLeaveSettings();
+  const year = new Date().getFullYear();
+  const categories = await Promise.all(
+    getEnabledLeaveCategories(leaveSettings).map(async (cat) => ({
+      name: cat.name,
+      yearlyLimit: cat.yearlyLimit,
+      used: await repo.countApprovedLeaveDays(req.user!.id, cat.name, year),
+    }))
+  );
+
   res.json({
     items,
     total,
     page: query.page,
     limit: query.limit,
-    limits: {
-      annual: leaveSettings.annualLimit,
-      sick: leaveSettings.sickLimit,
-      casual: leaveSettings.casualLimit,
-      leaveTypes: leaveSettings.leaveTypes,
-    },
+    categories,
   });
 });
 
@@ -98,6 +107,20 @@ export const adminGetLeave = asyncHandler(async (req: Request, res: Response) =>
   res.json({ leave });
 });
 
+export const adminDeleteLeave = asyncHandler(async (req: Request, res: Response) => {
+  const deleted = await repo.adminDeleteLeaveRequest(req.params.id);
+  if (!deleted) throw ApiError.notFound("Leave request not found");
+
+  await logAudit(req, "leave.delete", "leave_requests", deleted.id, {
+    status: deleted.status,
+    employeeId: deleted.employee_id,
+    leaveDate: deleted.leave_date,
+    leaveCategory: deleted.leave_category,
+  });
+
+  res.json({ message: "Leave request deleted" });
+});
+
 export const adminReviewLeave = asyncHandler(async (req: Request, res: Response) => {
   const input = reviewLeaveSchema.parse(req.body);
   const leave = await repo.findLeaveById(req.params.id);
@@ -112,7 +135,7 @@ export const adminReviewLeave = asyncHandler(async (req: Request, res: Response)
     const used = await repo.countApprovedLeaveDays(leave.employee_id, leave.leave_category, year);
     const increment = leave.leave_type === "half" ? 0.5 : 1;
     const limit = getLeaveLimitForCategory(leave.leave_category);
-    if (used + increment > limit) {
+    if (limit > 0 && used + increment > limit) {
       throw ApiError.badRequest(
         `Cannot approve: ${leave.leave_category} limit (${limit} days) would be exceeded.`
       );

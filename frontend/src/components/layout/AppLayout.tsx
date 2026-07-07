@@ -6,6 +6,7 @@ import { LogOut, Menu, Settings, User, X } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { SecureImage } from "@/components/SecureImage";
 import { Logo } from "@/components/Logo";
+import { NotificationBell } from "@/components/NotificationBell";
 import { updateMyAvatar } from "@/api/employees";
 
 export interface NavItem {
@@ -61,7 +62,7 @@ export function AppLayout({
   const brand = <Logo variant="sidebar" onNavigate={closeDrawer} />;
 
   const nav = (
-    <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+    <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-4">
       {navItems.map((item) => (
         <NavLink
           key={item.to}
@@ -83,7 +84,7 @@ export function AppLayout({
   );
 
   const userFooter = (
-    <div className="border-t border-slate-100 px-4 py-4">
+    <div className="shrink-0 border-t border-slate-100 px-4 py-4 pb-safe">
       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">{roleLabel}</p>
 
       <div className="flex items-center gap-3">
@@ -132,7 +133,7 @@ export function AppLayout({
   );
 
   const settingsLink = showSettings ? (
-    <div className="border-t border-slate-100 px-3 py-3">
+    <div className="shrink-0 border-t border-slate-100 px-3 py-3">
       <NavLink
         to="/admin/settings"
         onClick={closeDrawer}
@@ -150,9 +151,9 @@ export function AppLayout({
   ) : null;
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <aside className="hidden w-64 min-w-0 flex-shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-        <div className="flex min-h-[4.5rem] items-center overflow-hidden border-b border-slate-100 px-4 py-3 lg:px-5">
+    <div className="flex h-dvh overflow-hidden bg-slate-50">
+      <aside className="hidden h-full w-64 min-w-0 shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white lg:flex">
+        <div className="flex shrink-0 min-h-[4.5rem] items-center overflow-hidden border-b border-slate-100 px-4 py-3 lg:px-5">
           {brand}
         </div>
         {nav}
@@ -170,13 +171,13 @@ export function AppLayout({
       />
       <aside
         className={clsx(
-          "fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-white shadow-xl transition-transform duration-200 ease-out lg:hidden",
+          "fixed inset-y-0 left-0 z-50 flex h-dvh w-72 max-w-[85vw] flex-col overflow-hidden bg-white shadow-xl transition-transform duration-200 ease-out lg:hidden",
           drawerOpen ? "translate-x-0" : "-translate-x-full"
         )}
         role="dialog"
         aria-modal="true"
       >
-        <div className="flex min-h-[4rem] items-center gap-2 border-b border-slate-100 px-3 py-3 pt-safe">
+        <div className="flex shrink-0 min-h-[4rem] items-center gap-2 border-b border-slate-100 px-3 py-3 pt-safe">
           <div className="min-w-0 flex-1 overflow-hidden">{brand}</div>
           <button
             onClick={closeDrawer}
@@ -191,8 +192,8 @@ export function AppLayout({
         {userFooter}
       </aside>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 grid min-h-[3.5rem] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-200 bg-white/95 px-3 py-2.5 pt-safe backdrop-blur sm:gap-3 sm:px-4 lg:hidden">
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="sticky top-0 z-30 grid shrink-0 min-h-[3.5rem] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-slate-200 bg-white/95 px-3 py-2.5 pt-safe backdrop-blur sm:gap-3 sm:px-4 lg:hidden">
           <button
             onClick={() => setDrawerOpen(true)}
             className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
@@ -201,7 +202,9 @@ export function AppLayout({
             <Menu className="h-5 w-5" />
           </button>
           <Logo variant="header" className="justify-self-start" onNavigate={closeDrawer} />
-          <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full bg-slate-100 justify-self-end">
+          <div className="flex items-center gap-1 justify-self-end">
+            <NotificationBell />
+            <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full bg-slate-100">
             {employee?.profile_photo_path ? (
               <SecureImage path={employee.profile_photo_path} alt="Profile" className="h-full w-full object-cover" />
             ) : (
@@ -209,14 +212,18 @@ export function AppLayout({
                 <User className="h-4 w-4" />
               </div>
             )}
+            </div>
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="hidden border-b border-slate-200 px-4 py-3 print:block sm:px-6">
             <Logo variant="print" interactive={false} />
           </div>
           <div className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 pb-safe">
+            <div className="mb-4 hidden shrink-0 justify-end lg:flex">
+              <NotificationBell />
+            </div>
             <Outlet />
           </div>
         </main>

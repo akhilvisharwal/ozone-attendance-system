@@ -20,13 +20,13 @@ export interface CheckInInput {
 }
 
 export interface CheckOutInput {
-  workSummary: string;
+  workSummary?: string;
   workStatus: WorkStatus;
   remarks?: string;
   sitePhotos?: File[];
-  latitude?: number;
-  longitude?: number;
-  accuracy?: number;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
 }
 
 export interface MyHistoryParams {
@@ -36,13 +36,21 @@ export interface MyHistoryParams {
   to?: string;
 }
 
+export type AdminAttendanceFilterStatus =
+  | "present"
+  | "half_day"
+  | "absent"
+  | "pending"
+  | "checked_in"
+  | "checked_out";
+
 export interface AdminListParams {
   page?: number;
   limit?: number;
   employeeId?: string;
   from?: string;
   to?: string;
-  status?: string;
+  status?: AdminAttendanceFilterStatus;
 }
 
 export async function getTimingRules(): Promise<TimingRules> {
@@ -77,12 +85,12 @@ export async function checkIn(
 
 export async function checkOut(input: CheckOutInput): Promise<AttendanceRecord> {
   const fd = new FormData();
-  fd.append("workSummary", input.workSummary);
-  fd.append("workStatus",  input.workStatus);
-  if (input.remarks)   fd.append("remarks",   input.remarks);
-  if (input.latitude  !== undefined) fd.append("latitude",  String(input.latitude));
-  if (input.longitude !== undefined) fd.append("longitude", String(input.longitude));
-  if (input.accuracy !== undefined) fd.append("accuracy", String(input.accuracy));
+  if (input.workSummary?.trim()) fd.append("workSummary", input.workSummary.trim());
+  fd.append("workStatus", input.workStatus);
+  fd.append("latitude", String(input.latitude));
+  fd.append("longitude", String(input.longitude));
+  fd.append("accuracy", String(input.accuracy));
+  if (input.remarks) fd.append("remarks", input.remarks);
   for (const photo of input.sitePhotos ?? []) {
     fd.append("sitePhotos", photo);
   }
@@ -138,7 +146,7 @@ export async function getMonthlyAttendance(params: MonthlyParams): Promise<Month
 }
 
 export async function downloadMonthlyReport(
-  params: MonthlyParams & { format: "excel" | "csv" | "pdf" }
+  params: MonthlyParams & { format: "excel" | "pdf" }
 ): Promise<void> {
   const { data, headers } = await apiClient.get("/attendance/admin/monthly/export", {
     params,
@@ -178,6 +186,19 @@ export async function adminMarkPresent(payload: {
 }): Promise<AttendanceRecord> {
   const { data } = await apiClient.post<{ attendance: AttendanceRecord }>(
     "/attendance/admin/mark-present",
+    payload
+  );
+  return data.attendance;
+}
+
+export async function adminMarkHalfDay(payload: {
+  employeeId: string;
+  date: string;
+  reason?: string;
+  override?: boolean;
+}): Promise<AttendanceRecord> {
+  const { data } = await apiClient.post<{ attendance: AttendanceRecord }>(
+    "/attendance/admin/mark-half-day",
     payload
   );
   return data.attendance;

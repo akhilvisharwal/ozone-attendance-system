@@ -9,7 +9,6 @@ import {
   FileText,
   CheckSquare,
   Trophy,
-  Star,
   CalendarDays,
   CalendarCheck,
   CalendarRange,
@@ -26,7 +25,6 @@ import { EmployeeHomePage } from "@/pages/employee/EmployeeHomePage";
 import { AttendanceHistoryPage } from "@/pages/employee/AttendanceHistoryPage";
 import { DailyWorkReportsPage } from "@/pages/employee/DailyWorkReportsPage";
 import { TasksPage } from "@/pages/employee/TasksPage";
-import { MyScorePage } from "@/pages/employee/MyScorePage";
 import LeaveRequestsPage from "@/pages/employee/LeaveRequestsPage";
 
 // Admin pages
@@ -47,7 +45,6 @@ const employeeNavItems = [
   { to: "/history", label: "Attendance History", icon: <ClipboardList className="h-4 w-4" /> },
   { to: "/work-reports", label: "Work Reports", icon: <FileText className="h-4 w-4" /> },
   { to: "/tasks", label: "My Tasks", icon: <CheckSquare className="h-4 w-4" /> },
-  { to: "/score", label: "My Score", icon: <Star className="h-4 w-4" /> },
   { to: "/leaves", label: "Leave Requests", icon: <CalendarDays className="h-4 w-4" /> },
 ];
 
@@ -56,7 +53,7 @@ const adminNavItems = [
   { to: "/admin/employees", label: "Employees", icon: <Users className="h-4 w-4" /> },
   { to: "/admin/attendance", label: "Attendance Records", icon: <ClipboardList className="h-4 w-4" /> },
   { to: "/admin/monthly", label: "Monthly Attendance", icon: <CalendarRange className="h-4 w-4" /> },
-  { to: "/admin/tasks", label: "Task Management", icon: <CheckSquare className="h-4 w-4" /> },
+  { to: "/admin/tasks", label: "Task Assignment", icon: <CheckSquare className="h-4 w-4" /> },
   { to: "/admin/scoreboard", label: "Scoreboard", icon: <Trophy className="h-4 w-4" /> },
   { to: "/admin/leaves", label: "Leave Management", icon: <CalendarCheck className="h-4 w-4" /> },
   { to: "/admin/holidays", label: "Holiday Management", icon: <CalendarHeart className="h-4 w-4" /> },
@@ -77,7 +74,6 @@ function App() {
             <Route path="/history" element={<AttendanceHistoryPage />} />
             <Route path="/work-reports" element={<DailyWorkReportsPage />} />
             <Route path="/tasks" element={<TasksPage />} />
-            <Route path="/score" element={<MyScorePage />} />
             <Route path="/leaves" element={<LeaveRequestsPage />} />
           </Route>
         </Route>

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Building2, ImagePlus, LogOut, X } from "lucide-react";
+import { Building2, ImagePlus, LogOut, MapPin, X, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
@@ -10,6 +10,7 @@ import * as attendanceApi from "@/api/attendance";
 import { extractErrorMessage } from "@/api/client";
 import { usePublicSettings } from "@/contexts/SettingsContext";
 import { getCurrentPosition } from "@/hooks/useGeolocation";
+import type { Coordinates } from "@/hooks/useGeolocation";
 
 const WORK_STATUS_OPTIONS: { value: WorkStatus; label: string }[] = [
   { value: "completed", label: "Completed" },
@@ -22,21 +23,46 @@ const WORK_STATUS_OPTIONS: { value: WorkStatus; label: string }[] = [
 export function CheckOutPanel({
   attendance,
   onCheckedOut,
+  onCancel,
 }: {
   attendance: AttendanceRecord;
   onCheckedOut: () => void;
+  onCancel?: () => void;
 }) {
   const { publicSettings } = usePublicSettings();
-  const gpsRequired = publicSettings?.mobile.gpsRequiredCheckOut ?? false;
   const gpsThreshold = publicSettings?.mobile.gpsAccuracyThresholdMeters ?? 100;
 
   const [workSummary, setWorkSummary] = useState(attendance.work_summary ?? "");
-  const [workStatus, setWorkStatus]   = useState<WorkStatus>((attendance.work_status as WorkStatus) ?? "completed");
-  const [remarks, setRemarks]         = useState("");
-  const [photos, setPhotos]           = useState<File[]>([]);
-  const [previews, setPreviews]       = useState<string[]>([]);
-  const [submitting, setSubmitting]   = useState(false);
-  const [error, setError]             = useState<string | null>(null);
+  const [workStatus, setWorkStatus] = useState<WorkStatus>((attendance.work_status as WorkStatus) ?? "completed");
+  const [remarks, setRemarks] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [location, setLocation] = useState<Coordinates | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [locating, setLocating] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLocating(true);
+    getCurrentPosition()
+      .then((coords) => {
+        if (!cancelled) {
+          setLocation(coords);
+          setLocationError(null);
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setLocationError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLocating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []).slice(0, 5 - photos.length);
@@ -51,15 +77,23 @@ export function CheckOutPanel({
     setPreviews((prev) => prev.filter((_, i) => i !== index));
   }
 
+  async function retryLocation() {
+    setLocationError(null);
+    setLocation(null);
+    setLocating(true);
+    try {
+      setLocation(await getCurrentPosition());
+    } catch (err) {
+      setLocationError((err as Error).message);
+    } finally {
+      setLocating(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
-    // Explicit validation with clear messages.
-    if (workSummary.trim().length < 5) {
-      setError("Please describe the work completed today (at least 5 characters).");
-      return;
-    }
     if (!workStatus) {
       setError("Please select a work status.");
       return;
@@ -67,29 +101,36 @@ export function CheckOutPanel({
 
     setSubmitting(true);
     try {
-      let coords: { latitude?: number; longitude?: number; accuracy?: number } = {};
+      let position: Coordinates;
       try {
-        const position = await getCurrentPosition();
-        if (position.accuracy > gpsThreshold) {
-          setError(`GPS accuracy (${Math.round(position.accuracy)}m) is too low. Required: within ${gpsThreshold}m.`);
-          setSubmitting(false);
-          return;
-        }
-        coords = { latitude: position.latitude, longitude: position.longitude, accuracy: position.accuracy };
-      } catch {
-        if (gpsRequired) {
-          setError("GPS location is required to check out. Please allow location access.");
-          setSubmitting(false);
-          return;
-        }
+        position = await getCurrentPosition();
+        setLocation(position);
+        setLocationError(null);
+      } catch (err) {
+        const message =
+          (err as Error).message ||
+          "Unable to capture your location. Please enable location services and try again.";
+        setLocationError(message);
+        setError(message);
+        setSubmitting(false);
+        return;
+      }
+
+      if (position.accuracy > gpsThreshold) {
+        const accuracyError = `GPS accuracy (${Math.round(position.accuracy)}m) is too low. Required: within ${gpsThreshold}m.`;
+        setError(accuracyError);
+        setSubmitting(false);
+        return;
       }
 
       await attendanceApi.checkOut({
-        workSummary,
+        workSummary: workSummary.trim() || undefined,
         workStatus,
         remarks: remarks || undefined,
         sitePhotos: photos,
-        ...coords,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
       });
       onCheckedOut();
     } catch (err) {
@@ -101,12 +142,21 @@ export function CheckOutPanel({
 
   return (
     <Card>
-      <CardHeader title="Check Out" subtitle="Complete your daily work report before checking out" />
+      <CardHeader
+        title="Check Out"
+        subtitle="Confirm your location and complete your daily work report"
+        action={
+          onCancel ? (
+            <Button type="button" variant="ghost" size="sm" icon={<ArrowLeft className="h-4 w-4" />} onClick={onCancel}>
+              Back
+            </Button>
+          ) : undefined
+        }
+      />
       <CardBody>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {error && <Alert variant="error">{error}</Alert>}
 
-          {/* Site is selected at check-in and shown here read-only */}
           <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-3">
             <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white text-slate-500 ring-1 ring-slate-200">
               <Building2 className="h-4 w-4" />
@@ -119,11 +169,41 @@ export function CheckOutPanel({
             </div>
           </div>
 
+          <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
+            <p className="text-sm font-medium text-slate-900">Check-out Location</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Your current GPS location is required when you confirm check-out.
+            </p>
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              {location ? (
+                <span className="flex items-center gap-1.5 text-emerald-600">
+                  <MapPin className="h-4 w-4" />
+                  Location ready ({Math.round(location.accuracy)}m accuracy)
+                </span>
+              ) : locationError ? (
+                <span className="flex flex-wrap items-center gap-2 text-red-600">
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4" />
+                    {locationError}
+                  </span>
+                  <button type="button" onClick={retryLocation} className="font-medium underline">
+                    Retry
+                  </button>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-slate-400">
+                  <MapPin className={`h-4 w-4 ${locating ? "animate-pulse" : ""}`} />
+                  {locating ? "Fetching your location..." : "Waiting for location..."}
+                </span>
+              )}
+            </div>
+          </div>
+
           <Textarea
             label="Work Summary"
-            required
+            hint="Optional — describe the work you completed today"
             rows={4}
-            placeholder="Describe the work you completed today"
+            placeholder="Describe the work you completed today (optional)"
             value={workSummary}
             onChange={(e) => setWorkSummary(e.target.value)}
           />

@@ -62,6 +62,11 @@ export const listEmployees = asyncHandler(async (req: Request, res: Response) =>
   res.json({ items, total, page: query.page, limit: query.limit });
 });
 
+export const listActiveEmployees = asyncHandler(async (_req: Request, res: Response) => {
+  const items = await repo.listActiveEmployees();
+  res.json({ items, total: items.length });
+});
+
 export const getEmployee = asyncHandler(async (req: Request, res: Response) => {
   const employee = await repo.findEmployeeById(req.params.id);
   if (!employee || employee.role !== "employee") throw ApiError.notFound("Employee not found");

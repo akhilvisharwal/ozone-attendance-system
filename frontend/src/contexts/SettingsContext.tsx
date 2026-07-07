@@ -51,7 +51,13 @@ function toPublicSettings(s: AppSettings): PublicSettings {
     company: s.company,
     mobile: s.mobile,
     appearance: s.appearance,
-    leave: s.leave,
+    leave: {
+      categories: s.leave.categories
+        .filter((cat) => cat.enabled)
+        .map((cat) => ({ name: cat.name, yearlyLimit: cat.yearlyLimit })),
+      halfDayAllowed: s.leave.halfDayAllowed,
+      approvalRequired: s.leave.approvalRequired,
+    },
     weeklyOff: s.weeklyOff,
     employee: s.employee,
     attendance: {

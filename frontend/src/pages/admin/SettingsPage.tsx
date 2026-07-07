@@ -276,18 +276,66 @@ export function SettingsPage() {
 
           {tab === "leave" && (
             <SettingsSection title="Leave Settings" onSave={saveCurrentCategory} saving={saving}>
-              <FieldRow label="Leave Types" hint="Comma-separated">
-                <Input value={draft.leave.leaveTypes.join(", ")} onChange={(e) => applyPatch("leave", { leaveTypes: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
-              </FieldRow>
-              <FieldRow label="Annual Leave Limit">
-                <Input type="number" value={draft.leave.annualLimit} onChange={(e) => applyPatch("leave", { annualLimit: +e.target.value })} />
-              </FieldRow>
-              <FieldRow label="Sick Leave Limit">
-                <Input type="number" value={draft.leave.sickLimit} onChange={(e) => applyPatch("leave", { sickLimit: +e.target.value })} />
-              </FieldRow>
-              <FieldRow label="Casual Leave Limit">
-                <Input type="number" value={draft.leave.casualLimit} onChange={(e) => applyPatch("leave", { casualLimit: +e.target.value })} />
-              </FieldRow>
+              <p className="mb-4 text-sm text-slate-600">
+                Enable leave categories and set yearly limits for each type. Employees can only request enabled categories.
+              </p>
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <div className="hidden grid-cols-[1fr_88px_120px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:grid">
+                  <span>Category</span>
+                  <span className="text-center">Enabled</span>
+                  <span>Yearly Limit</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {draft.leave.categories.map((cat, index) => (
+                    <div
+                      key={cat.name}
+                      className="grid gap-3 px-4 py-3 sm:grid-cols-[1fr_88px_120px] sm:items-center"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{cat.name}</p>
+                        <p className="mt-0.5 text-xs text-slate-400 sm:hidden">
+                          {cat.enabled ? "Enabled" : "Disabled"}
+                          {cat.yearlyLimit > 0 ? ` · ${cat.yearlyLimit} days/year` : " · No limit"}
+                        </p>
+                      </div>
+                      <div className="flex items-center sm:justify-center">
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={cat.enabled}
+                            onChange={(e) => {
+                              const categories = draft.leave.categories.map((item, itemIndex) =>
+                                itemIndex === index ? { ...item, enabled: e.target.checked } : item
+                              );
+                              applyPatch("leave", { categories });
+                            }}
+                            className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          />
+                          <span className="sm:hidden">Enabled</span>
+                        </label>
+                      </div>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={366}
+                        value={cat.yearlyLimit}
+                        disabled={!cat.enabled}
+                        onChange={(e) => {
+                          const categories = draft.leave.categories.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? { ...item, yearlyLimit: Math.max(0, +e.target.value || 0) }
+                              : item
+                          );
+                          applyPatch("leave", { categories });
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                Set yearly limit to 0 for unlimited requests in that category.
+              </p>
               <ToggleRow label="Approval Required" checked={draft.leave.approvalRequired} onChange={(v) => applyPatch("leave", { approvalRequired: v })} />
               <ToggleRow label="Half-Day Leave Option" checked={draft.leave.halfDayAllowed} onChange={(v) => applyPatch("leave", { halfDayAllowed: v })} />
             </SettingsSection>

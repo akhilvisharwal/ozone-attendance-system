@@ -1,5 +1,10 @@
 import { getSettings } from "../modules/settings/settings.cache";
 import type { AttendanceSettings } from "../modules/settings/settings.types";
+import type { LeaveCategoryConfig, LeaveSettings } from "../modules/settings/settings.types";
+import {
+  findLeaveCategoryConfig,
+  getEnabledLeaveCategories,
+} from "./leaveSettings";
 
 /** Keep legacy timing fields in sync with admin-facing office start / late check-in. */
 export function normalizeAttendanceSettings(a: AttendanceSettings): AttendanceSettings {
@@ -32,15 +37,24 @@ export function getLoginAttemptLimit(): number {
   return getSettings().security.loginAttemptLimit;
 }
 
+export function getLeaveSettings(): LeaveSettings {
+  return getSettings().leave;
+}
+
+export function getEnabledLeaveTypes(): string[] {
+  return getEnabledLeaveCategories(getLeaveSettings()).map((cat) => cat.name);
+}
+
 export function getLeaveLimitForCategory(category: string): number {
-  const leave = getSettings().leave;
-  const key = category.toLowerCase();
-  if (key.includes("annual")) return leave.annualLimit;
-  if (key.includes("sick")) return leave.sickLimit;
-  if (key.includes("casual")) return leave.casualLimit;
-  return leave.annualLimit;
+  const config = findLeaveCategoryConfig(getLeaveSettings(), category);
+  return config?.yearlyLimit ?? 0;
 }
 
 export function isValidLeaveCategory(category: string): boolean {
-  return getSettings().leave.leaveTypes.some((t) => t.toLowerCase() === category.toLowerCase());
+  const config = findLeaveCategoryConfig(getLeaveSettings(), category);
+  return Boolean(config?.enabled);
+}
+
+export function getLeaveCategoryConfig(category: string): LeaveCategoryConfig | undefined {
+  return findLeaveCategoryConfig(getLeaveSettings(), category);
 }

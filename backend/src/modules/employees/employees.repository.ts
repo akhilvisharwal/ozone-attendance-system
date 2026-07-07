@@ -91,6 +91,18 @@ export async function listEmployees(params: {
   return { items: itemsResult.rows, total: parseInt(countResult.rows[0].count, 10) };
 }
 
+/** All active, non-deleted employees for admin filter dropdowns (no pagination). */
+export async function listActiveEmployees(): Promise<PublicEmployee[]> {
+  const result = await pool.query<PublicEmployee>(
+    `SELECT ${PUBLIC_COLUMNS}
+       FROM employees
+      WHERE role = 'employee' AND deleted_at IS NULL AND is_active = true
+      ORDER BY name ASC`,
+    []
+  );
+  return result.rows;
+}
+
 export async function setEmployeeActive(id: string, isActive: boolean): Promise<PublicEmployee | null> {
   const result = await pool.query<PublicEmployee>(
     `UPDATE employees SET is_active = $1 WHERE id = $2 AND role = 'employee'

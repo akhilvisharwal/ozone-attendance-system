@@ -7,11 +7,12 @@ import { PageHeader } from "../../components/ui/PageHeader";
 import { Card, CardBody } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
-import { Modal } from "../../components/ui/Modal";
+import { Modal, ModalFooterActions } from "../../components/ui/Modal";
 import { Alert } from "../../components/ui/Alert";
 import { Spinner } from "../../components/ui/Spinner";
 import { Input, FieldWrapper, Textarea, Select } from "../../components/ui/Input";
 import { ResponsiveTable, type Column } from "../../components/ui/ResponsiveTable";
+import { TaskDeleteConfirmModal } from "@/components/tasks/TaskDeleteConfirmModal";
 
 const STATUS_COLORS: Record<string, "amber" | "green" | "red"> = {
   pending:  "amber",
@@ -27,6 +28,8 @@ const STATUS_LABELS: Record<string, string> = {
 
 const TYPE_LABELS: Record<string, string> = { full: "Full Day", half: "Half Day" };
 
+const LEAVE_FORM_ID = "submit-leave-form";
+
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -35,7 +38,6 @@ export default function LeaveRequestsPage() {
   const { publicSettings } = usePublicSettings();
   const leaveConfig = publicSettings?.leave;
   const [items, setItems]       = useState<LeaveRequest[]>([]);
-  const [limits, setLimits]     = useState<leavesApi.LeaveLimits | null>(null);
   const [total, setTotal]       = useState(0);
   const [page, setPage]         = useState(1);
   const [loading, setLoading]   = useState(true);
@@ -51,8 +53,11 @@ export default function LeaveRequestsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError]   = useState<string | null>(null);
   const [success, setSuccess]       = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<LeaveRequest | null>(null);
 
   const limit = 10;
+
+  const enabledCategories = leaveConfig?.categories ?? [];
 
   const fetchLeaves = useCallback(async () => {
     setLoading(true);
@@ -61,7 +66,6 @@ export default function LeaveRequestsPage() {
       const res = await leavesApi.myLeaves({ page, limit });
       setItems(res.items);
       setTotal(res.total);
-      if (res.limits) setLimits(res.limits);
     } catch {
       setError("Failed to load leave requests.");
     } finally {
@@ -80,7 +84,6 @@ export default function LeaveRequestsPage() {
       setFormError("Half-day leave is not enabled.");
       return;
     }
-    if (form.reason.trim().length < 10) { setFormError("Reason must be at least 10 characters."); return; }
     setSubmitting(true);
     try {
       await leavesApi.submitLeave(form);
@@ -90,7 +93,12 @@ export default function LeaveRequestsPage() {
           : "Leave request submitted and auto-approved."
       );
       setShowModal(false);
-      setForm({ leaveDate: "", leaveType: "full", leaveCategory: leaveConfig?.leaveTypes[0] ?? "Annual", reason: "" });
+      setForm({
+        leaveDate: "",
+        leaveType: "full",
+        leaveCategory: enabledCategories[0]?.name ?? "",
+        reason: "",
+      });
       fetchLeaves();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message;
@@ -100,14 +108,15 @@ export default function LeaveRequestsPage() {
     }
   }
 
-  async function handleCancel(id: string) {
-    if (!confirm("Cancel this pending leave request?")) return;
+  async function handleCancel() {
+    if (!deleteTarget) return;
     try {
-      await leavesApi.cancelLeave(id);
-      setSuccess("Leave request cancelled.");
+      await leavesApi.cancelLeave(deleteTarget.id);
+      setSuccess("Leave request deleted.");
+      setDeleteTarget(null);
       fetchLeaves();
     } catch {
-      setError("Failed to cancel leave request.");
+      setError("Failed to delete leave request.");
     }
   }
 
@@ -163,9 +172,9 @@ export default function LeaveRequestsPage() {
               actions={(lr) =>
                 lr.status === "pending" ? (
                   <button
-                    onClick={() => handleCancel(lr.id)}
+                    onClick={() => setDeleteTarget(lr)}
                     className="flex h-9 w-9 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700"
-                    title="Cancel request"
+                    title="Delete request"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -187,8 +196,19 @@ export default function LeaveRequestsPage() {
       </Card>
 
       {/* Submit leave modal */}
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Submit Leave Request">
-        <form onSubmit={handleSubmit} className="space-y-4">
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title="Submit Leave Request"
+        widthClassName="max-w-lg"
+        footer={
+          <ModalFooterActions>
+            <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button type="submit" form={LEAVE_FORM_ID} isLoading={submitting}>Submit Request</Button>
+          </ModalFooterActions>
+        }
+      >
+        <form id={LEAVE_FORM_ID} onSubmit={handleSubmit} className="space-y-4">
           {formError && <Alert variant="error">{formError}</Alert>}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -203,12 +223,16 @@ export default function LeaveRequestsPage() {
             </FieldWrapper>
             <FieldWrapper label="Leave Category" required>
               <Select
-                value={form.leaveCategory || leaveConfig?.leaveTypes[0] || "Annual"}
-                onChange={e => setForm(f => ({ ...f, leaveCategory: e.target.value }))}
+                value={form.leaveCategory || enabledCategories[0]?.name || ""}
+                onChange={(e) => setForm((f) => ({ ...f, leaveCategory: e.target.value }))}
               >
-                {(leaveConfig?.leaveTypes ?? ["Annual", "Sick", "Casual"]).map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
+                {enabledCategories.length === 0 ? (
+                  <option value="">No leave categories available</option>
+                ) : (
+                  enabledCategories.map((cat) => (
+                    <option key={cat.name} value={cat.name}>{cat.name}</option>
+                  ))
+                )}
               </Select>
             </FieldWrapper>
             <FieldWrapper label="Duration" required>
@@ -222,19 +246,12 @@ export default function LeaveRequestsPage() {
             </FieldWrapper>
           </div>
 
-          {limits && (
-            <p className="text-xs text-slate-500">
-              Annual limit: {limits.annual} · Sick: {limits.sick} · Casual: {limits.casual}
-            </p>
-          )}
-
-          <FieldWrapper label="Reason" required>
+          <FieldWrapper label="Reason">
             <Textarea
               rows={4}
-              placeholder="Please describe the reason for your leave (min 10 characters)"
+              placeholder="Optional — add details for your leave request"
               value={form.reason}
               onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-              required
             />
           </FieldWrapper>
 
@@ -246,13 +263,21 @@ export default function LeaveRequestsPage() {
                 : "Your request will be auto-approved based on system settings."}
             </p>
           </div>
-
-          <div className="flex gap-3 justify-end">
-            <Button type="button" variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
-            <Button type="submit" isLoading={submitting}>Submit Request</Button>
-          </div>
         </form>
       </Modal>
+
+      <TaskDeleteConfirmModal
+        open={Boolean(deleteTarget)}
+        title="Delete Leave Request?"
+        message={
+          deleteTarget
+            ? `Delete your pending leave request for ${deleteTarget.leave_date}? This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleCancel}
+      />
     </div>
   );
 }
