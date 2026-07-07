@@ -8,7 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "start:prod": "node dist/db/migrate.js && node dist/index.js",
+    "start:prod": "node dist/index.js",
     "deploy:setup": "npm run migrate && npm run seed",
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",

@@ -29,7 +29,7 @@ async function getAppliedMigrations(): Promise<Set<string>> {
   return new Set(result.rows.map((r) => r.name));
 }
 
-async function runMigrations() {
+export async function runMigrations() {
   await ensureMigrationsTable();
   const applied = await getAppliedMigrations();
 
@@ -67,9 +67,13 @@ async function runMigrations() {
   console.log("All migrations applied.");
 }
 
-runMigrations()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+const isDirectRun = require.main === module;
+
+if (isDirectRun) {
+  runMigrations()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}

@@ -18,6 +18,8 @@ services:
         value: production
       - key: DATABASE_URL
         sync: false
+      - key: DATABASE_SSL
+        value: "true"
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
