@@ -44,6 +44,6 @@
     "@types/pg": "^8.11.6",
     "@types/uuid": "^9.0.8",
     "tsx": "^4.10.5",
-    "typescript": "^5.4.5"
+    "typescript": "~5.9.3"
   }
 }
