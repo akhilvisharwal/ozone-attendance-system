@@ -2,6 +2,19 @@ import fs from "fs";
 import path from "path";
 import { pool } from "../config/db";
 
+function resolveMigrationsDir(): string {
+  const candidates = [
+    path.join(__dirname, "migrations"),
+    path.join(process.cwd(), "src", "db", "migrations"),
+  ];
+
+  for (const dir of candidates) {
+    if (fs.existsSync(dir)) return dir;
+  }
+
+  throw new Error("Migrations directory not found");
+}
+
 async function ensureMigrationsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -20,7 +33,7 @@ async function runMigrations() {
   await ensureMigrationsTable();
   const applied = await getAppliedMigrations();
 
-  const migrationsDir = path.join(__dirname, "migrations");
+  const migrationsDir = resolveMigrationsDir();
   const files = fs
     .readdirSync(migrationsDir)
     .filter((f) => f.endsWith(".sql"))

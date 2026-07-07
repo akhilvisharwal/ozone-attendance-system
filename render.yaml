@@ -10,7 +10,7 @@ services:
     name: ozone-attendance-api
     runtime: node
     rootDir: backend
-    buildCommand: npm install --include=dev && npm run build && npm run migrate
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start:prod
     healthCheckPath: /api/health
     envVars:

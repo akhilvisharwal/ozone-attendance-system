@@ -52,8 +52,8 @@ This runs migrations and seeds the admin account. **Save the printed admin crede
 ### Option B — Manual
 
 - Root directory: `backend`
-- Build: `npm install && npm run build && npm run migrate`
-- Start: `npm run start:prod`
+- Build: `npm install --include=dev && npm run build`
+- Start: `npm run start:prod` (runs migrations automatically, then starts the API)
 - Health check: `/api/health`
 
 ---
