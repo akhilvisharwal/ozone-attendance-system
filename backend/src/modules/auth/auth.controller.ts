@@ -41,7 +41,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   }
   if (!employee.is_active) throw ApiError.forbidden("This account has been deactivated. Contact your administrator.");
 
-  const passwordMatches = await bcrypt.compare(password, employee.password_hash);
+  const passwordMatches = await bcrypt.compare(password.trim(), employee.password_hash);
   if (!passwordMatches) {
     const { locked, remaining } = recordFailedLogin(code);
     if (locked) {

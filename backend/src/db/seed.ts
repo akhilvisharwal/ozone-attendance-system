@@ -7,22 +7,26 @@ async function seed() {
     env.adminEmployeeId,
   ]);
 
+  const password = env.adminPassword.trim();
+  const passwordHash = await bcrypt.hash(password, 12);
+
   if ((existing.rowCount ?? 0) > 0) {
-    console.log(`Admin account '${env.adminEmployeeId}' already exists. Skipping seed.`);
-    process.exit(0);
+    await pool.query("UPDATE employees SET password_hash = $1 WHERE employee_code = $2", [
+      passwordHash,
+      env.adminEmployeeId,
+    ]);
+    console.log(`Updated administrator password for '${env.adminEmployeeId}'.`);
+  } else {
+    await pool.query(
+      `INSERT INTO employees (employee_code, name, email, password_hash, role, is_active, must_change_password)
+       VALUES ($1, $2, $3, $4, 'admin', true, false)`,
+      [env.adminEmployeeId, env.adminName, env.adminEmail, passwordHash]
+    );
+    console.log("Seeded administrator account:");
   }
 
-  const passwordHash = await bcrypt.hash(env.adminPassword, 12);
-
-  await pool.query(
-    `INSERT INTO employees (employee_code, name, email, password_hash, role, is_active, must_change_password)
-     VALUES ($1, $2, $3, $4, 'admin', true, false)`,
-    [env.adminEmployeeId, env.adminName, env.adminEmail, passwordHash]
-  );
-
-  console.log("Seeded administrator account:");
   console.log(`  Employee ID: ${env.adminEmployeeId}`);
-  console.log(`  Password:    ${env.adminPassword}`);
+  console.log(`  Password:    ${password}`);
   console.log("Please log in and change this password / rotate credentials for production use.");
 }
 
