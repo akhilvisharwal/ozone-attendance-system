@@ -5,7 +5,14 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "rewrites": [
-    { "source": "/((?!assets/|favicon|apple-touch|android-chrome|site\\.webmanifest|logo\\.png).*)", "destination": "/index.html" }
+    {
+      "source": "/api/:path*",
+      "destination": "https://ozone-attendance-api.onrender.com/api/:path*"
+    },
+    {
+      "source": "/((?!assets/|favicon|apple-touch|android-chrome|site\\.webmanifest|logo\\.png).*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {

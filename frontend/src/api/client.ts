@@ -85,6 +85,9 @@ apiClient.interceptors.response.use(
 
 export function extractErrorMessage(error: unknown, fallback = "Something went wrong. Please try again."): string {
   if (axios.isAxiosError(error)) {
+    if (!error.response) {
+      return "Cannot reach the server. Wait 30 seconds and try again — the API may be waking up.";
+    }
     const message = (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
     if (message) return message;
   }

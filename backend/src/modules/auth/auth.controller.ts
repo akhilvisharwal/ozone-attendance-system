@@ -17,7 +17,7 @@ function refreshCookieOptions() {
   return {
     httpOnly: true,
     secure: env.isProduction,
-    sameSite: (env.isProduction ? "none" : "lax") as "none" | "lax",
+    sameSite: "lax" as const,
     path: "/api/auth",
     maxAge: parseDurationMs(env.jwtRefreshExpiresIn),
   };
@@ -102,7 +102,7 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
       // token already invalid; nothing to revoke
     }
   }
-  res.clearCookie(REFRESH_COOKIE, { path: "/api/auth" });
+  res.clearCookie(REFRESH_COOKIE, { path: "/api/auth", secure: env.isProduction, sameSite: "lax" });
   res.json({ message: "Logged out" });
 });
 
