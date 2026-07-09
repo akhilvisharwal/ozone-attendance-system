@@ -12,7 +12,6 @@ describe("backup helpers", () => {
     const normalized = normalizeBackupSettings(undefined);
     assert.equal(normalized.automaticDailyBackup, false);
     assert.equal(normalized.lastBackupAt, null);
-    assert.equal(normalized.databaseCapacityGb, 1);
   });
 
   it("builds backup payload manifest counts", () => {

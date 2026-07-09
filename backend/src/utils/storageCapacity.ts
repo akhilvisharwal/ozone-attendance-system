@@ -1,22 +1,39 @@
 import { formatDatabaseSize } from "./backupHelpers";
 
-export type StorageLimitSource = "plan" | "manual" | "env" | "default";
+/**
+ * Where the maximum storage capacity value came from.
+ * - "provider": detected automatically from the hosting provider API (e.g. Render).
+ * - "env":      taken from the DATABASE_STORAGE_LIMIT environment variable.
+ * - "unavailable": could not be determined automatically (no estimate is shown).
+ */
+export type StorageLimitSource = "provider" | "env" | "unavailable";
 
 export type StorageWarningLevel = "none" | "warning" | "high" | "critical";
 
-export const DEFAULT_DATABASE_CAPACITY_BYTES = 1024 ** 3; // 1 GB
+export interface ResolvedCapacity {
+  /** Maximum storage in bytes, or null when it cannot be determined automatically. */
+  maxBytes: number | null;
+  limitSource: StorageLimitSource;
+  limitDescription: string;
+}
 
 export interface StorageCapacity {
   usedBytes: number;
   usedLabel: string;
-  maxBytes: number;
+  /** Null when capacity cannot be determined automatically. */
+  maxBytes: number | null;
   maxLabel: string;
-  remainingBytes: number;
+  /** Null when capacity cannot be determined automatically. */
+  remainingBytes: number | null;
   remainingLabel: string;
-  percentUsed: number;
+  /** Null when capacity cannot be determined automatically. */
+  percentUsed: number | null;
   limitSource: StorageLimitSource;
   limitDescription: string;
-  capacityGb: number;
+  /** Null when capacity cannot be determined automatically. */
+  capacityGb: number | null;
+  /** True when the plan capacity was detected automatically (provider or env). */
+  detected: boolean;
   warningLevel: StorageWarningLevel;
   warnings: string[];
 }
@@ -71,93 +88,63 @@ function warningsForPercent(percent: number): string[] {
   }
   if (percent >= 95) {
     messages.push(
-      `Critical: database storage usage is at ${percent}%. Cleanup or increase the configured capacity immediately.`
+      `Critical: database storage usage is at ${percent}%. Clean up disposable data immediately.`
     );
   }
   return messages;
 }
 
 /**
- * Resolve database plan capacity.
- * Priority: admin-configured GB → DATABASE_STORAGE_LIMIT env → default 1 GB.
- * Never uses local OS disk space.
+ * Build the storage capacity view model from the live PostgreSQL database size and
+ * a capacity that was resolved automatically (provider API or environment variable).
+ *
+ * When the maximum capacity is unknown, all capacity-derived values are reported as
+ * unavailable rather than estimated, so the UI never shows misleading numbers.
  */
-export function resolveDatabaseCapacityBytes(input: {
-  configuredCapacityGb?: number | null;
-  envLimit?: string | null;
-}): { maxBytes: number; capacityGb: number; limitSource: StorageLimitSource; limitDescription: string } {
-  const configuredGb =
-    typeof input.configuredCapacityGb === "number" &&
-    Number.isFinite(input.configuredCapacityGb) &&
-    input.configuredCapacityGb > 0
-      ? input.configuredCapacityGb
-      : null;
-
-  if (configuredGb != null) {
-    return {
-      maxBytes: gbToBytes(configuredGb),
-      capacityGb: configuredGb,
-      limitSource: "manual",
-      limitDescription:
-        "Maximum storage is the database plan capacity configured by an administrator (default 1 GB for Render starter plans).",
-    };
-  }
-
-  const envBytes = parseStorageLimitBytes(input.envLimit ?? undefined);
-  if (envBytes != null) {
-    return {
-      maxBytes: envBytes,
-      capacityGb: bytesToGb(envBytes),
-      limitSource: "env",
-      limitDescription:
-        "Maximum storage is taken from the DATABASE_STORAGE_LIMIT environment variable.",
-    };
-  }
-
-  return {
-    maxBytes: DEFAULT_DATABASE_CAPACITY_BYTES,
-    capacityGb: 1,
-    limitSource: "default",
-    limitDescription:
-      "Maximum storage defaults to 1 GB (typical Render PostgreSQL starter plan). Configure the plan capacity below if your plan differs.",
-  };
-}
-
 export function buildStorageCapacity(input: {
-  /** Must be PostgreSQL database size only. */
+  /** Must be the PostgreSQL database size only (pg_database_size). */
   usedBytes: number;
-  configuredCapacityGb?: number | null;
-  envLimit?: string | null;
+  resolved: ResolvedCapacity;
 }): StorageCapacity {
   const usedBytes = Math.max(0, input.usedBytes);
-  const resolved = resolveDatabaseCapacityBytes({
-    configuredCapacityGb: input.configuredCapacityGb,
-    envLimit: input.envLimit,
-  });
-  const remainingBytes = Math.max(0, resolved.maxBytes - usedBytes);
-  const percentUsed =
-    resolved.maxBytes > 0
-      ? Math.min(100, Math.round((usedBytes / resolved.maxBytes) * 1000) / 10)
-      : 0;
+  const usedLabel = formatDatabaseSize(usedBytes);
+  const { maxBytes, limitSource, limitDescription } = input.resolved;
+
+  if (maxBytes == null || maxBytes <= 0) {
+    return {
+      usedBytes,
+      usedLabel,
+      maxBytes: null,
+      maxLabel: "Not available",
+      remainingBytes: null,
+      remainingLabel: "Not available",
+      percentUsed: null,
+      limitSource: "unavailable",
+      limitDescription,
+      capacityGb: null,
+      detected: false,
+      warningLevel: "none",
+      warnings: [],
+    };
+  }
+
+  const remainingBytes = Math.max(0, maxBytes - usedBytes);
+  const percentUsed = Math.min(100, Math.round((usedBytes / maxBytes) * 1000) / 10);
   const level = warningLevelForPercent(percentUsed);
 
   return {
     usedBytes,
-    usedLabel: formatDatabaseSize(usedBytes),
-    maxBytes: resolved.maxBytes,
-    maxLabel: formatDatabaseSize(resolved.maxBytes),
+    usedLabel,
+    maxBytes,
+    maxLabel: formatDatabaseSize(maxBytes),
     remainingBytes,
     remainingLabel: formatDatabaseSize(remainingBytes),
     percentUsed,
-    limitSource: resolved.limitSource,
-    limitDescription: resolved.limitDescription,
-    capacityGb: resolved.capacityGb,
+    limitSource,
+    limitDescription,
+    capacityGb: bytesToGb(maxBytes),
+    detected: true,
     warningLevel: level,
     warnings: warningsForPercent(percentUsed),
   };
-}
-
-/** @deprecated Use parseStorageLimitBytes */
-export function resolvePlanLimitBytes(envValue: string | undefined): number | null {
-  return parseStorageLimitBytes(envValue);
 }

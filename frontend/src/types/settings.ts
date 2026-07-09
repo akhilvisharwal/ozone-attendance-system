@@ -153,8 +153,6 @@ export interface AppearanceSettings {
 export interface BackupSettings {
   automaticDailyBackup: boolean;
   lastBackupAt: string | null;
-  /** Configured PostgreSQL plan capacity in GB (default 1). */
-  databaseCapacityGb: number;
 }
 
 export type AuditRetentionDays = 30 | 60 | 90 | 365;
@@ -254,20 +252,21 @@ export interface CleanupPreviewItem {
   details: string[];
 }
 
-export type StorageLimitSource = "plan" | "manual" | "env" | "default";
+export type StorageLimitSource = "provider" | "env" | "unavailable";
 export type StorageWarningLevel = "none" | "warning" | "high" | "critical";
 
 export interface StorageCapacity {
   usedBytes: number;
   usedLabel: string;
-  maxBytes: number;
+  maxBytes: number | null;
   maxLabel: string;
-  remainingBytes: number;
+  remainingBytes: number | null;
   remainingLabel: string;
-  percentUsed: number;
+  percentUsed: number | null;
   limitSource: StorageLimitSource;
   limitDescription: string;
-  capacityGb: number;
+  capacityGb: number | null;
+  detected: boolean;
   warningLevel: StorageWarningLevel;
   warnings: string[];
 }

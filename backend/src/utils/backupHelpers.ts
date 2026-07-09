@@ -56,15 +56,9 @@ export const RESTORE_TRUNCATE_TABLES = [
 ] as const;
 
 export function normalizeBackupSettings(raw: Partial<BackupSettings> | undefined): BackupSettings {
-  const capacityRaw = raw?.databaseCapacityGb;
-  const capacityGb =
-    typeof capacityRaw === "number" && Number.isFinite(capacityRaw) && capacityRaw > 0
-      ? Math.round(capacityRaw * 1000) / 1000
-      : 1;
   return {
     automaticDailyBackup: raw?.automaticDailyBackup ?? false,
     lastBackupAt: typeof raw?.lastBackupAt === "string" ? raw.lastBackupAt : null,
-    databaseCapacityGb: Math.min(1024, Math.max(0.1, capacityGb)),
   };
 }
 

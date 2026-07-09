@@ -4,8 +4,8 @@ import { pool } from "../../config/db";
 import { env } from "../../config/env";
 import { storage } from "../../services/storage";
 import { formatDatabaseSize } from "../../utils/backupHelpers";
-import { getSettings } from "./settings.cache";
 import { buildStorageCapacity, type StorageCapacity } from "../../utils/storageCapacity";
+import { resolveDatabaseCapacity } from "../../utils/providerCapacity";
 
 export type CleanupTarget =
   | "attendance_records"
@@ -296,11 +296,10 @@ export async function getStorageBreakdown(): Promise<StorageBreakdown> {
     .filter((c) => c.id !== "selfies" && c.sizeBytes != null)
     .reduce((sum, c) => sum + (c.sizeBytes ?? 0), 0);
 
-  const backupSettings = getSettings().backup;
+  const resolvedCapacity = await resolveDatabaseCapacity();
   const capacity = buildStorageCapacity({
     usedBytes: databaseSizeBytes,
-    configuredCapacityGb: backupSettings.databaseCapacityGb,
-    envLimit: env.databaseStorageLimit || null,
+    resolved: resolvedCapacity,
   });
 
   const tableNames = [

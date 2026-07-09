@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { HardDrive, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
-import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { DataCleanupConfirmModal } from "@/components/settings/DataCleanupConfirmModal";
@@ -57,9 +56,17 @@ function CapacityBar({
   percent,
   level,
 }: {
-  percent: number;
+  percent: number | null;
   level: StorageWarningLevel;
 }) {
+  if (percent == null) {
+    return (
+      <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 text-xs text-slate-500">
+        Storage usage percentage is unavailable because the maximum capacity could not be
+        determined automatically.
+      </div>
+    );
+  }
   const width = Math.min(100, Math.max(0, percent));
   const barClass =
     level === "critical"
@@ -109,16 +116,14 @@ function ModuleBar({ percent }: { percent: number | null }) {
 
 function capacitySourceLabel(source: StorageBreakdown["capacity"]["limitSource"]): string {
   switch (source) {
-    case "manual":
-      return "Admin configured";
+    case "provider":
+      return "Detected from hosting provider";
     case "env":
       return "Environment variable";
-    case "default":
-      return "Default (1 GB)";
-    case "plan":
-      return "Database plan";
+    case "unavailable":
+      return "Not available";
     default:
-      return "Unavailable";
+      return "Not available";
   }
 }
 
@@ -126,13 +131,10 @@ export function DatabaseSettingsSection() {
   const { refresh } = useSettings();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [savingCapacity, setSavingCapacity] = useState(false);
   const [cleanupTarget, setCleanupTarget] = useState<CleanupTarget | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [status, setStatus] = useState<DatabaseStatus | null>(null);
   const [storage, setStorage] = useState<StorageBreakdown | null>(null);
-  const [capacityInput, setCapacityInput] = useState("1");
-  const [capacityError, setCapacityError] = useState<string | null>(null);
 
   const loadStatus = useCallback(async () => {
     setLoading(true);
@@ -141,7 +143,6 @@ export function DatabaseSettingsSection() {
       const data = await settingsApi.fetchDatabasePanel();
       setStatus(data.status);
       setStorage(data.storage);
-      setCapacityInput(String(data.storage.capacity.capacityGb));
     } catch (err) {
       setMessage({
         type: "error",
@@ -156,30 +157,6 @@ export function DatabaseSettingsSection() {
     void loadStatus();
   }, [loadStatus]);
 
-  async function handleSaveCapacity() {
-    const parsed = Number(capacityInput);
-    if (!Number.isFinite(parsed) || parsed < 0.1 || parsed > 1024) {
-      setCapacityError("Enter a capacity between 0.1 and 1024 GB.");
-      return;
-    }
-    setCapacityError(null);
-    setSavingCapacity(true);
-    setMessage(null);
-    try {
-      await settingsApi.updateDatabaseCapacityGb(parsed);
-      await loadStatus();
-      await refresh();
-      setMessage({ type: "success", text: "Database plan capacity updated." });
-    } catch (err) {
-      setMessage({
-        type: "error",
-        text: extractErrorMessage(err, "Failed to update database capacity."),
-      });
-    } finally {
-      setSavingCapacity(false);
-    }
-  }
-
   async function handleCleanupConfirm() {
     if (!cleanupTarget) return;
     setBusy(true);
@@ -188,7 +165,6 @@ export function DatabaseSettingsSection() {
       const result = await settingsApi.runDataCleanup(cleanupTarget, "DELETE");
       setStatus(result.status);
       setStorage(result.storage);
-      setCapacityInput(String(result.storage.capacity.capacityGb));
       await refresh();
       setCleanupTarget(null);
       setMessage({
@@ -221,8 +197,9 @@ export function DatabaseSettingsSection() {
     );
   }
 
-  const capacityTone =
-    capacity.warningLevel === "critical"
+  const capacityTone = !capacity.detected
+    ? "default"
+    : capacity.warningLevel === "critical"
       ? "danger"
       : capacity.warningLevel === "high" || capacity.warningLevel === "warning"
         ? "warning"
@@ -243,7 +220,7 @@ export function DatabaseSettingsSection() {
 
       <SettingsSection
         title="Storage Capacity"
-        description="PostgreSQL database size against your configured database plan capacity. Local disk space is never used."
+        description="Live PostgreSQL database size measured against the plan capacity detected automatically from the hosting provider. Local disk space is never used."
       >
         <div className="mb-3 flex justify-end">
           <Button
@@ -252,11 +229,19 @@ export function DatabaseSettingsSection() {
             size="sm"
             icon={<RefreshCw className="h-4 w-4" />}
             onClick={() => void loadStatus()}
-            disabled={loading || busy || savingCapacity}
+            disabled={loading || busy}
           >
             Refresh
           </Button>
         </div>
+
+        {!capacity.detected && (
+          <Alert variant="info" className="mb-4">
+            Maximum storage capacity could not be determined automatically. The current database
+            size below is live and accurate, but the maximum, remaining, and percentage cannot be
+            shown without a real capacity value.
+          </Alert>
+        )}
 
         <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
           <div className="mb-4 flex items-start gap-3">
@@ -273,10 +258,10 @@ export function DatabaseSettingsSection() {
             <StatCard
               label="Current database size"
               value={storage.databaseSizeLabel}
-              hint="From PostgreSQL pg_database_size"
+              hint="From PostgreSQL pg_database_size (live)"
             />
             <StatCard
-              label="Maximum plan capacity"
+              label="Maximum storage"
               value={capacity.maxLabel}
               hint={capacitySourceLabel(capacity.limitSource)}
             />
@@ -284,50 +269,23 @@ export function DatabaseSettingsSection() {
               label="Remaining available"
               value={capacity.remainingLabel}
               tone={capacityTone}
-              hint="Plan capacity minus current database size"
+              hint={
+                capacity.detected
+                  ? "Maximum storage minus current database size"
+                  : "Requires a known maximum storage"
+              }
             />
             <StatCard
               label="Storage used"
-              value={`${capacity.percentUsed}%`}
+              value={capacity.percentUsed == null ? "Not available" : `${capacity.percentUsed}%`}
               tone={capacityTone}
-              hint="Progress against plan capacity"
+              hint={
+                capacity.detected ? "Progress against maximum storage" : "Requires a known maximum storage"
+              }
             />
           </div>
 
           <CapacityBar percent={capacity.percentUsed} level={capacity.warningLevel} />
-        </div>
-
-        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-sm font-medium text-slate-900">Configure database plan capacity</p>
-          <p className="mt-1 text-xs text-slate-500">
-            Set this to your Render PostgreSQL plan size (for example 1 GB). Remaining storage and the
-            progress bar are calculated from this value. Default is 1 GB.
-          </p>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="w-full sm:max-w-[12rem]">
-              <Input
-                label="Capacity (GB)"
-                type="number"
-                min={0.1}
-                max={1024}
-                step={0.1}
-                value={capacityInput}
-                onChange={(e) => {
-                  setCapacityInput(e.target.value);
-                  setCapacityError(null);
-                }}
-                error={capacityError ?? undefined}
-              />
-            </div>
-            <Button
-              type="button"
-              onClick={() => void handleSaveCapacity()}
-              isLoading={savingCapacity}
-              disabled={busy}
-            >
-              Save capacity
-            </Button>
-          </div>
         </div>
       </SettingsSection>
 

@@ -14,14 +14,22 @@ export function Alert({
   variant = "info",
   children,
   onClose,
+  className,
 }: {
   variant?: AlertVariant;
   children: ReactNode;
   onClose?: () => void;
+  className?: string;
 }) {
   const { wrapper, icon: Icon } = styles[variant];
   return (
-    <div className={clsx("flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm ring-1 ring-inset", wrapper)}>
+    <div
+      className={clsx(
+        "flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm ring-1 ring-inset",
+        wrapper,
+        className
+      )}
+    >
       <Icon className="mt-0.5 h-4 w-4 flex-shrink-0" />
       <div className="flex-1">{children}</div>
       {onClose && (

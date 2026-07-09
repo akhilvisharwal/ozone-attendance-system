@@ -126,8 +126,12 @@ describe("storage cleanup integration", { skip: process.env.SKIP_DB_TESTS === "1
     const storage = await getStorageBreakdown();
     assert.ok(storage.databaseSizeBytes > 0);
     assert.ok(storage.capacity);
-    assert.ok(["manual", "env", "default", "plan"].includes(storage.capacity.limitSource));
-    assert.ok(storage.capacity.maxBytes > 0);
+    assert.ok(["provider", "env", "unavailable"].includes(storage.capacity.limitSource));
+    if (storage.capacity.detected) {
+      assert.ok((storage.capacity.maxBytes ?? 0) > 0);
+    } else {
+      assert.equal(storage.capacity.maxBytes, null);
+    }
     assert.equal(storage.capacity.usedBytes, storage.databaseSizeBytes);
     assert.ok(storage.categories.some((c) => c.id === "settings"));
     assert.ok(storage.categories.some((c) => c.id === "location"));

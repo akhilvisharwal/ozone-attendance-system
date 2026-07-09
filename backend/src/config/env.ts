@@ -41,10 +41,22 @@ export const env = {
 
   databaseUrl: required("DATABASE_URL"),
   /**
-   * Optional fixed database plan limit (bytes or with unit suffix: MB/GB/TB).
-   * When unset, the Database panel reports available server disk space instead.
+   * Optional explicit database plan limit (bytes or with unit suffix: MB/GB/TB).
+   * Used only as a fallback when the hosting provider capacity cannot be detected
+   * automatically. When unset and no provider capacity is available, the Database
+   * panel reports the maximum as "Not available" instead of estimating.
    */
   databaseStorageLimit: process.env.DATABASE_STORAGE_LIMIT ?? "",
+  /**
+   * Render API key used to auto-detect the PostgreSQL plan's allocated disk size
+   * via GET /v1/postgres/{id}. When unset, provider auto-detection is skipped.
+   */
+  renderApiKey: process.env.RENDER_API_KEY ?? "",
+  /**
+   * Optional Render Postgres instance id (e.g. "dpg-..."). When unset, it is parsed
+   * from the DATABASE_URL host.
+   */
+  renderPostgresId: process.env.RENDER_POSTGRES_ID ?? "",
 
   jwtAccessSecret,
   jwtRefreshSecret,

@@ -312,7 +312,6 @@ export const backupSettingsSchema = z
   .object({
     automaticDailyBackup: z.boolean(),
     lastBackupAt: z.union([z.string().datetime(), z.null()]).optional(),
-    databaseCapacityGb: z.number().min(0.1).max(1024).optional(),
   })
   .transform((value) => normalizeBackupSettings(value));
 

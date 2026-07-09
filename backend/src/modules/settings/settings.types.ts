@@ -103,10 +103,10 @@ export interface NotificationSettings {
 }
 
 export interface BackupSettings {
+  // NOTE: database plan capacity is detected automatically (provider API / env),
+  // it is no longer stored in settings.
   automaticDailyBackup: boolean;
   lastBackupAt: string | null;
-  /** Configured PostgreSQL plan capacity in GB (default 1). Used by the Database panel. */
-  databaseCapacityGb: number;
 }
 
 export type AuditRetentionDays = 30 | 60 | 90 | 365;
@@ -238,7 +238,6 @@ export function buildDefaultSettings(): AppSettings {
     backup: {
       automaticDailyBackup: false,
       lastBackupAt: null,
-      databaseCapacityGb: 1,
     },
     audit: {
       retentionDays: 90,

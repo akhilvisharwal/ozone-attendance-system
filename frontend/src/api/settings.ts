@@ -104,14 +104,6 @@ export async function updateBackupSettings(value: BackupSettings): Promise<AppSe
   return updateSettingsCategory("backup", value);
 }
 
-export async function updateDatabaseCapacityGb(capacityGb: number): Promise<AppSettings> {
-  const current = await fetchSettings();
-  return updateSettingsCategory("backup", {
-    ...current.backup,
-    databaseCapacityGb: capacityGb,
-  });
-}
-
 export async function fetchPublicSettings(): Promise<PublicSettings> {
   const res = await apiClient.get<PublicSettings>("/settings/public");
   return res.data;
