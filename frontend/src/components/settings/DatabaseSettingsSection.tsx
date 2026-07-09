@@ -1,27 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { HardDrive, RefreshCw, Trash2 } from "lucide-react";
+import { HardDrive, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { SettingsSection } from "@/components/settings/SettingsSection";
-import { DataCleanupConfirmModal } from "@/components/settings/DataCleanupConfirmModal";
+import { StorageManagementSection } from "@/components/settings/StorageManagementSection";
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
 import type {
-  CleanupTarget,
   DatabaseStatus,
   StorageBreakdown,
   StorageWarningLevel,
 } from "@/types/settings";
-
-const CLEANUP_ORDER: CleanupTarget[] = [
-  "attendance_records",
-  "attendance_selfies",
-  "attendance_location",
-  "attendance_bundle",
-  "audit_logs",
-];
 
 function StatCard({
   label,
@@ -111,7 +102,22 @@ function ModuleBar({ percent }: { percent: number }) {
   );
 }
 
-function storageKindLabel(kind: StorageBreakdown["categories"][number]["storageKind"]): string {
+function formatPercentPair(
+  applicationPercent: number,
+  planPercent: number | null
+): string {
+  const app = `${applicationPercent}% of application data`;
+  if (planPercent == null) return app;
+  return `${app} · ${planPercent}% of plan`;
+}
+
+function storageKindLabel(
+  kind: StorageBreakdown["categories"][number]["storageKind"],
+  moduleId: string
+): string {
+  if (moduleId === "employees" || moduleId === "sites" || moduleId === "tasks") {
+    return "PostgreSQL + uploaded files";
+  }
   return kind === "postgresql" ? "PostgreSQL" : "Uploaded files";
 }
 
@@ -131,8 +137,6 @@ function capacitySourceLabel(source: StorageBreakdown["capacity"]["limitSource"]
 export function DatabaseSettingsSection() {
   const { refresh } = useSettings();
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [cleanupTarget, setCleanupTarget] = useState<CleanupTarget | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [status, setStatus] = useState<DatabaseStatus | null>(null);
   const [storage, setStorage] = useState<StorageBreakdown | null>(null);
@@ -158,36 +162,15 @@ export function DatabaseSettingsSection() {
     void loadStatus();
   }, [loadStatus]);
 
-  async function handleCleanupConfirm() {
-    if (!cleanupTarget) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      const result = await settingsApi.runDataCleanup(cleanupTarget, "DELETE");
-      setStatus(result.status);
-      setStorage(result.storage);
-      await refresh();
-      setCleanupTarget(null);
-      setMessage({
-        type: "success",
-        text: `Cleanup completed. ${result.result.deletedRecords.toLocaleString()} record(s) removed${
-          result.result.deletedFiles
-            ? ` and ${result.result.deletedFiles.toLocaleString()} file(s) deleted`
-            : ""
-        }.`,
-      });
-    } catch (err) {
-      setCleanupTarget(null);
-      setMessage({
-        type: "error",
-        text: extractErrorMessage(err, "Cleanup failed. Please try again."),
-      });
-    } finally {
-      setBusy(false);
-    }
+  async function handleStorageUpdated(next: {
+    status: DatabaseStatus;
+    storage: StorageBreakdown;
+  }) {
+    setStatus(next.status);
+    setStorage(next.storage);
+    await refresh();
   }
 
-  const cleanupPreview = cleanupTarget && storage ? storage.cleanupPreview[cleanupTarget] : null;
   const capacity = storage?.capacity;
 
   if (loading || !status || !storage || !capacity) {
@@ -207,7 +190,7 @@ export function DatabaseSettingsSection() {
         : "success";
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {message && <Alert variant={message.type === "error" ? "error" : "success"}>{message.text}</Alert>}
 
       {capacity.warnings.map((warning) => (
@@ -230,7 +213,7 @@ export function DatabaseSettingsSection() {
             size="sm"
             icon={<RefreshCw className="h-4 w-4" />}
             onClick={() => void loadStatus()}
-            disabled={loading || busy}
+            disabled={loading}
           >
             Refresh
           </Button>
@@ -311,13 +294,34 @@ export function DatabaseSettingsSection() {
 
       <SettingsSection
         title="Storage Breakdown"
-        description="Live PostgreSQL table sizes (pg_total_relation_size) plus real uploaded file sizes on disk. Percentages are of total storage used (database + files)."
+        description="Application module storage measured from live PostgreSQL table sizes (pg_total_relation_size) and real uploaded file sizes on disk."
       >
+        <Alert variant="info" className="mb-4">
+          PostgreSQL reserves additional internal storage automatically for indexes, system
+          catalogs, transaction metadata, TOAST tables, and free space. That internal storage is
+          not user data and is excluded from the application breakdown below.
+          {storage.internalDatabaseBytes > 0 && (
+            <>
+              {" "}
+              Estimated internal PostgreSQL storage:{" "}
+              <span className="font-medium text-slate-800">
+                {storage.internalDatabaseLabel}
+              </span>{" "}
+              ({storage.internalDatabasePercent}% of current database size).
+            </>
+          )}
+        </Alert>
+
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Application data"
+            value={storage.applicationDataLabel}
+            hint="Tracked module tables + referenced upload files"
+          />
           <StatCard
             label="PostgreSQL database"
             value={storage.databaseSizeLabel}
-            hint="pg_database_size (live)"
+            hint="pg_database_size (live, includes internal storage)"
           />
           <StatCard
             label="Uploaded files"
@@ -325,13 +329,9 @@ export function DatabaseSettingsSection() {
             hint="Sum of real file sizes in uploads/"
           />
           <StatCard
-            label="Total storage used"
+            label="Total footprint"
             value={storage.totalStorageUsedLabel}
-            hint="Database size + uploaded files"
-          />
-          <StatCard
-            label="Capacity source"
-            value={capacitySourceLabel(capacity.limitSource)}
+            hint="Database size + uploaded files on disk"
           />
         </div>
 
@@ -351,12 +351,16 @@ export function DatabaseSettingsSection() {
                   <p className="text-xs text-slate-500">
                     {category.recordCount.toLocaleString()}{" "}
                     {category.storageKind === "files" ? "file" : "record"}
-                    {category.recordCount === 1 ? "" : "s"} · {category.percentOfTotal}% of total ·{" "}
-                    {storageKindLabel(category.storageKind)}
+                    {category.recordCount === 1 ? "" : "s"} ·{" "}
+                    {formatPercentPair(
+                      category.percentOfApplicationData,
+                      category.percentOfPlanCapacity
+                    )}{" "}
+                    · {storageKindLabel(category.storageKind, category.id)}
                   </p>
                 </div>
               </div>
-              <ModuleBar percent={category.percentOfTotal} />
+              <ModuleBar percent={category.percentOfApplicationData} />
             </div>
           ))}
         </div>
@@ -368,7 +372,8 @@ export function DatabaseSettingsSection() {
                 <th className="px-3 py-2 font-semibold">Table</th>
                 <th className="px-3 py-2 font-semibold">Records</th>
                 <th className="px-3 py-2 font-semibold">Size</th>
-                <th className="px-3 py-2 font-semibold">% of total</th>
+                <th className="px-3 py-2 font-semibold">% app data</th>
+                <th className="px-3 py-2 font-semibold">% plan</th>
               </tr>
             </thead>
             <tbody>
@@ -377,7 +382,10 @@ export function DatabaseSettingsSection() {
                   <td className="px-3 py-2 font-medium text-slate-800">{table.name}</td>
                   <td className="px-3 py-2 text-slate-600">{table.recordCount.toLocaleString()}</td>
                   <td className="px-3 py-2 text-slate-600">{table.sizeLabel}</td>
-                  <td className="px-3 py-2 text-slate-600">{table.percentOfTotal}%</td>
+                  <td className="px-3 py-2 text-slate-600">{table.percentOfApplicationData}%</td>
+                  <td className="px-3 py-2 text-slate-600">
+                    {table.percentOfPlanCapacity == null ? "—" : `${table.percentOfPlanCapacity}%`}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -385,56 +393,10 @@ export function DatabaseSettingsSection() {
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        title="Data Cleanup"
-        description="Safely remove disposable attendance media, location history, or audit logs. Protected configuration data cannot be deleted here."
-      >
-        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Employees, sites, company settings, holidays, weekly offs, leave settings, and system
-          configuration are protected and cannot be deleted from this panel.
-        </div>
-        <div className="space-y-3">
-          {CLEANUP_ORDER.map((target) => {
-            const preview = storage.cleanupPreview[target];
-            return (
-              <div
-                key={target}
-                className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-900">{preview.label}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">{preview.description}</p>
-                  <p className="mt-1 text-xs font-medium text-slate-700">
-                    {preview.affectedRecords.toLocaleString()} record
-                    {preview.affectedRecords === 1 ? "" : "s"} affected
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="danger"
-                  size="sm"
-                  icon={<Trash2 className="h-4 w-4" />}
-                  onClick={() => setCleanupTarget(target)}
-                  disabled={busy || preview.affectedRecords === 0}
-                >
-                  Delete
-                </Button>
-              </div>
-            );
-          })}
-        </div>
-      </SettingsSection>
-
-      <DataCleanupConfirmModal
-        open={Boolean(cleanupTarget && cleanupPreview)}
-        title={cleanupPreview?.label ?? "Confirm cleanup"}
-        description={cleanupPreview?.description ?? ""}
-        details={cleanupPreview?.details ?? []}
-        affectedRecords={cleanupPreview?.affectedRecords ?? 0}
-        onCancel={() => {
-          if (!busy) setCleanupTarget(null);
-        }}
-        onConfirm={handleCleanupConfirm}
+      <StorageManagementSection
+        storage={storage}
+        status={status}
+        onStorageUpdated={(next) => void handleStorageUpdated(next)}
       />
     </div>
   );

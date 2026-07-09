@@ -3,24 +3,63 @@ import { AlertTriangle } from "lucide-react";
 import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import type { CleanupCategorySummary } from "@/types/settings";
 
-export function DataCleanupConfirmModal({
-  open,
-  title,
-  description,
-  details,
-  affectedRecords,
-  onCancel,
-  onConfirm,
-}: {
+type LegacyProps = {
   open: boolean;
   title: string;
   description: string;
   details: string[];
   affectedRecords: number;
+  category?: never;
   onCancel: () => void;
   onConfirm: () => void | Promise<void>;
-}) {
+};
+
+type CategoryProps = {
+  open: boolean;
+  category: CleanupCategorySummary | null;
+  title?: never;
+  description?: never;
+  details?: never;
+  affectedRecords?: never;
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+};
+
+export function DataCleanupConfirmModal(props: LegacyProps | CategoryProps) {
+  const { open, onCancel, onConfirm } = props;
+  const category = "category" in props ? props.category : null;
+  const title =
+    "title" in props && props.title
+      ? props.title
+      : category
+        ? `Delete ${category.label}`
+        : "Confirm cleanup";
+  const description =
+    "description" in props && props.description
+      ? props.description
+      : category?.description ?? "";
+  const details =
+    "details" in props && props.details
+      ? props.details
+      : category
+        ? [
+            `${category.recordCount.toLocaleString()} record${category.recordCount === 1 ? "" : "s"}`,
+            ...(category.fileCount > 0
+              ? [
+                  `${category.fileCount.toLocaleString()} file${category.fileCount === 1 ? "" : "s"}`,
+                ]
+              : []),
+            `Storage used: ${category.totalLabel}`,
+          ]
+        : [];
+  const affectedRecords =
+    "affectedRecords" in props && props.affectedRecords != null
+      ? props.affectedRecords
+      : category?.recordCount ?? 0;
+  const canExecute = category ? category.canDelete : affectedRecords > 0;
+
   const [saving, setSaving] = useState(false);
   const [typed, setTyped] = useState("");
 
@@ -37,7 +76,7 @@ export function DataCleanupConfirmModal({
   }
 
   async function handleConfirm() {
-    if (saving || typed !== "DELETE") return;
+    if (saving || typed !== "DELETE" || !canExecute) return;
     setSaving(true);
     try {
       await onConfirm();
@@ -46,7 +85,7 @@ export function DataCleanupConfirmModal({
     }
   }
 
-  const canConfirm = typed === "DELETE" && !saving;
+  const canConfirm = typed === "DELETE" && !saving && canExecute;
 
   return (
     <Modal
@@ -91,9 +130,23 @@ export function DataCleanupConfirmModal({
           <div className="min-w-0 space-y-2">
             <p className="text-sm leading-snug text-slate-700">{description}</p>
             <p className="text-sm font-semibold text-red-700">
-              {affectedRecords.toLocaleString()} record{affectedRecords === 1 ? "" : "s"} will be
-              permanently removed.
+              {affectedRecords.toLocaleString()} record{affectedRecords === 1 ? "" : "s"}
+              {category && category.fileCount > 0 &&
+                ` and ${category.fileCount.toLocaleString()} file${category.fileCount === 1 ? "" : "s"}`}{" "}
+              will be permanently removed.
             </p>
+            {category && category.totalBytes > 0 && (
+              <p className="text-sm font-medium text-slate-800">
+                Storage used: {category.totalLabel}
+                {(category.databaseBytes > 0 || category.fileBytes > 0) && (
+                  <>
+                    {" "}
+                    ({category.databaseLabel} database
+                    {category.fileBytes > 0 ? `, ${category.fileLabel} files` : ""})
+                  </>
+                )}
+              </p>
+            )}
             {details.length > 0 && (
               <ul className="list-disc space-y-1 pl-4 text-xs text-slate-600">
                 {details.map((item) => (
@@ -101,15 +154,17 @@ export function DataCleanupConfirmModal({
                 ))}
               </ul>
             )}
-            <p className="text-xs text-slate-500">
-              Employees, sites, company settings, holidays, weekly offs, leave settings, and system
-              configuration are never deleted by this action.
-            </p>
+            {category && (
+              <p className="text-xs text-slate-500">
+                PostgreSQL rows and linked upload files are deleted together. Live database and
+                storage statistics refresh immediately after cleanup.
+              </p>
+            )}
           </div>
         </div>
 
         <Input
-          label='Type DELETE to confirm'
+          label="Type DELETE to confirm"
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           placeholder="DELETE"

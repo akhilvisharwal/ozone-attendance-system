@@ -24,16 +24,29 @@ export interface StorageCategoryDraft {
   label: string;
   recordCount: number;
   sizeBytes: number;
+  postgresBytes: number;
+  fileBytes: number;
   storageKind: StorageKind;
+  description: string;
+}
+
+export interface ApplicationModuleDefinition {
+  id: string;
+  label: string;
+  postgresCategoryIds: string[];
+  fileCategoryIds: string[];
   description: string;
 }
 
 const UPLOAD_ROOT = path.join(process.cwd(), env.uploadDir);
 
-/** Maps PostgreSQL table names to analytics category ids. */
-const TABLE_CATEGORY: Record<string, string> = {
+/** Maps PostgreSQL table names to internal analytics category ids. */
+export const TABLE_CATEGORY: Record<string, string> = {
   attendance: "attendance",
+  attendance_daily_overrides: "attendance",
+  attendance_daily_override_employees: "attendance",
   employees: "employees",
+  employee_designations: "employees",
   sites: "sites",
   leave_requests: "leave",
   company_holidays: "holidays",
@@ -44,8 +57,15 @@ const TABLE_CATEGORY: Record<string, string> = {
   task_comments: "tasks",
   task_extension_requests: "tasks",
   task_reminder_log: "tasks",
-  app_notifications: "tasks",
+  app_notifications: "notifications",
 };
+
+/** Tables excluded from the application breakdown (auth, migrations, legacy). */
+export const EXCLUDED_TABLES = new Set(["refresh_tokens", "schema_migrations", "incentives"]);
+
+export function isApplicationTable(name: string): boolean {
+  return TABLE_CATEGORY[name] != null;
+}
 
 const CATEGORY_META: Record<
   string,
@@ -54,12 +74,12 @@ const CATEGORY_META: Record<
   attendance: {
     label: "Attendance",
     storageKind: "postgresql",
-    description: "PostgreSQL storage for the attendance table (pg_total_relation_size).",
+    description: "PostgreSQL storage for attendance tables (pg_total_relation_size).",
   },
   employees: {
     label: "Employees",
     storageKind: "postgresql",
-    description: "PostgreSQL storage for the employees table (includes soft-deleted rows).",
+    description: "PostgreSQL storage for employees and designations.",
   },
   sites: {
     label: "Sites",
@@ -90,23 +110,17 @@ const CATEGORY_META: Record<
     label: "Tasks",
     storageKind: "postgresql",
     description:
-      "PostgreSQL storage for tasks, comments, extension requests, notifications, and attachment metadata.",
+      "PostgreSQL storage for tasks, comments, extension requests, and attachment metadata.",
   },
-  other_db: {
-    label: "Other Database",
+  notifications: {
+    label: "Notifications",
     storageKind: "postgresql",
-    description:
-      "Remaining PostgreSQL tables and internal database overhead (indexes, catalogs, free space).",
+    description: "PostgreSQL storage for in-app notifications.",
   },
   selfies: {
     label: "Selfies",
     storageKind: "files",
-    description: "Check-in selfie image files referenced by attendance records.",
-  },
-  site_photos: {
-    label: "Site Photos",
-    storageKind: "files",
-    description: "Site visit photo files referenced by attendance records.",
+    description: "Check-in selfie and site visit photo files referenced by attendance records.",
   },
   profile_photos: {
     label: "Profile Photos",
@@ -123,12 +137,81 @@ const CATEGORY_META: Record<
     storageKind: "files",
     description: "Task attachment files stored in uploads.",
   },
-  unreferenced_files: {
-    label: "Unreferenced Files",
-    storageKind: "files",
-    description: "Files present in uploads that are not referenced by any database record.",
-  },
 };
+
+/** User-facing application modules shown in the Database panel. */
+export const APPLICATION_MODULES: ApplicationModuleDefinition[] = [
+  {
+    id: "employees",
+    label: "Employees",
+    postgresCategoryIds: ["employees"],
+    fileCategoryIds: ["profile_photos"],
+    description: "Employee records, designations, and profile photos.",
+  },
+  {
+    id: "attendance",
+    label: "Attendance",
+    postgresCategoryIds: ["attendance"],
+    fileCategoryIds: [],
+    description: "Attendance records and daily override rules.",
+  },
+  {
+    id: "selfies",
+    label: "Selfies",
+    postgresCategoryIds: [],
+    fileCategoryIds: ["selfies"],
+    description: "Check-in selfie and site visit photo files.",
+  },
+  {
+    id: "sites",
+    label: "Sites",
+    postgresCategoryIds: ["sites"],
+    fileCategoryIds: ["site_images"],
+    description: "Site records and cover images.",
+  },
+  {
+    id: "leave",
+    label: "Leave",
+    postgresCategoryIds: ["leave"],
+    fileCategoryIds: [],
+    description: "Leave request records.",
+  },
+  {
+    id: "holidays",
+    label: "Holidays",
+    postgresCategoryIds: ["holidays"],
+    fileCategoryIds: [],
+    description: "Company holiday records.",
+  },
+  {
+    id: "tasks",
+    label: "Tasks",
+    postgresCategoryIds: ["tasks"],
+    fileCategoryIds: ["task_documents"],
+    description: "Task records, comments, and attachment files.",
+  },
+  {
+    id: "audit",
+    label: "Audit Logs",
+    postgresCategoryIds: ["audit"],
+    fileCategoryIds: [],
+    description: "Administrative audit log entries.",
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    postgresCategoryIds: ["settings"],
+    fileCategoryIds: [],
+    description: "Application configuration stored in PostgreSQL.",
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    postgresCategoryIds: ["notifications"],
+    fileCategoryIds: [],
+    description: "In-app notification records.",
+  },
+];
 
 export function percentOf(part: number, total: number): number {
   if (total <= 0 || part <= 0) return 0;
@@ -227,7 +310,11 @@ export async function collectReferencedFilePaths(): Promise<{
   for (const row of attendanceRes.rows) {
     const selfie = normalizeRelativePath(row.check_in_selfie_path);
     if (selfie) selfies.push(selfie);
-    sitePhotos.push(...parseSitePhotoPaths(row.site_photo_paths).map((p) => normalizeRelativePath(p)!).filter(Boolean));
+    sitePhotos.push(
+      ...parseSitePhotoPaths(row.site_photo_paths)
+        .map((p) => normalizeRelativePath(p)!)
+        .filter(Boolean)
+    );
   }
 
   const profilePhotos = employeesRes.rows
@@ -299,82 +386,64 @@ export async function measureUploadDirectoryBytes(
   return { totalBytes, unreferencedBytes, unreferencedCount };
 }
 
-export function buildPostgresCategories(tables: TableStat[], databaseSizeBytes: number): StorageCategoryDraft[] {
-  const grouped = new Map<string, { sizeBytes: number; recordCount: number; tables: string[] }>();
+export function buildPostgresCategories(tables: TableStat[]): StorageCategoryDraft[] {
+  const grouped = new Map<string, { sizeBytes: number; recordCount: number }>();
 
   for (const table of tables) {
-    const categoryId = TABLE_CATEGORY[table.name] ?? "other_db";
-    const current = grouped.get(categoryId) ?? { sizeBytes: 0, recordCount: 0, tables: [] };
+    const categoryId = TABLE_CATEGORY[table.name];
+    if (!categoryId) continue;
+    const current = grouped.get(categoryId) ?? { sizeBytes: 0, recordCount: 0 };
     current.sizeBytes += table.sizeBytes;
     current.recordCount += table.recordCount;
-    current.tables.push(table.name);
     grouped.set(categoryId, current);
   }
 
-  const tableBytesSum = tables.reduce((sum, t) => sum + t.sizeBytes, 0);
-  const overhead = Math.max(0, databaseSizeBytes - tableBytesSum);
-  if (overhead > 0) {
-    const other = grouped.get("other_db") ?? { sizeBytes: 0, recordCount: 0, tables: [] };
-    other.sizeBytes += overhead;
-    grouped.set("other_db", other);
-  }
-
   const order = [
-    "attendance",
     "employees",
+    "attendance",
     "sites",
     "leave",
     "holidays",
+    "tasks",
     "audit",
     "settings",
-    "tasks",
-    "other_db",
+    "notifications",
   ];
 
   return order
-    .filter((id) => (grouped.get(id)?.sizeBytes ?? 0) > 0 || id === "other_db")
     .map((id) => {
-      const data = grouped.get(id) ?? { sizeBytes: 0, recordCount: 0, tables: [] };
+      const data = grouped.get(id) ?? { sizeBytes: 0, recordCount: 0 };
       const meta = CATEGORY_META[id];
       return {
         id,
         label: meta.label,
         recordCount: data.recordCount,
         sizeBytes: data.sizeBytes,
+        postgresBytes: data.sizeBytes,
+        fileBytes: 0,
         storageKind: meta.storageKind,
         description: meta.description,
       };
     })
-    .filter((c) => c.sizeBytes > 0);
+    .filter((c) => c.sizeBytes > 0 || c.recordCount > 0);
 }
 
 export async function buildFileCategories(
   referenced: Awaited<ReturnType<typeof collectReferencedFilePaths>>
 ): Promise<StorageCategoryDraft[]> {
-  const [selfies, sitePhotos, profilePhotos, siteImages, taskDocuments, disk] =
-    await Promise.all([
-      sumReferencedFileSizes(referenced.selfies),
-      sumReferencedFileSizes(referenced.sitePhotos),
+  const [selfieStats, profilePhotos, siteImages, taskDocuments] = await Promise.all([
+      sumReferencedFileSizes([...referenced.selfies, ...referenced.sitePhotos]),
       sumReferencedFileSizes(referenced.profilePhotos),
       sumReferencedFileSizes(referenced.siteImages),
       sumReferencedFileSizes(referenced.taskDocuments),
-      measureUploadDirectoryBytes(referenced.allReferenced),
     ]);
 
   const drafts: Array<{ id: string; stat: FileGroupStat }> = [
-    { id: "selfies", stat: selfies },
-    { id: "site_photos", stat: sitePhotos },
+    { id: "selfies", stat: selfieStats },
     { id: "profile_photos", stat: profilePhotos },
     { id: "site_images", stat: siteImages },
     { id: "task_documents", stat: taskDocuments },
   ];
-
-  if (disk.unreferencedCount > 0) {
-    drafts.push({
-      id: "unreferenced_files",
-      stat: { bytes: disk.unreferencedBytes, fileCount: disk.unreferencedCount, missingFiles: 0 },
-    });
-  }
 
   return drafts
     .filter((d) => d.stat.bytes > 0 || d.stat.fileCount > 0)
@@ -389,33 +458,118 @@ export async function buildFileCategories(
         label: meta.label,
         recordCount: d.stat.fileCount,
         sizeBytes: d.stat.bytes,
+        postgresBytes: 0,
+        fileBytes: d.stat.bytes,
         storageKind: meta.storageKind,
         description: meta.description + missingNote,
       };
     });
 }
 
+export function buildApplicationModules(
+  postgresCategories: StorageCategoryDraft[],
+  fileCategories: StorageCategoryDraft[]
+): StorageCategoryDraft[] {
+  const byId = new Map<string, StorageCategoryDraft>();
+  for (const category of [...postgresCategories, ...fileCategories]) {
+    byId.set(category.id, category);
+  }
+
+  return APPLICATION_MODULES.map((module) => {
+    let sizeBytes = 0;
+    let postgresBytes = 0;
+    let fileBytes = 0;
+    let recordCount = 0;
+    const storageKinds = new Set<StorageKind>();
+
+    for (const postgresId of module.postgresCategoryIds) {
+      const category = byId.get(postgresId);
+      if (!category) continue;
+      sizeBytes += category.sizeBytes;
+      postgresBytes += category.sizeBytes;
+      recordCount += category.recordCount;
+      storageKinds.add(category.storageKind);
+    }
+    for (const fileId of module.fileCategoryIds) {
+      const category = byId.get(fileId);
+      if (!category) continue;
+      sizeBytes += category.sizeBytes;
+      fileBytes += category.sizeBytes;
+      recordCount += category.recordCount;
+      storageKinds.add(category.storageKind);
+    }
+
+    const storageKind: StorageKind =
+      storageKinds.size === 1
+        ? (storageKinds.values().next().value as StorageKind)
+        : "postgresql";
+
+    return {
+      id: module.id,
+      label: module.label,
+      recordCount,
+      sizeBytes,
+      postgresBytes,
+      fileBytes,
+      storageKind,
+      description: module.description,
+    };
+  }).filter((module) => module.sizeBytes > 0 || module.recordCount > 0);
+}
+
+export function computeInternalDatabaseBytes(
+  databaseSizeBytes: number,
+  applicationPostgresBytes: number
+): number {
+  return Math.max(0, databaseSizeBytes - applicationPostgresBytes);
+}
+
+export interface FinalizedCategory extends StorageCategoryDraft {
+  sizeLabel: string;
+  percentOfApplicationData: number;
+  percentOfPlanCapacity: number | null;
+}
+
 export function finalizeCategories(
   drafts: StorageCategoryDraft[],
-  totalStorageUsedBytes: number
-): Array<
-  StorageCategoryDraft & { sizeLabel: string; percentOfTotal: number }
-> {
+  applicationDataBytes: number,
+  planCapacityBytes: number | null
+): FinalizedCategory[] {
   return drafts.map((draft) => ({
     ...draft,
     sizeLabel: formatDatabaseSize(draft.sizeBytes),
-    percentOfTotal: percentOf(draft.sizeBytes, totalStorageUsedBytes),
+    percentOfApplicationData: percentOf(draft.sizeBytes, applicationDataBytes),
+    percentOfPlanCapacity:
+      draft.postgresBytes > 0 && planCapacityBytes != null && planCapacityBytes > 0
+        ? percentOf(draft.postgresBytes, planCapacityBytes)
+        : null,
   }));
+}
+
+export interface FinalizedTableStat extends TableStat {
+  sizeLabel: string;
+  percentOfApplicationData: number;
+  percentOfPlanCapacity: number | null;
+  storageKind: StorageKind;
+  moduleId: string;
 }
 
 export function finalizeTables(
   tables: TableStat[],
-  totalStorageUsedBytes: number
-): Array<TableStat & { sizeLabel: string; percentOfTotal: number; storageKind: StorageKind }> {
-  return tables.map((table) => ({
-    ...table,
-    sizeLabel: formatDatabaseSize(table.sizeBytes),
-    percentOfTotal: percentOf(table.sizeBytes, totalStorageUsedBytes),
-    storageKind: "postgresql" as const,
-  }));
+  applicationDataBytes: number,
+  planCapacityBytes: number | null
+): FinalizedTableStat[] {
+  return tables
+    .filter((table) => isApplicationTable(table.name))
+    .map((table) => ({
+      ...table,
+      sizeLabel: formatDatabaseSize(table.sizeBytes),
+      percentOfApplicationData: percentOf(table.sizeBytes, applicationDataBytes),
+      percentOfPlanCapacity:
+        planCapacityBytes != null && planCapacityBytes > 0
+          ? percentOf(table.sizeBytes, planCapacityBytes)
+          : null,
+      storageKind: "postgresql" as const,
+      moduleId: TABLE_CATEGORY[table.name] ?? table.name,
+    }));
 }

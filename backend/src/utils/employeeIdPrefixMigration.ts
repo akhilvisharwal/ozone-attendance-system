@@ -332,11 +332,23 @@ export async function migrateEmployeeIdPrefix(
     }
 
     if (options.persistEmployeeSettings) {
+      // Always write the employee settings row in this transaction — even when
+      // renamedCount is 0 (codes already match the new prefix / desynced state).
       await persistEmployeeSettingsInTx(
         client,
         options.persistEmployeeSettings,
         options.updatedBy
       );
+    } else if (planned.length === 0) {
+      // No settings payload and nothing to rename — nothing to commit.
+      await client.query("ROLLBACK");
+      return {
+        previousPrefix,
+        nextPrefix,
+        renamedCount: 0,
+        remappedDueToConflictCount: 0,
+        renames: [],
+      };
     }
 
     await client.query("COMMIT");

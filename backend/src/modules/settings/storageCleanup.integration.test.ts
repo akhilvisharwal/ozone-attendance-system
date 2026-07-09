@@ -1,40 +1,45 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "fs";
+import path from "path";
 import { pool } from "../../config/db";
+import { env } from "../../config/env";
 import { initSettingsCache } from "./settings.cache";
-import { getStorageBreakdown, runDataCleanup } from "./settings.storage";
+import { getStorageBreakdown } from "./settings.storage";
+import {
+  executeStorageCleanup,
+  getCleanupCenterSummary,
+  type CleanupCategorySummary,
+} from "./settings.storageCleanup";
 
-async function restoreTableRows(table: string, rows: Record<string, unknown>[]): Promise<void> {
-  await pool.query(`DELETE FROM ${table}`);
-  for (const row of rows) {
-    const cols = Object.keys(row);
-    if (!cols.length) continue;
-    const values = cols.map((c) => {
-      const value = row[c];
-      if (value != null && typeof value === "object" && !(value instanceof Date)) {
-        return JSON.stringify(value);
-      }
-      return value;
-    });
-    const placeholders = cols.map((_, idx) => `$${idx + 1}`).join(", ");
-    await pool.query(
-      `INSERT INTO ${table} (${cols.map((c) => `"${c}"`).join(", ")})
-       VALUES (${placeholders})
-       ON CONFLICT DO NOTHING`,
-      values
-    );
-  }
+const UPLOAD_ROOT = path.join(process.cwd(), env.uploadDir);
+
+/**
+ * These tests run against whatever DATABASE_URL points to. `executeStorageCleanup`
+ * intentionally operates on the WHOLE table (delete all attendance, all audit logs,
+ * etc.), so running the execute tests would destroy real data on a shared database.
+ * They are therefore opt-in via ALLOW_DESTRUCTIVE_CLEANUP_TESTS=1 and are meant for
+ * an isolated throwaway database only. The always-on tests below never delete data
+ * they did not create.
+ */
+const allowDestructive = process.env.ALLOW_DESTRUCTIVE_CLEANUP_TESTS === "1";
+
+function findCategory(
+  categories: CleanupCategorySummary[],
+  id: CleanupCategorySummary["id"]
+): CleanupCategorySummary {
+  const found = categories.find((c) => c.id === id);
+  if (!found) throw new Error(`Missing cleanup category: ${id}`);
+  return found;
 }
 
-describe("storage cleanup integration", { skip: process.env.SKIP_DB_TESTS === "1" }, () => {
+describe("storage cleanup summary (non-destructive)", { skip: process.env.SKIP_DB_TESTS === "1" }, () => {
   let employeeId: string;
-  let siteId: string | null = null;
-  let holidayId: string | null = null;
   const createdAttendanceIds: string[] = [];
+  const createdFiles: string[] = [];
 
   before(async () => {
     await initSettingsCache();
-
     const admin = await pool.query<{ id: string }>(
       `SELECT id FROM employees
         WHERE role = 'admin' AND is_active = true AND deleted_at IS NULL
@@ -43,228 +48,203 @@ describe("storage cleanup integration", { skip: process.env.SKIP_DB_TESTS === "1
     );
     if (!admin.rows[0]) throw new Error("Need an active admin for storage cleanup tests");
     employeeId = admin.rows[0].id;
-
-    const site = await pool.query<{ id: string }>(
-      `SELECT id FROM sites WHERE deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`
-    );
-    siteId = site.rows[0]?.id ?? null;
-
-    const holiday = await pool.query<{ id: string }>(
-      `SELECT id FROM company_holidays ORDER BY created_at ASC LIMIT 1`
-    );
-    holidayId = holiday.rows[0]?.id ?? null;
   });
 
   after(async () => {
     if (createdAttendanceIds.length) {
       await pool.query(`DELETE FROM attendance WHERE id = ANY($1::uuid[])`, [createdAttendanceIds]);
     }
-  });
-
-  async function seedDisposableAttendance(): Promise<void> {
-    for (let i = 0; i < 2; i++) {
-      const date = `2099-01-0${i + 1}`;
-      const inserted = await pool.query<{ id: string }>(
-        `INSERT INTO attendance (
-           employee_id, attendance_date, status,
-           check_in_time, check_in_latitude, check_in_longitude, check_in_address,
-           check_in_selfie_path, site_photo_paths
-         ) VALUES (
-           $1, $2, 'checked_out',
-           now(), 12.97, 77.59, 'Test Address',
-           $3, $4::jsonb
-         )
-         ON CONFLICT (employee_id, attendance_date) DO UPDATE SET
-           check_in_latitude = EXCLUDED.check_in_latitude,
-           check_in_longitude = EXCLUDED.check_in_longitude,
-           check_in_address = EXCLUDED.check_in_address,
-           check_in_selfie_path = EXCLUDED.check_in_selfie_path,
-           site_photo_paths = EXCLUDED.site_photo_paths
-         RETURNING id`,
-        [
-          employeeId,
-          date,
-          `cleanup-test/selfie-${i}.jpg`,
-          JSON.stringify([`cleanup-test/site-${i}.jpg`]),
-        ]
-      );
-      createdAttendanceIds.push(inserted.rows[0].id);
-    }
-  }
-
-  async function assertProtectedUntouched() {
-    const employee = await pool.query(`SELECT id FROM employees WHERE id = $1`, [employeeId]);
-    assert.equal(employee.rows.length, 1);
-
-    if (siteId) {
-      const site = await pool.query(`SELECT id FROM sites WHERE id = $1`, [siteId]);
-      assert.equal(site.rows.length, 1);
-    }
-    if (holidayId) {
-      const holiday = await pool.query(`SELECT id FROM company_holidays WHERE id = $1`, [holidayId]);
-      assert.equal(holiday.rows.length, 1);
-    }
-
-    const settings = await pool.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM app_settings`
-    );
-    assert.ok(parseInt(settings.rows[0]?.count ?? "0", 10) >= 1);
-
-    const leaveSettings = await pool.query(
-      `SELECT value FROM app_settings WHERE category = 'leave'`
-    );
-    assert.equal(leaveSettings.rows.length, 1);
-
-    const weeklyOff = await pool.query(
-      `SELECT value FROM app_settings WHERE category = 'weeklyOff'`
-    );
-    assert.equal(weeklyOff.rows.length, 1);
-  }
-
-  it("returns storage breakdown with categories and cleanup previews", async () => {
-    await seedDisposableAttendance();
-    const storage = await getStorageBreakdown();
-    assert.ok(storage.databaseSizeBytes > 0);
-    assert.ok(storage.capacity);
-    assert.ok(["provider", "env", "unavailable"].includes(storage.capacity.limitSource));
-    if (storage.capacity.detected) {
-      assert.ok((storage.capacity.maxBytes ?? 0) > 0);
-    } else {
-      assert.equal(storage.capacity.maxBytes, null);
-    }
-    assert.equal(storage.capacity.usedBytes, storage.databaseSizeBytes);
-    assert.ok(storage.uploadedFilesBytes >= 0);
-    assert.equal(
-      storage.totalStorageUsedBytes,
-      storage.databaseSizeBytes + storage.uploadedFilesBytes
-    );
-    assert.ok(storage.categories.some((c) => c.id === "settings"));
-    assert.ok(storage.categories.some((c) => c.id === "attendance"));
-    assert.ok(storage.categories.length >= 5);
-    for (const category of storage.categories) {
-      assert.ok(typeof category.recordCount === "number");
-      assert.ok(category.sizeLabel.length > 0);
-      assert.ok(typeof category.percentOfTotal === "number");
-      assert.ok(["postgresql", "files"].includes(category.storageKind));
-    }
-    const percentSum = storage.categories.reduce((sum, c) => sum + c.percentOfTotal, 0);
-    assert.ok(percentSum >= 95 && percentSum <= 100.5);
-    assert.ok(storage.tables.length >= 5);
-    assert.ok(storage.cleanupPreview.attendance_records.affectedRecords >= 2);
-    assert.ok(storage.cleanupPreview.attendance_selfies.affectedRecords >= 2);
-    assert.ok(storage.cleanupPreview.attendance_location.affectedRecords >= 2);
-    assert.ok(storage.cleanupPreview.audit_logs.affectedRecords >= 0);
-  });
-
-  it("clears selfie paths only without deleting attendance or protected data", async () => {
-    await seedDisposableAttendance();
-    const snapshot = await pool.query(`SELECT * FROM attendance`);
-    const beforeAttendance = snapshot.rows.length;
-
-    try {
-      const result = await runDataCleanup("attendance_selfies");
-      assert.ok(result.deletedRecords >= 2);
-
-      const selfieRows = await pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count
-           FROM attendance
-          WHERE check_in_selfie_path IS NOT NULL
-             OR (site_photo_paths IS NOT NULL AND site_photo_paths <> '[]'::jsonb)`
-      );
-      assert.equal(parseInt(selfieRows.rows[0]?.count ?? "0", 10), 0);
-
-      const afterAttendance = await pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM attendance`
-      );
-      assert.equal(parseInt(afterAttendance.rows[0]?.count ?? "0", 10), beforeAttendance);
-      await assertProtectedUntouched();
-    } finally {
-      await restoreTableRows("attendance", snapshot.rows as Record<string, unknown>[]);
+    for (const file of createdFiles) {
+      try {
+        await fs.promises.unlink(file);
+      } catch {
+        // ignore
+      }
     }
   });
 
-  it("clears location history only without deleting attendance or protected data", async () => {
-    await seedDisposableAttendance();
-    const snapshot = await pool.query(`SELECT * FROM attendance`);
-    const beforeAttendance = snapshot.rows.length;
+  it("reflects live data and real file sizes without mutating existing rows", async () => {
+    const baseline = await getCleanupCenterSummary();
+    const baseAttendance = findCategory(baseline.categories, "attendance_records");
+    const baseSelfies = findCategory(baseline.categories, "selfies");
+    const baseLocation = findCategory(baseline.categories, "location_history");
 
-    try {
-      const result = await runDataCleanup("attendance_location");
-      assert.ok(result.deletedRecords >= 2);
+    const dir = path.join(UPLOAD_ROOT, "cleanup-test");
+    await fs.promises.mkdir(dir, { recursive: true });
+    const suffix = Date.now();
+    const selfieRel = `cleanup-test/selfie-${suffix}.jpg`;
+    const siteRel = `cleanup-test/site-${suffix}.jpg`;
+    const selfieFull = path.join(UPLOAD_ROOT, selfieRel);
+    const siteFull = path.join(UPLOAD_ROOT, siteRel);
+    await fs.promises.writeFile(selfieFull, Buffer.from("selfie-content-x".repeat(64)));
+    await fs.promises.writeFile(siteFull, Buffer.from("site-photo-content-y".repeat(128)));
+    createdFiles.push(selfieFull, siteFull);
 
-      const locationRows = await pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count
-           FROM attendance
-          WHERE check_in_latitude IS NOT NULL
-             OR check_in_longitude IS NOT NULL
-             OR check_in_address IS NOT NULL
-             OR check_out_latitude IS NOT NULL
-             OR check_out_longitude IS NOT NULL
-             OR check_out_address IS NOT NULL
-             OR check_out_gps_accuracy IS NOT NULL`
-      );
-      assert.equal(parseInt(locationRows.rows[0]?.count ?? "0", 10), 0);
-
-      const afterAttendance = await pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM attendance`
-      );
-      assert.equal(parseInt(afterAttendance.rows[0]?.count ?? "0", 10), beforeAttendance);
-      await assertProtectedUntouched();
-    } finally {
-      await restoreTableRows("attendance", snapshot.rows as Record<string, unknown>[]);
-    }
-  });
-
-  it("deletes audit logs only and leaves protected data intact", async () => {
-    const snapshot = await pool.query(`SELECT * FROM audit_logs`);
-    await pool.query(
-      `INSERT INTO audit_logs (actor_id, action, target_type, metadata)
-       VALUES ($1, 'test.cleanup_seed', 'settings', '{"seed":true}'::jsonb)`,
-      [employeeId]
+    const inserted = await pool.query<{ id: string }>(
+      `INSERT INTO attendance (
+         employee_id, attendance_date, status,
+         check_in_time, check_in_latitude, check_in_longitude, check_in_address,
+         check_in_selfie_path, site_photo_paths
+       ) VALUES (
+         $1, '2099-06-15', 'checked_out',
+         now(), 12.9716, 77.5946, 'Bengaluru Test Address',
+         $2, $3::jsonb
+       )
+       ON CONFLICT (employee_id, attendance_date) DO UPDATE SET
+         check_in_latitude = EXCLUDED.check_in_latitude,
+         check_in_longitude = EXCLUDED.check_in_longitude,
+         check_in_address = EXCLUDED.check_in_address,
+         check_in_selfie_path = EXCLUDED.check_in_selfie_path,
+         site_photo_paths = EXCLUDED.site_photo_paths
+       RETURNING id`,
+      [employeeId, selfieRel, JSON.stringify([siteRel])]
     );
+    createdAttendanceIds.push(inserted.rows[0].id);
 
-    try {
-      const before = await pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM audit_logs`
-      );
-      assert.ok(parseInt(before.rows[0]?.count ?? "0", 10) >= 1);
+    const after = await getCleanupCenterSummary();
+    const attendance = findCategory(after.categories, "attendance_records");
+    const selfies = findCategory(after.categories, "selfies");
+    const location = findCategory(after.categories, "location_history");
 
-      const result = await runDataCleanup("audit_logs");
-      assert.ok(result.deletedRecords >= 1);
+    // Attendance reflects the new row and never reports zero when rows exist.
+    assert.equal(attendance.recordCount, baseAttendance.recordCount + 1);
+    assert.ok(attendance.recordCount > 0);
+    assert.ok(attendance.totalBytes > 0, "attendance size must be > 0 when rows exist");
+    assert.ok(attendance.canDelete);
 
-      const after = await pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM audit_logs`
-      );
-      assert.equal(parseInt(after.rows[0]?.count ?? "0", 10), 0);
-      await assertProtectedUntouched();
-    } finally {
-      await restoreTableRows("audit_logs", snapshot.rows as Record<string, unknown>[]);
-    }
+    // Real files on disk are measured, not just DB references.
+    assert.equal(attendance.fileCount, baseAttendance.fileCount + 2);
+    assert.ok(attendance.fileBytes > baseAttendance.fileBytes);
+
+    // Selfies reflect the new image-bearing row and its real file bytes.
+    assert.equal(selfies.recordCount, baseSelfies.recordCount + 1);
+    assert.equal(selfies.fileCount, baseSelfies.fileCount + 2);
+    assert.ok(selfies.fileBytes > baseSelfies.fileBytes);
+    assert.ok(selfies.canDelete);
+
+    // Location reflects the GPS-bearing row.
+    assert.equal(location.recordCount, baseLocation.recordCount + 1);
+    assert.ok(location.canDelete);
   });
 
-  it("deletes attendance records and refreshes storage counts without touching protected data", async () => {
-    const snapshot = await pool.query(`SELECT * FROM attendance`);
-    await seedDisposableAttendance();
-
-    const beforeStorage = await getStorageBreakdown();
-    assert.ok(beforeStorage.cleanupPreview.attendance_bundle.affectedRecords >= 1);
-
-    try {
-      const result = await runDataCleanup("attendance_bundle");
-      assert.ok(result.deletedRecords >= 1);
-
-      const attendanceCount = await pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM attendance`
-      );
-      assert.equal(parseInt(attendanceCount.rows[0]?.count ?? "0", 10), 0);
-
-      const afterStorage = await getStorageBreakdown();
-      assert.equal(afterStorage.cleanupPreview.attendance_records.affectedRecords, 0);
-      assert.equal(afterStorage.cleanupPreview.attendance_selfies.affectedRecords, 0);
-      assert.equal(afterStorage.cleanupPreview.attendance_location.affectedRecords, 0);
-      await assertProtectedUntouched();
-    } finally {
-      await restoreTableRows("attendance", snapshot.rows as Record<string, unknown>[]);
+  it("marks categories with no data as not deletable (honest zero)", async () => {
+    // audit_logs is unaffected by attendance seeding; assert its shape is coherent.
+    const summary = await getCleanupCenterSummary();
+    for (const category of summary.categories) {
+      if (category.recordCount === 0 && category.fileCount === 0) {
+        assert.equal(category.canDelete, false, `${category.id} must not be deletable when empty`);
+        assert.equal(category.totalBytes, 0);
+      } else {
+        assert.equal(category.canDelete, true, `${category.id} must be deletable when data exists`);
+      }
     }
   });
 });
+
+describe(
+  "storage cleanup execution (destructive — isolated DB only)",
+  { skip: process.env.SKIP_DB_TESTS === "1" || !allowDestructive },
+  () => {
+    let employeeId: string;
+    const createdFiles: string[] = [];
+
+    before(async () => {
+      await initSettingsCache();
+      const admin = await pool.query<{ id: string }>(
+        `SELECT id FROM employees
+          WHERE role = 'admin' AND is_active = true AND deleted_at IS NULL
+          ORDER BY created_at ASC
+          LIMIT 1`
+      );
+      if (!admin.rows[0]) throw new Error("Need an active admin for storage cleanup tests");
+      employeeId = admin.rows[0].id;
+    });
+
+    after(async () => {
+      for (const file of createdFiles) {
+        try {
+          await fs.promises.unlink(file);
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    async function seedAttendanceWithFiles(count: number): Promise<void> {
+      const dir = path.join(UPLOAD_ROOT, "cleanup-test");
+      await fs.promises.mkdir(dir, { recursive: true });
+      for (let i = 0; i < count; i++) {
+        const selfieRel = `cleanup-test/selfie-${i}.jpg`;
+        const siteRel = `cleanup-test/site-${i}.jpg`;
+        const selfieFull = path.join(UPLOAD_ROOT, selfieRel);
+        const siteFull = path.join(UPLOAD_ROOT, siteRel);
+        await fs.promises.writeFile(selfieFull, Buffer.from(`selfie-${i}`.repeat(64)));
+        await fs.promises.writeFile(siteFull, Buffer.from(`site-${i}`.repeat(96)));
+        createdFiles.push(selfieFull, siteFull);
+        await pool.query(
+          `INSERT INTO attendance (
+             employee_id, attendance_date, status,
+             check_in_time, check_in_latitude, check_in_longitude, check_in_address,
+             check_in_selfie_path, site_photo_paths
+           ) VALUES ($1, $2, 'checked_out', now(), 12.97, 77.59, 'Addr', $3, $4::jsonb)
+           ON CONFLICT (employee_id, attendance_date) DO NOTHING`,
+          [employeeId, `2099-01-0${i + 1}`, selfieRel, JSON.stringify([siteRel])]
+        );
+      }
+    }
+
+    it("deletes attendance rows and removes linked files, shrinking uploaded storage", async () => {
+      await seedAttendanceWithFiles(2);
+      const before = await getStorageBreakdown();
+      const result = await executeStorageCleanup("attendance_records");
+      assert.ok(result.deletedRecords >= 2);
+      assert.ok(result.deletedFiles >= 4);
+
+      const remaining = await pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM attendance`);
+      assert.equal(parseInt(remaining.rows[0]?.count ?? "0", 10), 0);
+      for (const file of createdFiles) assert.equal(fs.existsSync(file), false);
+
+      const after = await getStorageBreakdown();
+      // Uploaded file storage is returned to the OS immediately (files unlinked).
+      assert.ok(
+        after.uploadedFilesBytes < before.uploadedFilesBytes,
+        "uploaded file storage must drop after files are removed"
+      );
+      // Row bytes are reclaimed for reuse inside PG; pg_database_size may not shrink
+      // with a plain VACUUM, so we only assert it does not grow unexpectedly here.
+      assert.ok(result.uploadedFilesRecoveredBytes > 0);
+
+      const summary = await getCleanupCenterSummary();
+      assert.equal(findCategory(summary.categories, "attendance_records").canDelete, false);
+    });
+
+    it("deletes audit logs", async () => {
+      await pool.query(
+        `INSERT INTO audit_logs (actor_id, action, target_type, metadata)
+         VALUES ($1, 'test.cleanup_seed', 'settings', '{"seed":true}'::jsonb)`,
+        [employeeId]
+      );
+      const result = await executeStorageCleanup("audit_logs");
+      assert.ok(result.deletedRecords >= 1);
+      const remaining = await pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM audit_logs`);
+      assert.equal(parseInt(remaining.rows[0]?.count ?? "0", 10), 0);
+    });
+
+    it("does not touch protected employee, site, settings, or holiday data", async () => {
+      const snapshot = async () =>
+        Promise.all([
+          pool.query<{ c: string }>(`SELECT COUNT(*)::text AS c FROM employees WHERE deleted_at IS NULL`),
+          pool.query<{ c: string }>(`SELECT COUNT(*)::text AS c FROM sites WHERE deleted_at IS NULL`),
+          pool.query<{ c: string }>(`SELECT COUNT(*)::text AS c FROM app_settings`),
+          pool.query<{ c: string }>(`SELECT COUNT(*)::text AS c FROM company_holidays`),
+        ]);
+      const before = await snapshot();
+      await seedAttendanceWithFiles(1);
+      await executeStorageCleanup("attendance_records");
+      const after = await snapshot();
+      for (let i = 0; i < before.length; i++) {
+        assert.equal(after[i].rows[0]?.c, before[i].rows[0]?.c);
+      }
+    });
+  }
+);

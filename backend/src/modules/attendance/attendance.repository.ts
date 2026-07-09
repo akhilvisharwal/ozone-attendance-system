@@ -522,6 +522,55 @@ export async function insertAutoAbsentRecords(
   return result.rowCount ?? 0;
 }
 
+/** Finalizes an open check-in at closing time with automatic day_status. */
+export async function finalizeAttendanceAtClosing(input: {
+  id: string;
+  checkOutTime: Date;
+  totalMinutes: number;
+  dayStatus: DayStatus;
+  reason?: string;
+}): Promise<AttendanceRecord | null> {
+  const result = await pool.query<AttendanceRecord>(
+    `UPDATE attendance SET
+       check_out_time = COALESCE(check_out_time, $1),
+       total_minutes = $2,
+       day_status = $3,
+       is_half_day = $4,
+       status = 'checked_out',
+       admin_mark_reason = COALESCE(admin_mark_reason, $5)
+     WHERE id = $6
+       AND NOT is_admin_marked
+       AND status = 'checked_in'
+     RETURNING *`,
+    [
+      input.checkOutTime,
+      input.totalMinutes,
+      input.dayStatus,
+      input.dayStatus === "half_day",
+      input.reason ?? "Auto-finalized at end of day",
+      input.id,
+    ]
+  );
+  return result.rows[0] ?? null;
+}
+
+/** Applies automatic day_status to checked-out rows missing day_status. */
+export async function applyAutomaticDayStatus(input: {
+  id: string;
+  dayStatus: DayStatus;
+}): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE attendance SET
+       day_status = $1,
+       is_half_day = $2
+     WHERE id = $3
+       AND NOT is_admin_marked
+       AND day_status IS NULL`,
+    [input.dayStatus, input.dayStatus === "half_day", input.id]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function adminMarkAbsent(input: {
   employeeId: string;
   date: string;

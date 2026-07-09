@@ -12,6 +12,8 @@ import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
 import type { EmployeeSettings, SecuritySettings } from "@/types/settings";
 import { buildIdFormat, parseIdFormat } from "@/utils/employeeIdFormat";
+import { notifyEmployeeCodesChanged } from "@/utils/employeeCodeEvents";
+import { useAuth } from "@/auth/AuthContext";
 
 type EmployeeFormState = {
   idPrefix: string;
@@ -102,6 +104,7 @@ function formsEqual(a: EmployeeFormState, b: EmployeeFormState): boolean {
 
 export function EmployeeSettingsSection() {
   const { refresh } = useSettings();
+  const { refreshMe } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -181,19 +184,31 @@ export function EmployeeSettingsSection() {
     setSaving(true);
     setMessage(null);
     try {
-      // Re-fetch so defaultDesignationId from the Roles section is not overwritten.
+      // Re-fetch so defaultDesignationId from the Roles section is not overwritten,
+      // and so we compare against the latest persisted idFormat from the database.
       const latest = await settingsApi.fetchSettings();
       const payload = buildPayload(latest.employee, form);
-      const { settings: updated, employeeIdPrefixMigration } =
+      const wasPrefixChange =
+        parseIdFormat(latest.employee.idFormat).prefix !==
+        parseIdFormat(payload.idFormat).prefix;
+
+      const { employeeIdPrefixMigration } =
         await settingsApi.updateEmployeeSettings(payload);
-      const nextForm = employeeToForm(updated.employee);
-      setBaseEmployee(updated.employee);
+
+      // Confirm from a fresh GET so the UI never trusts a stale response body.
+      const confirmed = await settingsApi.fetchSettings();
+      const nextForm = employeeToForm(confirmed.employee);
+      setBaseEmployee(confirmed.employee);
       setForm(nextForm);
       setSavedForm(nextForm);
       await refresh();
+      if (wasPrefixChange || (employeeIdPrefixMigration && employeeIdPrefixMigration.renamedCount > 0)) {
+        await refreshMe();
+        notifyEmployeeCodesChanged();
+      }
       setConfirmOpen(false);
 
-      const savedPrefix = parseIdFormat(updated.employee.idFormat).prefix;
+      const savedPrefix = parseIdFormat(confirmed.employee.idFormat).prefix;
       if (employeeIdPrefixMigration && employeeIdPrefixMigration.renamedCount > 0) {
         const conflictNote =
           employeeIdPrefixMigration.remappedDueToConflictCount &&
@@ -204,13 +219,21 @@ export function EmployeeSettingsSection() {
           type: "success",
           text: `Employee ID prefix updated from ${employeeIdPrefixMigration.from} to ${employeeIdPrefixMigration.to}. ${employeeIdPrefixMigration.renamedCount} employee ID${employeeIdPrefixMigration.renamedCount === 1 ? "" : "s"} rewritten (numeric parts preserved).${conflictNote} New employees continue the sequence under ${employeeIdPrefixMigration.to}.`,
         });
-      } else if (prefixChanging) {
+      } else if (wasPrefixChange) {
         setMessage({
           type: "success",
           text: `Employee settings saved. Prefix is now ${savedPrefix}. Existing IDs that already used ${savedPrefix} were left unchanged.`,
         });
       } else {
         setMessage({ type: "success", text: "Employee settings saved successfully." });
+      }
+
+      // Guard: if the DB somehow still has the old prefix, surface it clearly.
+      if (wasPrefixChange && savedPrefix !== form.idPrefix.trim().toUpperCase()) {
+        setMessage({
+          type: "error",
+          text: `Prefix save did not persist. Expected ${form.idPrefix.trim().toUpperCase()} but database still has ${savedPrefix}.`,
+        });
       }
     } catch (err) {
       setConfirmOpen(false);
@@ -232,7 +255,7 @@ export function EmployeeSettingsSection() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {message && <Alert variant={message.type === "error" ? "error" : "success"}>{message.text}</Alert>}
 
       <EmployeeRolesSettingsSection />

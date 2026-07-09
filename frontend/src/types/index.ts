@@ -372,7 +372,8 @@ export type MonthlyCellStatus =
   | "holiday"
   | "holiday_worked"
   | "weekly_off_worked"
-  | "none";
+  | "none"
+  | "not_applicable";
 
 export interface MonthlyDayCell {
   day: number;

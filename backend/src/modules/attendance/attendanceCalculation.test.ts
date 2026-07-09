@@ -100,7 +100,7 @@ describe("attendance calculation service", () => {
     assert.equal(status, "none");
   });
 
-  it("treats today auto-absent record as pending before closing cutoff", () => {
+  it("treats today auto-absent record as absent even before closing cutoff display window", () => {
     const status = resolveDayStatus({
       record: {
         status: "absent",
@@ -115,8 +115,8 @@ describe("attendance calculation service", () => {
       isToday: true,
       isPastClosingCutoff: false,
     });
-    assert.equal(status, "none");
-    assert.equal(isIncompleteAttendanceDay({ check_in_time: null }), true);
+    assert.equal(status, "absent");
+    assert.equal(isIncompleteAttendanceDay({ status: "absent", day_status: "absent" }), false);
   });
 
   it("respects manual weekly off status on a working weekday", () => {
@@ -143,5 +143,82 @@ describe("attendance calculation service", () => {
     ];
     const summary = buildSummaryFromDays(days, "2026-07-02");
     assert.equal(summary.totalMinutes, 480);
+  });
+
+  it("excludes pre-join days from working days, absent counts, and attendance percentage", () => {
+    const days = [
+      day("2026-07-01", "not_applicable"),
+      day("2026-07-02", "not_applicable"),
+      day("2026-07-03", "not_applicable"),
+      day("2026-07-04", "not_applicable"),
+      day("2026-07-05", "not_applicable"),
+      day("2026-07-06", "not_applicable"),
+      day("2026-07-07", "not_applicable"),
+      day("2026-07-08", "not_applicable"),
+      day("2026-07-09", "not_applicable"),
+      day("2026-07-10", "not_applicable"),
+      day("2026-07-11", "not_applicable"),
+      day("2026-07-12", "not_applicable"),
+      day("2026-07-13", "not_applicable"),
+      day("2026-07-14", "not_applicable"),
+      day("2026-07-15", "present", 480),
+      day("2026-07-16", "absent"),
+      day("2026-07-17", "present", 450),
+    ];
+
+    const summary = buildSummaryFromDays(days, "2026-07-17");
+    assert.equal(summary.present, 2);
+    assert.equal(summary.absent, 1);
+    assert.equal(summary.weeklyOff, 0);
+    assert.equal(summary.workingDays, 3);
+    assert.equal(summary.attendancePercentage, 66.7);
+    assert.equal(computeWorkingDays(days, "2026-07-17"), 3);
+  });
+
+  it("treats all pre-join elapsed days as not applicable with zero working days", () => {
+    const days = [
+      day("2026-07-01", "not_applicable"),
+      day("2026-07-02", "not_applicable"),
+      day("2026-07-03", "not_applicable"),
+    ];
+    const summary = buildSummaryFromDays(days, "2026-07-03");
+    assert.equal(summary.absent, 0);
+    assert.equal(summary.workingDays, 0);
+    assert.equal(summary.attendancePercentage, 0);
+  });
+
+  it("maps checked-in half-day records to half_day before checkout finalization", () => {
+    const status = resolveDayStatus({
+      record: {
+        status: "checked_in",
+        check_in_status: "half_day",
+        is_half_day: true,
+        check_in_time: "2026-07-09T12:00:00Z",
+      },
+      hasLeave: false,
+      isHoliday: false,
+      isWeeklyOff: false,
+      isFuture: false,
+      isToday: false,
+      isPastClosingCutoff: true,
+    });
+    assert.equal(status, "half_day");
+  });
+
+  it("does not treat auto-absent rows as pending on the current day", () => {
+    const status = resolveDayStatus({
+      record: {
+        status: "absent",
+        day_status: "absent",
+        check_in_time: null,
+      },
+      hasLeave: false,
+      isHoliday: false,
+      isWeeklyOff: false,
+      isFuture: false,
+      isToday: true,
+      isPastClosingCutoff: false,
+    });
+    assert.equal(status, "absent");
   });
 });

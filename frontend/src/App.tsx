@@ -15,6 +15,7 @@ import {
   CalendarHeart,
 } from "lucide-react";
 import { AuthProvider } from "@/auth/AuthContext";
+import { SessionManager } from "@/auth/SessionManager";
 import { ProtectedRoute } from "@/auth/ProtectedRoute";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -65,6 +66,7 @@ function App() {
   return (
     <AuthProvider>
       <SettingsProvider>
+      <SessionManager />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
 

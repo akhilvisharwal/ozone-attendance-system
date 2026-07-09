@@ -202,7 +202,7 @@ export function SecuritySettingsSection() {
             value={form.sessionTimeoutMinutes}
             onChange={(e) => updateField("sessionTimeoutMinutes", Number(e.target.value))}
             error={errors.sessionTimeoutMinutes}
-            hint="Minutes of inactivity before a session expires."
+            hint="Minutes of inactivity before a session expires. Users see a warning 2 minutes before automatic logout."
           />
           <Input
             label="Maximum Login Attempts"

@@ -411,16 +411,17 @@ export const auditExportFormatSchema = z.enum(["pdf", "excel"]);
 
 
 
+const cleanupCategorySchema = z.enum([
+  "attendance_records",
+  "selfies",
+  "location_history",
+  "audit_logs",
+]);
+
 export const cleanupConfirmSchema = z.object({
-  target: z.enum([
-    "attendance_records",
-    "attendance_selfies",
-    "attendance_location",
-    "attendance_bundle",
-    "audit_logs",
-  ]),
+  category: cleanupCategorySchema,
   confirmation: z.literal("DELETE", {
-    errorMap: () => ({ message: 'Type DELETE to confirm this cleanup action' }),
+    errorMap: () => ({ message: "Type DELETE to confirm this cleanup action" }),
   }),
 });
 

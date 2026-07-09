@@ -3,6 +3,7 @@ import { Users } from "lucide-react";
 import * as employeesApi from "@/api/employees";
 import type { Employee } from "@/types";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
+import { EMPLOYEE_CODES_CHANGED_EVENT } from "@/utils/employeeCodeEvents";
 
 const ALL_EMPLOYEES_VALUE = "";
 
@@ -59,6 +60,16 @@ export function EmployeeCombobox({
 
   useEffect(() => {
     fetchEmployees("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    function onCodesChanged() {
+      fetchEmployees("");
+      setSelectedEmployee(null);
+    }
+    window.addEventListener(EMPLOYEE_CODES_CHANGED_EVENT, onCodesChanged);
+    return () => window.removeEventListener(EMPLOYEE_CODES_CHANGED_EVENT, onCodesChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

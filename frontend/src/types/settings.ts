@@ -220,12 +220,47 @@ export interface DatabaseStatus {
   totalAttendanceRecords: number;
 }
 
-export type CleanupTarget =
+export type CleanupCategory =
   | "attendance_records"
-  | "attendance_selfies"
-  | "attendance_location"
-  | "attendance_bundle"
+  | "selfies"
+  | "location_history"
   | "audit_logs";
+
+export interface CleanupCategorySummary {
+  id: CleanupCategory;
+  label: string;
+  description: string;
+  recordCount: number;
+  fileCount: number;
+  databaseBytes: number;
+  databaseLabel: string;
+  fileBytes: number;
+  fileLabel: string;
+  totalBytes: number;
+  totalLabel: string;
+  canDelete: boolean;
+}
+
+export interface CleanupCenterSummary {
+  categories: CleanupCategorySummary[];
+  totalRecoverableBytes: number;
+  totalRecoverableLabel: string;
+  totalRecords: number;
+  totalFiles: number;
+}
+
+export interface CleanupExecutionResult {
+  category: CleanupCategory;
+  deletedRecords: number;
+  deletedFiles: number;
+  databaseSizeBeforeBytes: number;
+  databaseSizeAfterBytes: number;
+  databaseSizeRecoveredBytes: number;
+  uploadedFilesBeforeBytes: number;
+  uploadedFilesAfterBytes: number;
+  uploadedFilesRecoveredBytes: number;
+  details: Record<string, number>;
+}
 
 export type StorageKind = "postgresql" | "files";
 
@@ -235,7 +270,8 @@ export interface StorageCategory {
   recordCount: number;
   sizeBytes: number;
   sizeLabel: string;
-  percentOfTotal: number;
+  percentOfApplicationData: number;
+  percentOfPlanCapacity: number | null;
   storageKind: StorageKind;
   description: string;
 }
@@ -245,8 +281,10 @@ export interface StorageTableStat {
   recordCount: number;
   sizeBytes: number;
   sizeLabel: string;
-  percentOfTotal: number;
+  percentOfApplicationData: number;
+  percentOfPlanCapacity: number | null;
   storageKind: StorageKind;
+  moduleId: string;
 }
 
 export interface CleanupPreviewItem {
@@ -255,7 +293,6 @@ export interface CleanupPreviewItem {
   affectedRecords: number;
   details: string[];
 }
-
 export type StorageLimitSource = "provider" | "env" | "unavailable";
 export type StorageWarningLevel = "none" | "warning" | "high" | "critical";
 
@@ -282,12 +319,16 @@ export interface StorageBreakdown {
   uploadedFilesLabel: string;
   totalStorageUsedBytes: number;
   totalStorageUsedLabel: string;
-  totalTrackedBytes: number;
-  totalTrackedLabel: string;
+  applicationDataBytes: number;
+  applicationDataLabel: string;
+  applicationPostgresBytes: number;
+  applicationPostgresLabel: string;
+  internalDatabaseBytes: number;
+  internalDatabaseLabel: string;
+  internalDatabasePercent: number;
   capacity: StorageCapacity;
   categories: StorageCategory[];
   tables: StorageTableStat[];
-  cleanupPreview: Record<CleanupTarget, CleanupPreviewItem>;
 }
 
 export interface BackupStatusResponse {
@@ -303,14 +344,10 @@ export interface DatabasePanelResponse {
 
 export interface CleanupResultResponse {
   success: boolean;
-  result: {
-    target: CleanupTarget;
-    deletedRecords: number;
-    deletedFiles: number;
-    details: Record<string, number>;
-  };
+  result: CleanupExecutionResult;
   status: DatabaseStatus;
   storage: StorageBreakdown;
+  cleanup: CleanupCenterSummary;
   backup: BackupSettings;
 }
 
@@ -344,6 +381,9 @@ export interface PublicSettings {
     /** Browser Maps JavaScript API key (referrer-restricted; safe to expose to clients). */
     apiKey: string;
     configured: boolean;
+  };
+  security: {
+    sessionTimeoutMinutes: number;
   };
 }
 

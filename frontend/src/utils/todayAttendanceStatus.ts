@@ -127,7 +127,8 @@ export function resolveTodayAttendanceStatus(
   now: Date = new Date()
 ): TodayStatusPresentation | null {
   if (!attendance) {
-    if (!rules || !isAtOrPastTime(now, rules.halfDayCutoff)) {
+    const closingCutoff = rules?.checkoutStandardTime ?? rules?.halfDayCutoff;
+    if (!closingCutoff || !isAtOrPastTime(now, closingCutoff)) {
       return null;
     }
     return toPresentation("absent");
@@ -136,6 +137,9 @@ export function resolveTodayAttendanceStatus(
   if (attendance.status === "checked_in") {
     if (attendance.special_day_status) {
       return resolveSpecialDayPresentation(attendance.special_day_status);
+    }
+    if (attendance.is_half_day || attendance.check_in_status === "half_day") {
+      return toPresentation("half_day");
     }
     return toPresentation("working");
   }

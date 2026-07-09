@@ -28,6 +28,7 @@ const STATUS_META: Record<MonthlyCellStatus, { label: string; cell: string; dot:
   holiday_worked: { label: "Worked on Holiday", cell: "bg-teal-600 text-white", dot: "bg-teal-600", code: "HW" },
   weekly_off_worked: { label: "Worked on Weekly Off", cell: "bg-indigo-600 text-white", dot: "bg-indigo-600", code: "WW" },
   none: { label: "—", cell: "bg-slate-50 text-slate-300", dot: "bg-slate-100 border border-slate-200", code: "" },
+  not_applicable: { label: "Not Applicable", cell: "bg-white text-slate-200 border border-slate-100", dot: "bg-white border border-slate-200", code: "" },
 };
 
 function currentMonthString(): string {
@@ -382,7 +383,7 @@ export function MonthlyAttendancePage() {
 
 function Legend() {
   const items: MonthlyCellStatus[] = [
-    "present", "half_day", "absent", "leave", "weekly_off", "holiday", "holiday_worked", "weekly_off_worked", "none",
+    "present", "half_day", "absent", "leave", "weekly_off", "holiday", "holiday_worked", "weekly_off_worked", "not_applicable", "none",
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3">

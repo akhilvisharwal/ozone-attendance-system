@@ -6,7 +6,16 @@ import { env } from "../../config/env";
 import { parseDurationMs } from "../../utils/duration";
 import { loginSchema } from "./auth.validators";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./jwt";
-import { storeRefreshToken, isRefreshTokenValid, revokeRefreshToken } from "./auth.repository";
+import {
+  storeRefreshToken,
+  isRefreshTokenValid,
+  revokeRefreshToken,
+  revokeAllRefreshTokens,
+  getRefreshTokenLastActivity,
+  touchRefreshTokenActivity,
+} from "./auth.repository";
+import { isInactiveSince } from "./sessionActivity";
+import { getSessionTimeoutMinutes } from "../../utils/settingsHelpers";
 import { findEmployeeByCode, findEmployeeById, markMustChangePassword, toPublicEmployee, updateEmployeePassword } from "../employees/employees.repository";
 import { clearLoginAttempts, isLoginLocked, recordFailedLogin } from "../../utils/loginAttempts";
 import { logAudit } from "../audit/audit.repository";
@@ -25,6 +34,11 @@ function refreshCookieOptions() {
     path: "/api/auth",
     maxAge: parseDurationMs(env.jwtRefreshExpiresIn),
   };
+}
+
+function clearRefreshCookieOptions() {
+  const { maxAge: _maxAge, ...options } = refreshCookieOptions();
+  return options;
 }
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
@@ -99,8 +113,26 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   res.json({
     accessToken,
     employee: { ...publicEmployee, must_change_password: mustChangePassword },
+    session: {
+      timeoutMinutes: getSessionTimeoutMinutes(),
+      lastActivityAt: new Date().toISOString(),
+    },
   });
 });
+
+async function assertActiveRefreshSession(employeeId: string, token: string): Promise<void> {
+  const valid = await isRefreshTokenValid(employeeId, token);
+  if (!valid) throw ApiError.unauthorized("Invalid or expired session, please log in again");
+
+  const lastActivityAt = await getRefreshTokenLastActivity(employeeId, token);
+  if (!lastActivityAt) throw ApiError.unauthorized("Invalid or expired session, please log in again");
+
+  const timeoutMinutes = getSessionTimeoutMinutes();
+  if (isInactiveSince(lastActivityAt, new Date(), timeoutMinutes)) {
+    await revokeRefreshToken(employeeId, token);
+    throw ApiError.unauthorized("Session expired due to inactivity. Please log in again.");
+  }
+}
 
 export const refresh = asyncHandler(async (req: Request, res: Response) => {
   const token = req.cookies?.[REFRESH_COOKIE];
@@ -113,14 +145,43 @@ export const refresh = asyncHandler(async (req: Request, res: Response) => {
     throw ApiError.unauthorized("Invalid or expired session, please log in again");
   }
 
-  const valid = await isRefreshTokenValid(payload.sub, token);
-  if (!valid) throw ApiError.unauthorized("Invalid or expired session, please log in again");
+  await assertActiveRefreshSession(payload.sub, token);
 
   const employee = await findEmployeeById(payload.sub);
   if (!employee || !employee.is_active) throw ApiError.unauthorized("Account is not available");
 
+  await touchRefreshTokenActivity(payload.sub, token);
+
   const accessToken = signAccessToken({ id: employee.id, employeeCode: employee.employee_code, role: employee.role });
-  res.json({ accessToken, employee: toPublicEmployee(employee) });
+  const timeoutMinutes = getSessionTimeoutMinutes();
+  res.json({
+    accessToken,
+    employee: toPublicEmployee(employee),
+    session: {
+      timeoutMinutes,
+      lastActivityAt: new Date().toISOString(),
+    },
+  });
+});
+
+export const heartbeat = asyncHandler(async (req: Request, res: Response) => {
+  const token = req.cookies?.[REFRESH_COOKIE];
+  if (!token) throw ApiError.unauthorized("No refresh token provided");
+
+  let payload;
+  try {
+    payload = verifyRefreshToken(token);
+  } catch {
+    throw ApiError.unauthorized("Invalid or expired session, please log in again");
+  }
+
+  await assertActiveRefreshSession(payload.sub, token);
+  await touchRefreshTokenActivity(payload.sub, token);
+
+  res.json({
+    lastActivityAt: new Date().toISOString(),
+    timeoutMinutes: getSessionTimeoutMinutes(),
+  });
 });
 
 export const logout = asyncHandler(async (req: Request, res: Response) => {
@@ -136,7 +197,7 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
     }
   }
   await logAudit(req, "auth.logout", "employee", actorId ?? undefined, {}, { actorId });
-  res.clearCookie(REFRESH_COOKIE, { path: "/api/auth", secure: env.isProduction, sameSite: "lax" });
+  res.clearCookie(REFRESH_COOKIE, clearRefreshCookieOptions());
   res.json({ message: "Logged out" });
 });
 
@@ -163,6 +224,7 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
 
   const passwordHash = await bcrypt.hash(newPassword.trim(), 12);
   await updateEmployeePassword(employee.id, passwordHash, false);
+  await revokeAllRefreshTokens(employee.id);
 
   await logAudit(req, "auth.change_password", "employee", employee.id, {
     employeeName: employee.name,

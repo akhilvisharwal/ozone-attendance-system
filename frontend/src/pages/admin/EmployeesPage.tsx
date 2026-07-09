@@ -23,6 +23,7 @@ import { resolveWeeklyOffDays, employeeUsesDefaultWeeklyOff, normalizeWeeklyOffD
 import { usePublicSettings } from "@/contexts/SettingsContext";
 import { formatDate } from "@/utils/format";
 import { DesignationSelect } from "@/components/DesignationSelect";
+import { EMPLOYEE_CODES_CHANGED_EVENT } from "@/utils/employeeCodeEvents";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -158,6 +159,15 @@ export function EmployeesPage() {
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  useEffect(() => {
+    function onCodesChanged() {
+      void load();
+    }
+    window.addEventListener(EMPLOYEE_CODES_CHANGED_EVENT, onCodesChanged);
+    return () => window.removeEventListener(EMPLOYEE_CODES_CHANGED_EVENT, onCodesChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function buildMenu(employee: Employee) {
     const marked = todayMap[employee.id];

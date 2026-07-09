@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import clsx from "clsx";
 
@@ -35,7 +36,7 @@ export function Modal({
   widthClassName = "max-w-lg",
   showCloseButton = true,
   initialFocus = "first",
-  layout = "sheet",
+  layout = "centered",
   compact = false,
   footer,
   bodyClassName,
@@ -48,13 +49,9 @@ export function Modal({
   children: ReactNode;
   widthClassName?: string;
   showCloseButton?: boolean;
-  /** Which element receives focus when the modal opens. */
   initialFocus?: "first" | "none";
-  /** `centered` keeps the dialog centered on all screen sizes; `sheet` slides up on mobile. */
   layout?: "sheet" | "centered";
-  /** Tighter header/body padding for confirmation-style dialogs. */
   compact?: boolean;
-  /** Optional footer region with its own padding, separated from the body. */
   footer?: ReactNode;
   bodyClassName?: string;
   footerClassName?: string;
@@ -66,10 +63,18 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
 
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+
     document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
 
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
     };
   }, [open]);
 
@@ -85,9 +90,15 @@ export function Modal({
   }, [open, initialFocus]);
 
   useEffect(() => {
-    if (!open || !panelRef.current) return;
+    if (!open) return;
 
     function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
       if (e.key !== "Tab" || !panelRef.current) return;
 
       const focusable = Array.from(
@@ -110,88 +121,98 @@ export function Modal({
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
   const hasFooter = Boolean(footer);
   const padX = compact ? "px-5" : "px-6";
-  const headerPad = compact ? `${padX} py-4` : `${padX} pt-6 pb-4`;
+  const headerPad = compact ? `${padX} py-4` : `${padX} pt-5 pb-3.5`;
 
   const bodyPad =
     bodyClassName
     ?? (hasFooter
-      ? `${padX} pt-5 pb-5`
+      ? `${padX} pt-4 pb-4`
       : compact
-        ? `${padX} pt-4 pb-6-safe`
-        : `${padX} pt-5 pb-8-safe`);
+        ? `${padX} pt-3.5 pb-5-safe`
+        : `${padX} pt-4 pb-6-safe`);
 
   const footerPad =
     footerClassName
     ?? clsx(
       "shrink-0 border-t border-slate-100 bg-white",
-      compact ? `${padX} pt-4 pb-6-safe` : `${padX} pt-5 pb-8-safe`
+      compact ? `${padX} pt-3.5 pb-5-safe` : `${padX} pt-4 pb-6-safe`
     );
 
-  return (
+  return createPortal(
     <div
-      className={clsx(
-        "modal-backdrop-animate fixed inset-0 z-50 flex justify-center bg-slate-900/45 backdrop-blur-[3px]",
-        layout === "centered" ? "items-center p-4" : "items-end p-0 sm:items-center sm:p-4"
-      )}
-      aria-hidden="true"
+      className="modal-backdrop-animate fixed inset-0 z-[100] overflow-y-auto overscroll-contain bg-slate-900/45 backdrop-blur-[3px]"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
-        ref={panelRef}
         className={clsx(
-          "modal-panel-animate flex max-h-[min(92vh,640px)] w-full flex-col overflow-hidden bg-white outline-none",
-          "shadow-2xl ring-1 ring-slate-900/5",
-          layout === "centered" ? "rounded-xl" : "rounded-t-2xl sm:rounded-xl",
-          widthClassName
+          "pointer-events-none flex min-h-full justify-center px-4 py-6 sm:px-6 sm:py-10",
+          layout === "sheet" ? "items-end sm:items-center" : "items-center"
         )}
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
-        tabIndex={-1}
       >
-        <div className={clsx("shrink-0 border-b border-slate-100", headerPad)}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 id={titleId} className={clsx("font-semibold text-slate-900", compact ? "text-sm" : "text-base")}>
-                {title}
-              </h3>
-              {description && (
-                <p id={descriptionId} className="mt-0.5 text-sm text-slate-500">
-                  {description}
-                </p>
+        <div
+          ref={panelRef}
+          className={clsx(
+            "modal-panel-animate pointer-events-auto relative flex w-full max-h-[min(90vh,calc(100dvh-3rem))] flex-col overflow-hidden bg-white outline-none",
+            "shadow-2xl ring-1 ring-slate-900/5",
+            layout === "centered" ? "rounded-xl" : "rounded-t-2xl sm:rounded-xl",
+            widthClassName
+          )}
+          onMouseDown={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={description ? descriptionId : undefined}
+          tabIndex={-1}
+        >
+          <div className={clsx("shrink-0 border-b border-slate-100", headerPad)}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 pr-1">
+                <h3
+                  id={titleId}
+                  className={clsx("font-semibold text-slate-900", compact ? "text-sm" : "text-base")}
+                >
+                  {title}
+                </h3>
+                {description && (
+                  <p id={descriptionId} className="mt-0.5 text-sm text-slate-500">
+                    {description}
+                  </p>
+                )}
+              </div>
+              {showCloseButton && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" strokeWidth={2} />
+                </button>
               )}
             </div>
-            {showCloseButton && (
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
           </div>
-        </div>
 
-        <div className={clsx("min-h-0 flex-1 overflow-y-auto overscroll-contain", bodyPad)}>
-          {children}
-        </div>
-
-        {footer && (
-          <div className={footerPad} role="contentinfo" aria-label="Modal actions">
-            {footer}
+          <div className={clsx("min-h-0 flex-1 overflow-y-auto overscroll-contain", bodyPad)}>
+            {children}
           </div>
-        )}
+
+          {footer && (
+            <div className={footerPad} role="contentinfo" aria-label="Modal actions">
+              {footer}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -18,6 +18,7 @@ const STATUS_META: Record<MonthlyCellStatus, { label: string; cell: string; code
   holiday_worked: { label: "Worked on Holiday", cell: "bg-teal-600 text-white", code: "HW" },
   weekly_off_worked: { label: "Worked on Weekly Off", cell: "bg-indigo-600 text-white", code: "WW" },
   none: { label: "—", cell: "bg-slate-50 text-slate-300", code: "" },
+  not_applicable: { label: "Not Applicable", cell: "bg-white text-slate-200 border border-slate-100", code: "" },
 };
 
 interface EmployeeMonthlyCalendarProps {

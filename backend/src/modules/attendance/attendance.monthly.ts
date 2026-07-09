@@ -1,4 +1,4 @@
-import { toDateString } from "../../utils/date";
+import { employeeJoinDate, toDateString } from "../../utils/date";
 import { getSettings } from "../settings/settings.cache";
 import { normalizeWeeklyOffDays, resolveWeeklyOffDays } from "../../utils/weeklyOffDays";
 import * as repo from "./attendance.repository";
@@ -22,7 +22,8 @@ export type MonthlyCellStatus =
   | "holiday"
   | "holiday_worked"
   | "weekly_off_worked"
-  | "none";
+  | "none"
+  | "not_applicable";
 
 export interface MonthlyDayCell {
   day: number;
@@ -116,6 +117,7 @@ function buildDayCell(input: {
   holidayMap: Map<string, { name: string; description: string | null }>;
   leaveSet: Set<string>;
   employeeId: string;
+  joinDate: string;
   todayStr: string;
   now: Date;
   closingTime: { hour: number; minute: number } | undefined;
@@ -127,11 +129,25 @@ function buildDayCell(input: {
     holidayMap,
     leaveSet,
     employeeId,
+    joinDate,
     todayStr,
     now,
     closingTime,
   } = input;
   const day = Number(dateStr.slice(-2));
+
+  // Days before the employee joined are not part of their attendance record.
+  if (dateStr < joinDate) {
+    return {
+      day,
+      date: dateStr,
+      status: "not_applicable",
+      totalMinutes: null,
+      late: false,
+      holidayName: null,
+    };
+  }
+
   const weekday = weekdayForDate(dateStr);
   const key = `${employeeId}|${dateStr}`;
   const isFuture = dateStr > todayStr;
@@ -235,6 +251,7 @@ export async function buildAttendanceGridForRange(params: {
         holidayMap: ctx.holidayMap,
         leaveSet: ctx.leaveSet,
         employeeId: emp.id,
+        joinDate: employeeJoinDate(emp.created_at),
         todayStr: ctx.todayStr,
         now: ctx.now,
         closingTime,

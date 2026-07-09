@@ -42,7 +42,7 @@ const WORK_STATUS_TONE: Record<WorkStatus, Tone> = {
 };
 
 export function WorkStatusBadge({ status }: { status: WorkStatus | null }) {
-  if (!status) return <Badge>-</Badge>;
+  if (!status) return null;
   return <Badge tone={WORK_STATUS_TONE[status]}>{WORK_STATUS_LABEL[status]}</Badge>;
 }
 

@@ -20,6 +20,7 @@ router.post("/audit-logs/clear", requireRole("admin"), controller.clearAuditLogs
 router.get("/audit-logs/:id", requireRole("admin"), controller.getAuditLog);
 router.get("/backup/status", requireRole("admin"), controller.getBackupStatus);
 router.get("/backup/storage", requireRole("admin"), controller.getStorageStatus);
+router.get("/backup/cleanup/options", requireRole("admin"), controller.getCleanupOptions);
 router.post("/backup/cleanup", requireRole("admin"), controller.cleanupData);
 router.post("/backup/run", requireRole("admin"), controller.runBackupNow);
 router.post(

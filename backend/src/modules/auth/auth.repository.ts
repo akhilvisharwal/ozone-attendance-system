@@ -7,7 +7,8 @@ function hashToken(token: string): string {
 
 export async function storeRefreshToken(employeeId: string, token: string, expiresAt: Date): Promise<void> {
   await pool.query(
-    `INSERT INTO refresh_tokens (employee_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+    `INSERT INTO refresh_tokens (employee_id, token_hash, expires_at, last_activity_at)
+     VALUES ($1, $2, $3, now())`,
     [employeeId, hashToken(token), expiresAt]
   );
 }
@@ -19,6 +20,26 @@ export async function isRefreshTokenValid(employeeId: string, token: string): Pr
     [employeeId, hashToken(token)]
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+export async function getRefreshTokenLastActivity(
+  employeeId: string,
+  token: string
+): Promise<Date | null> {
+  const result = await pool.query<{ last_activity_at: Date }>(
+    `SELECT last_activity_at FROM refresh_tokens
+     WHERE employee_id = $1 AND token_hash = $2 AND revoked_at IS NULL AND expires_at > now()`,
+    [employeeId, hashToken(token)]
+  );
+  return result.rows[0]?.last_activity_at ?? null;
+}
+
+export async function touchRefreshTokenActivity(employeeId: string, token: string): Promise<void> {
+  await pool.query(
+    `UPDATE refresh_tokens SET last_activity_at = now()
+     WHERE employee_id = $1 AND token_hash = $2 AND revoked_at IS NULL AND expires_at > now()`,
+    [employeeId, hashToken(token)]
+  );
 }
 
 export async function revokeRefreshToken(employeeId: string, token: string): Promise<void> {

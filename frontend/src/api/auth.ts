@@ -1,8 +1,19 @@
 import { apiClient } from "./client";
 import type { Employee } from "@/types";
 
+export interface SessionInfo {
+  timeoutMinutes: number;
+  lastActivityAt: string;
+}
+
+export interface AuthSessionResponse {
+  accessToken: string;
+  employee: Employee;
+  session?: SessionInfo;
+}
+
 export async function login(employeeId: string, password: string) {
-  const res = await apiClient.post<{ accessToken: string; employee: Employee }>("/auth/login", {
+  const res = await apiClient.post<AuthSessionResponse>("/auth/login", {
     employeeId,
     password,
   });
@@ -10,7 +21,12 @@ export async function login(employeeId: string, password: string) {
 }
 
 export async function refresh() {
-  const res = await apiClient.post<{ accessToken: string; employee: Employee }>("/auth/refresh");
+  const res = await apiClient.post<AuthSessionResponse>("/auth/refresh");
+  return res.data;
+}
+
+export async function heartbeat() {
+  const res = await apiClient.post<{ lastActivityAt: string; timeoutMinutes: number }>("/auth/heartbeat");
   return res.data;
 }
 

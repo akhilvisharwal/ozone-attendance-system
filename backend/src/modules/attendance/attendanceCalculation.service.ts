@@ -31,7 +31,9 @@ export const LATE_ELIGIBLE_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set([
 /** True when the day has no check-in and was not manually finalized by an admin. */
 export function isIncompleteAttendanceDay(record: unknown): boolean {
   const row = record as AttendanceRecordLike;
-  return !row.check_in_time && !row.is_admin_marked;
+  if (row.is_admin_marked) return false;
+  if (row.status === "absent" || row.day_status === "absent") return false;
+  return !row.check_in_time;
 }
 
 export function cellStatusFromRecord(
@@ -54,7 +56,10 @@ export function cellStatusFromRecord(
   if (record.day_status === "present") return "present";
   if (record.day_status === "half_day") return "half_day";
   if (record.day_status === "absent") return "absent";
-  if (record.status === "checked_in") return "present";
+  if (record.status === "checked_in") {
+    if (record.is_half_day || record.check_in_status === "half_day") return "half_day";
+    return "present";
+  }
   if (record.status === "absent") return "absent";
   return "present";
 }
@@ -99,6 +104,7 @@ export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): nu
   let pending = 0;
 
   for (const day of days) {
+    if (day.status === "not_applicable") continue;
     if (day.date > todayStr) continue;
     elapsed += 1;
     if (day.status === "weekly_off") weeklyOff += 1;
@@ -136,6 +142,8 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
   let lateCheckIns = 0;
 
   for (const day of days) {
+    if (day.status === "not_applicable") continue;
+
     switch (day.status) {
       case "present":
         present += 1;
@@ -204,6 +212,7 @@ export function dashboardBucketFromStatus(
     case "half_day":
       return "half_day";
     case "none":
+    case "not_applicable":
       return "pending";
     default:
       return "absent";

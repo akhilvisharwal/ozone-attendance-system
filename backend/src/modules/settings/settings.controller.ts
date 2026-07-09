@@ -41,12 +41,12 @@ import { buildReadableReportExcel } from "./settings.backupReportExcel";
 import { findDesignationById } from "../employees/designations.repository";
 import { buildReadableReportPdf } from "./settings.backupReportPdf";
 import type { ReadableReportScope } from "./settings.backupReport.types";
+import { getStorageBreakdown } from "./settings.storage";
 import {
   CLEANUP_TARGETS,
-  getStorageBreakdown,
-  runDataCleanup,
-  type CleanupTarget,
-} from "./settings.storage";
+  executeStorageCleanup,
+  getCleanupCenterSummary,
+} from "./settings.storageCleanup";
 import {
   auditClearSchema,
   auditExportFormatSchema,
@@ -121,6 +121,9 @@ export const getPublicSettings = asyncHandler(async (req: Request, res: Response
       apiKey: env.googleMapsBrowserApiKey,
       configured: env.googleMapsBrowserApiKey.length > 0,
     },
+    security: {
+      sessionTimeoutMinutes: s.security.sessionTimeoutMinutes,
+    },
   });
 });
 
@@ -146,7 +149,11 @@ export const updateSettings = asyncHandler(async (req: Request, res: Response) =
                   ...(raw as BackupSettings),
                 })
               : raw;
-  const previous = getSettings()[category];
+
+  // Always re-read from DB before comparing prefixes so a stale in-memory cache
+  // cannot skip migration or overwrite a previously saved EMP### with OZN###.
+  const freshSettings = await refreshSettingsCache();
+  const previous = freshSettings[category];
 
   let prefixMigration: PrefixMigrationResult | null = null;
   let settings;
@@ -170,6 +177,8 @@ export const updateSettings = asyncHandler(async (req: Request, res: Response) =
           persistEmployeeSettings: nextEmployee,
           updatedBy: req.user!.id,
         });
+        // Migration may rename 0 rows when codes already use the new prefix
+        // (desynced settings). Settings are still persisted in that transaction.
         settings = await refreshSettingsCache();
       } catch (err) {
         const message =
@@ -251,23 +260,30 @@ export const getStorageStatus = asyncHandler(async (_req: Request, res: Response
   res.json({ status, storage });
 });
 
+export const getCleanupOptions = asyncHandler(async (_req: Request, res: Response) => {
+  const summary = await getCleanupCenterSummary();
+  res.json(summary);
+});
+
 export const cleanupData = asyncHandler(async (req: Request, res: Response) => {
   const input = cleanupConfirmSchema.parse(req.body);
-  const target = input.target as CleanupTarget;
-  if (!CLEANUP_TARGETS.includes(target)) {
-    throw ApiError.badRequest("Unsupported cleanup target");
+  if (!CLEANUP_TARGETS.includes(input.category)) {
+    throw ApiError.badRequest("Unsupported cleanup category");
   }
 
-  const result = await runDataCleanup(target);
-  const [status, storage] = await Promise.all([
+  const result = await executeStorageCleanup(input.category);
+  const [status, storage, cleanup] = await Promise.all([
     backupService.getDatabaseStatus(),
     getStorageBreakdown(),
+    getCleanupCenterSummary(),
   ]);
 
   await logAudit(req, "settings.data_cleanup", "settings", undefined, {
-    target,
+    category: result.category,
     deletedRecords: result.deletedRecords,
     deletedFiles: result.deletedFiles,
+    databaseSizeRecoveredBytes: result.databaseSizeRecoveredBytes,
+    uploadedFilesRecoveredBytes: result.uploadedFilesRecoveredBytes,
     details: result.details,
   });
 
@@ -276,6 +292,7 @@ export const cleanupData = asyncHandler(async (req: Request, res: Response) => {
     result,
     status,
     storage,
+    cleanup,
     backup: getSettings().backup,
   });
 });

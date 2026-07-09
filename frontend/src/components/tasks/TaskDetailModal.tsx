@@ -210,6 +210,7 @@ export function TaskDetailModal({
         onClose={onClose}
         title={modalTitle}
         widthClassName="max-w-2xl"
+        layout="centered"
         footer={
           showDeleteFooter ? (
             <Button

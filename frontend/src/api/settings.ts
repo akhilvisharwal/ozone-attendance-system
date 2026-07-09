@@ -8,8 +8,9 @@ import type {
   AuditSettings,
   BackupSettings,
   BackupStatusResponse,
+  CleanupCenterSummary,
   CleanupResultResponse,
-  CleanupTarget,
+  CleanupCategory,
   DatabasePanelResponse,
   PublicSettings,
   SettingsCategory,
@@ -47,14 +48,16 @@ export async function fetchStorageBreakdown(): Promise<StorageBreakdown> {
   return res.data.storage;
 }
 
-export async function runDataCleanup(
-  target: CleanupTarget,
-  confirmation: "DELETE"
-): Promise<CleanupResultResponse> {
-  const res = await apiClient.post<CleanupResultResponse>("/settings/backup/cleanup", {
-    target,
-    confirmation,
-  });
+export async function fetchCleanupCenter(): Promise<CleanupCenterSummary> {
+  const res = await apiClient.get<CleanupCenterSummary>("/settings/backup/cleanup/options");
+  return res.data;
+}
+
+export async function runStorageCleanup(input: {
+  category: CleanupCategory;
+  confirmation: "DELETE";
+}): Promise<CleanupResultResponse> {
+  const res = await apiClient.post<CleanupResultResponse>("/settings/backup/cleanup", input);
   return res.data;
 }
 

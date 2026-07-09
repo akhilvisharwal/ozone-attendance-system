@@ -27,6 +27,7 @@ const STATUS_STYLES: Record<MonthlyCellStatus, StatusStyle> = {
   holiday_worked: { code: "HW", bg: "#0d9488", fg: "#ffffff" },
   weekly_off_worked: { code: "WW", bg: "#4f46e5", fg: "#ffffff" },
   none: { code: "", bg: "#f8fafc", fg: "#cbd5e1" },
+  not_applicable: { code: "", bg: "#ffffff", fg: "#e2e8f0" },
 };
 
 const LEGEND_ITEMS: { code: string; label: string; bg: string; fg: string }[] = [
@@ -38,6 +39,7 @@ const LEGEND_ITEMS: { code: string; label: string; bg: string; fg: string }[] = 
   { code: "HO", label: "Holiday", bg: "#a855f7", fg: "#ffffff" },
   { code: "HW", label: "Worked on Holiday", bg: "#0d9488", fg: "#ffffff" },
   { code: "WW", label: "Worked on Weekly Off", bg: "#4f46e5", fg: "#ffffff" },
+  { code: "—", label: "Not Applicable (before joining)", bg: "#ffffff", fg: "#cbd5e1" },
 ];
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];

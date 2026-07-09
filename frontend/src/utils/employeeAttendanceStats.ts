@@ -127,7 +127,7 @@ export function computeAttendanceStreak(
       break;
     }
 
-    if (cell.status === "weekly_off" || cell.status === "holiday") {
+    if (cell.status === "weekly_off" || cell.status === "holiday" || cell.status === "not_applicable") {
       cursor.setDate(cursor.getDate() - 1);
       continue;
     }

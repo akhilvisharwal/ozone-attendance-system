@@ -1,7 +1,11 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
+import { decodeJwtExpiryMs } from "@/utils/jwt";
 
 let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+const TOKEN_REFRESH_LEAD_MS = 60_000;
 
 /** In production (Vercel), set VITE_API_URL to the backend origin. Dev uses Vite proxy. */
 export function getApiOrigin(): string {
@@ -14,8 +18,31 @@ export function getApiBasePath(): string {
   return origin ? `${origin}/api` : "/api";
 }
 
+function clearRefreshTimer() {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+function scheduleProactiveRefresh(token: string) {
+  clearRefreshTimer();
+  const expiryMs = decodeJwtExpiryMs(token);
+  if (!expiryMs) return;
+
+  const delay = Math.max(0, expiryMs - Date.now() - TOKEN_REFRESH_LEAD_MS);
+  refreshTimer = setTimeout(() => {
+    void refreshAccessToken();
+  }, delay);
+}
+
 export function setAccessToken(token: string | null) {
   accessToken = token;
+  if (token) {
+    scheduleProactiveRefresh(token);
+  } else {
+    clearRefreshTimer();
+  }
 }
 
 export function getAccessToken() {
@@ -41,7 +68,7 @@ apiClient.interceptors.request.use((config) => {
 
 let refreshPromise: Promise<string | null> | null = null;
 
-async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(): Promise<string | null> {
   if (!refreshPromise) {
     refreshPromise = axios
       .post(`${getApiBasePath()}/auth/refresh`, {}, { withCredentials: true })
@@ -61,13 +88,20 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+export function isNetworkError(error: unknown): boolean {
+  return axios.isAxiosError(error) && !error.response;
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
 
     const url = originalRequest?.url ?? "";
-    const isAuthRoute = url.includes("/auth/login") || url.includes("/auth/refresh");
+    const isAuthRoute =
+      url.includes("/auth/login") ||
+      url.includes("/auth/refresh") ||
+      url.includes("/auth/heartbeat");
     // Admin password change returns 401 for wrong current password — do not treat as session expiry.
     const isStepUpAuth = url.includes("/security/change-password");
 
@@ -95,7 +129,7 @@ apiClient.interceptors.response.use(
 export function extractErrorMessage(error: unknown, fallback = "Something went wrong. Please try again."): string {
   if (axios.isAxiosError(error)) {
     if (!error.response) {
-      return "Cannot reach the server. Wait 30 seconds and try again — the API may be waking up.";
+      return "Cannot reach the server. Your session is still active — we'll reconnect automatically when you're back online.";
     }
     const message = (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
     if (message) return message;

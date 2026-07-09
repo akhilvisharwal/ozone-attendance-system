@@ -15,6 +15,7 @@ const loginLimiter = rateLimit({
 
 router.post("/login", loginLimiter, controller.login);
 router.post("/refresh", controller.refresh);
+router.post("/heartbeat", controller.heartbeat);
 router.post("/logout", controller.logout);
 router.get("/me", requireAuth, controller.me);
 router.post("/change-password", requireAuth, controller.changePassword);

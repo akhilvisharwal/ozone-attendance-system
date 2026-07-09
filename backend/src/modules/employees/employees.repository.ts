@@ -248,6 +248,7 @@ export async function listActiveEmployeesForGrid(
     designation: string | null;
     weekly_off_days: number[];
     uses_default_weekly_off: boolean;
+    created_at: Date;
   }[]
 > {
   const conditions = ["e.role = 'employee'", "e.deleted_at IS NULL", "e.is_active = true"];
@@ -264,9 +265,10 @@ export async function listActiveEmployeesForGrid(
     designation: string | null;
     weekly_off_days: number[];
     uses_default_weekly_off: boolean;
+    created_at: Date;
   }>(
     `SELECT e.id, e.employee_code, e.name, e.department, d.name AS designation,
-            e.weekly_off_days, e.uses_default_weekly_off
+            e.weekly_off_days, e.uses_default_weekly_off, e.created_at
        FROM employees e
        LEFT JOIN employee_designations d ON d.id = e.designation_id
       WHERE ${conditions.join(" AND ")}

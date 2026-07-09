@@ -5,7 +5,8 @@ import { ApiError } from "../../utils/errors";
 import { todayDateString, minutesBetween } from "../../utils/date";
 import { storage } from "../../services/storage";
 import { reverseGeocode } from "../../services/geocode";
-import { classifyCheckIn, classifyCheckOut, classifyDayStatus, getTimingRulesFromSettings } from "../../utils/attendanceTiming";
+import { classifyCheckIn, classifyCheckOut, getTimingRulesFromSettings } from "../../utils/attendanceTiming";
+import { resolveAutomaticDayStatus } from "./attendanceDayStatus";
 import { getSettings } from "../settings/settings.cache";
 import { validateAttendanceCapture } from "../../utils/attendanceCapture";
 import { getEffectiveAttendanceRules } from "./attendanceRules.service";
@@ -202,11 +203,13 @@ export const checkOut = asyncHandler(async (req: Request, res: Response) => {
   const totalMinutes = priorMinutes + sessionMinutes;
   const { settings: effectiveRules } = await getEffectiveAttendanceRules(today, employeeId);
   const checkOutStatus = classifyCheckOut(checkOutTime, effectiveRules);
-  const dayStatus = attendanceSettings.autoCalculate
-    ? classifyDayStatus(totalMinutes, effectiveRules)
-    : existing.is_half_day
-      ? ("half_day" as const)
-      : ("present" as const);
+  const dayStatus = resolveAutomaticDayStatus({
+    isHalfDay: Boolean(existing.is_half_day),
+    checkInStatus: existing.check_in_status,
+    totalMinutes,
+    autoCalculate: attendanceSettings.autoCalculate,
+    settings: effectiveRules,
+  });
 
   const allPhotoPaths = checkoutSelfiePath
     ? [checkoutSelfiePath, ...sitePhotoPaths]
