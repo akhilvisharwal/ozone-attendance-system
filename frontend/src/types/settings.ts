@@ -227,13 +227,16 @@ export type CleanupTarget =
   | "attendance_bundle"
   | "audit_logs";
 
+export type StorageKind = "postgresql" | "files";
+
 export interface StorageCategory {
   id: string;
   label: string;
   recordCount: number;
-  sizeBytes: number | null;
+  sizeBytes: number;
   sizeLabel: string;
-  percentOfTotal: number | null;
+  percentOfTotal: number;
+  storageKind: StorageKind;
   description: string;
 }
 
@@ -243,6 +246,7 @@ export interface StorageTableStat {
   sizeBytes: number;
   sizeLabel: string;
   percentOfTotal: number;
+  storageKind: StorageKind;
 }
 
 export interface CleanupPreviewItem {
@@ -274,6 +278,10 @@ export interface StorageCapacity {
 export interface StorageBreakdown {
   databaseSizeBytes: number;
   databaseSizeLabel: string;
+  uploadedFilesBytes: number;
+  uploadedFilesLabel: string;
+  totalStorageUsedBytes: number;
+  totalStorageUsedLabel: string;
   totalTrackedBytes: number;
   totalTrackedLabel: string;
   capacity: StorageCapacity;

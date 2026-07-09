@@ -17,6 +17,9 @@ export interface StorageDriver {
   /** Removes a previously saved file. Safe to call on missing files. */
   remove(relativePath: string): Promise<void>;
 
+  /** Returns the on-disk byte size of a saved file, or null when missing or inaccessible. */
+  statSize(relativePath: string): Promise<number | null>;
+
   /**
    * Renames a relative directory (e.g. `avatars/OZN001` → `avatars/EMP001`).
    * No-op when the source does not exist. Safe to call when destination already exists

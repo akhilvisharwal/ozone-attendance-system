@@ -133,13 +133,22 @@ describe("storage cleanup integration", { skip: process.env.SKIP_DB_TESTS === "1
       assert.equal(storage.capacity.maxBytes, null);
     }
     assert.equal(storage.capacity.usedBytes, storage.databaseSizeBytes);
+    assert.ok(storage.uploadedFilesBytes >= 0);
+    assert.equal(
+      storage.totalStorageUsedBytes,
+      storage.databaseSizeBytes + storage.uploadedFilesBytes
+    );
     assert.ok(storage.categories.some((c) => c.id === "settings"));
-    assert.ok(storage.categories.some((c) => c.id === "location"));
-    assert.ok(storage.categories.length >= 8);
+    assert.ok(storage.categories.some((c) => c.id === "attendance"));
+    assert.ok(storage.categories.length >= 5);
     for (const category of storage.categories) {
       assert.ok(typeof category.recordCount === "number");
       assert.ok(category.sizeLabel.length > 0);
+      assert.ok(typeof category.percentOfTotal === "number");
+      assert.ok(["postgresql", "files"].includes(category.storageKind));
     }
+    const percentSum = storage.categories.reduce((sum, c) => sum + c.percentOfTotal, 0);
+    assert.ok(percentSum >= 95 && percentSum <= 100.5);
     assert.ok(storage.tables.length >= 5);
     assert.ok(storage.cleanupPreview.attendance_records.affectedRecords >= 2);
     assert.ok(storage.cleanupPreview.attendance_selfies.affectedRecords >= 2);

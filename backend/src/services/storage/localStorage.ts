@@ -45,6 +45,17 @@ export class LocalStorageDriver implements StorageDriver {
     }
   }
 
+  async statSize(relativePath: string): Promise<number | null> {
+    const fullPath = this.resolveSafe(relativePath);
+    if (!fullPath) return null;
+    try {
+      const stat = await fs.promises.stat(fullPath);
+      return stat.isFile() ? stat.size : null;
+    } catch {
+      return null;
+    }
+  }
+
   async renameDirectory(fromRelative: string, toRelative: string): Promise<void> {
     const fromPath = this.resolveSafe(fromRelative);
     const toPath = this.resolveSafe(toRelative);

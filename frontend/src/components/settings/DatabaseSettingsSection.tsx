@@ -100,10 +100,7 @@ function CapacityBar({
   );
 }
 
-function ModuleBar({ percent }: { percent: number | null }) {
-  if (percent == null) {
-    return <div className="mt-2 h-2 rounded-full bg-slate-100" />;
-  }
+function ModuleBar({ percent }: { percent: number }) {
   return (
     <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
       <div
@@ -112,6 +109,10 @@ function ModuleBar({ percent }: { percent: number | null }) {
       />
     </div>
   );
+}
+
+function storageKindLabel(kind: StorageBreakdown["categories"][number]["storageKind"]): string {
+  return kind === "postgresql" ? "PostgreSQL" : "Uploaded files";
 }
 
 function capacitySourceLabel(source: StorageBreakdown["capacity"]["limitSource"]): string {
@@ -310,13 +311,23 @@ export function DatabaseSettingsSection() {
 
       <SettingsSection
         title="Storage Breakdown"
-        description="Module sizes from PostgreSQL. Selfie file sizes are measured from uploaded files and labeled separately. Percentages are of current database size."
+        description="Live PostgreSQL table sizes (pg_total_relation_size) plus real uploaded file sizes on disk. Percentages are of total storage used (database + files)."
       >
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            label="Tracked PostgreSQL modules"
-            value={storage.totalTrackedLabel}
-            hint="Sum of measured module table/column storage"
+            label="PostgreSQL database"
+            value={storage.databaseSizeLabel}
+            hint="pg_database_size (live)"
+          />
+          <StatCard
+            label="Uploaded files"
+            value={storage.uploadedFilesLabel}
+            hint="Sum of real file sizes in uploads/"
+          />
+          <StatCard
+            label="Total storage used"
+            value={storage.totalStorageUsedLabel}
+            hint="Database size + uploaded files"
           />
           <StatCard
             label="Capacity source"
@@ -338,18 +349,14 @@ export function DatabaseSettingsSection() {
                 <div className="text-right">
                   <p className="text-sm font-semibold text-slate-900">{category.sizeLabel}</p>
                   <p className="text-xs text-slate-500">
-                    {category.recordCount.toLocaleString()} records
-                    {category.percentOfTotal == null
-                      ? category.id === "selfies"
-                        ? " · file storage"
-                        : " · Unavailable"
-                      : ` · ${category.percentOfTotal}% of DB`}
+                    {category.recordCount.toLocaleString()}{" "}
+                    {category.storageKind === "files" ? "file" : "record"}
+                    {category.recordCount === 1 ? "" : "s"} · {category.percentOfTotal}% of total ·{" "}
+                    {storageKindLabel(category.storageKind)}
                   </p>
                 </div>
               </div>
-              <ModuleBar
-                percent={category.id === "selfies" ? null : category.percentOfTotal}
-              />
+              <ModuleBar percent={category.percentOfTotal} />
             </div>
           ))}
         </div>
@@ -361,7 +368,7 @@ export function DatabaseSettingsSection() {
                 <th className="px-3 py-2 font-semibold">Table</th>
                 <th className="px-3 py-2 font-semibold">Records</th>
                 <th className="px-3 py-2 font-semibold">Size</th>
-                <th className="px-3 py-2 font-semibold">% of DB</th>
+                <th className="px-3 py-2 font-semibold">% of total</th>
               </tr>
             </thead>
             <tbody>
