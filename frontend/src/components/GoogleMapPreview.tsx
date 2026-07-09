@@ -6,7 +6,6 @@ import {
   loadGoogleMaps,
 } from "@/utils/googleMaps";
 import { useGoogleMapsApiKey } from "@/hooks/useGoogleMapsApiKey";
-import { usePublicSettings } from "@/contexts/SettingsContext";
 
 const outlineLinkClass =
   "inline-flex min-h-[36px] w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 sm:w-auto";
@@ -38,18 +37,19 @@ export function GoogleMapPreview({
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const apiKey = useGoogleMapsApiKey();
-  const { loading: settingsLoading } = usePublicSettings();
+  const { apiKey, waitingForServer } = useGoogleMapsApiKey();
 
   useEffect(() => {
     if (!apiKey) {
-      if (settingsLoading) {
+      if (waitingForServer) {
         setStatus("loading");
         setErrorMessage(null);
         return;
       }
       setStatus("error");
-      setErrorMessage("Google Maps API key is not configured.");
+      setErrorMessage(
+        "Google Maps API key is not configured. Set VITE_GOOGLE_MAPS_API_KEY on Vercel or GOOGLE_MAPS_API_KEY on Render."
+      );
       return;
     }
 
@@ -98,7 +98,7 @@ export function GoogleMapPreview({
     return () => {
       cancelled = true;
     };
-  }, [apiKey, compact, latitude, longitude, settingsLoading]);
+  }, [apiKey, compact, latitude, longitude, waitingForServer]);
 
   const mapHeight = compact ? "h-36" : "h-48";
   const openUrl = googleMapsSearchUrl(latitude, longitude);

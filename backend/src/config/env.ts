@@ -76,7 +76,16 @@ export const env = {
   maxUploadSizeMb: parseInt(process.env.MAX_UPLOAD_SIZE_MB ?? "8", 10),
 
   geocodeProvider: process.env.GEOCODE_PROVIDER ?? "google",
+  /** Server-side Geocoding API key (Render). */
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
+  /**
+   * Browser Maps JavaScript API key served to the frontend.
+   * Falls back to GOOGLE_MAPS_API_KEY when a dedicated browser key is not set.
+   */
+  googleMapsBrowserApiKey:
+    process.env.GOOGLE_MAPS_BROWSER_API_KEY?.trim() ||
+    process.env.GOOGLE_MAPS_API_KEY?.trim() ||
+    "",
 
   // Legacy dashboard "late arrival" cut-off — kept for backward compat
   officeStartTime: process.env.OFFICE_START_TIME ?? "09:30:00",

@@ -117,7 +117,10 @@ export const getPublicSettings = asyncHandler(async (req: Request, res: Response
     attendance: effectiveAttendance,
     attendanceOverride: activeOverride,
     reports: { defaultFormat: s.reports.defaultFormat },
-    maps: { apiKey: env.googleMapsApiKey },
+    maps: {
+      apiKey: env.googleMapsBrowserApiKey,
+      configured: env.googleMapsBrowserApiKey.length > 0,
+    },
   });
 });
 

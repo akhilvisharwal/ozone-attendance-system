@@ -343,6 +343,7 @@ export interface PublicSettings {
   maps: {
     /** Browser Maps JavaScript API key (referrer-restricted; safe to expose to clients). */
     apiKey: string;
+    configured: boolean;
   };
 }
 

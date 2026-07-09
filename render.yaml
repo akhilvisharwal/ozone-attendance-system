@@ -44,6 +44,8 @@ services:
         value: google
       - key: GOOGLE_MAPS_API_KEY
         sync: false
+      - key: GOOGLE_MAPS_BROWSER_API_KEY
+        sync: false
     disk:
       # Persists uploads/ (selfies, avatars, site photos) and uploads/backups/
       name: uploads
