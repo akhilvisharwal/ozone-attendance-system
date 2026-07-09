@@ -1,35 +1,96 @@
 import { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
+import { env } from "../../config/env";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/errors";
-import { normalizeAttendanceSettings } from "../../utils/settingsHelpers";
+import { normalizeAttendanceSettings, normalizeCompanySettings } from "../../utils/settingsHelpers";
+import { validatePasswordPolicy } from "../../utils/settingsHelpers";
 import { normalizeLeaveSettings } from "../../utils/leaveSettings";
 import { getEnabledLeaveCategories } from "../../utils/leaveSettings";
-import { logAudit } from "../audit/audit.repository";
-import { getSettings, refreshSettingsCache, updateCategory } from "./settings.cache";
-import type { AttendanceSettings } from "./settings.types";
-import * as repo from "./settings.repository";
 import {
+  clearAllAuditLogs,
+  countAuditLogs,
+  fetchAuditLogsForExport,
+  getAuditLogById,
+  listAuditLogs as listAuditLogsRepo,
+  logAudit,
+} from "../audit/audit.repository";
+import { buildAuditLogsExcel, buildAuditLogsPdf } from "../audit/audit.export";
+import {
+  AUDIT_ACTION_TYPES,
+  AUDIT_MODULES,
+  AUDIT_RETENTION_DAYS,
+} from "../audit/audit.catalog";
+import { getSettings, refreshSettingsCache, updateCategory } from "./settings.cache";
+import { normalizeBackupSettings, parseBackupPayload, type BackupExportType } from "../../utils/backupHelpers";
+import type {
+  AttendanceSettings,
+  BackupSettings,
+  CompanySettings,
+  EmployeeSettings,
+  WeeklyOffSettings,
+} from "./settings.types";
+import { getEffectiveAttendanceRules } from "../attendance/attendanceRules.service";
+import { todayDateString } from "../../utils/date";
+import { normalizeWeeklyOffDays } from "../../utils/weeklyOffDays";
+import * as repo from "./settings.repository";
+import * as backupService from "./settings.backup";
+import { fetchReadableReportBundle } from "./settings.backupReportData";
+import { buildReadableReportExcel } from "./settings.backupReportExcel";
+import { findDesignationById } from "../employees/designations.repository";
+import { buildReadableReportPdf } from "./settings.backupReportPdf";
+import type { ReadableReportScope } from "./settings.backupReport.types";
+import {
+  CLEANUP_TARGETS,
+  getStorageBreakdown,
+  runDataCleanup,
+  type CleanupTarget,
+} from "./settings.storage";
+import {
+  auditClearSchema,
+  auditExportFormatSchema,
   auditQuerySchema,
   categoryParamSchema,
   changePasswordSchema,
+  cleanupConfirmSchema,
   parseCategorySettings,
 } from "./settings.validators";
+import {
+  migrateEmployeeIdPrefix,
+  prefixesDiffer,
+  type PrefixMigrationResult,
+} from "../../utils/employeeIdPrefixMigration";
 import { pool } from "../../config/db";
 import bcrypt from "bcryptjs";
 
 export const getAllSettings = asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ settings: getSettings() });
+  // Always read through the DB so the Settings UI shows the persisted prefix
+  // even if another process updated app_settings.
+  const settings = await refreshSettingsCache();
+  res.json({ settings });
 });
 
 /** Public subset for authenticated users (mobile rules, company branding, policies). */
-export const getPublicSettings = asyncHandler(async (_req: Request, res: Response) => {
+export const getPublicSettings = asyncHandler(async (req: Request, res: Response) => {
   const s = getSettings();
+  const today = todayDateString();
+  const employeeId = req.user!.role === "employee" ? req.user!.id : null;
+  const { settings: effectiveAttendance, activeOverride } = await getEffectiveAttendanceRules(
+    today,
+    employeeId
+  );
   res.json({
     company: {
       name: s.company.name,
       logoPath: s.company.logoPath,
+      address: s.company.address,
+      phone: s.company.phone,
+      phoneCountryCode: s.company.phoneCountryCode,
+      secondaryPhone: s.company.secondaryPhone,
+      secondaryPhoneCountryCode: s.company.secondaryPhoneCountryCode,
+      email: s.company.email,
+      additionalEmails: s.company.additionalEmails ?? [],
       timeFormat: s.company.timeFormat,
       timezone: s.company.timezone,
       dateFormat: s.company.dateFormat,
@@ -53,12 +114,10 @@ export const getPublicSettings = asyncHandler(async (_req: Request, res: Respons
       idFormat: s.employee.idFormat,
       profilePhotoRequired: s.employee.profilePhotoRequired,
     },
-    attendance: {
-      allowManualOverride: s.attendance.allowManualOverride,
-      minHoursPresent: s.attendance.minHoursPresent,
-      minHoursHalfDay: s.attendance.minHoursHalfDay,
-    },
+    attendance: effectiveAttendance,
+    attendanceOverride: activeOverride,
     reports: { defaultFormat: s.reports.defaultFormat },
+    maps: { apiKey: env.googleMapsApiKey },
   });
 });
 
@@ -70,21 +129,262 @@ export const updateSettings = asyncHandler(async (req: Request, res: Response) =
       ? normalizeAttendanceSettings(raw as AttendanceSettings)
       : category === "leave"
         ? normalizeLeaveSettings(raw)
-        : raw;
+        : category === "company"
+          ? normalizeCompanySettings(raw as CompanySettings)
+          : category === "weeklyOff"
+            ? {
+                defaultWeeklyOffDays: normalizeWeeklyOffDays(
+                  (raw as WeeklyOffSettings).defaultWeeklyOffDays ?? []
+                ),
+              }
+            : category === "backup"
+              ? normalizeBackupSettings({
+                  ...(getSettings().backup as BackupSettings),
+                  ...(raw as BackupSettings),
+                })
+              : raw;
   const previous = getSettings()[category];
-  const settings = await updateCategory(category, parsed as never, req.user!.id);
-  await logAudit(req, "settings.update", "settings", undefined, {
+
+  let prefixMigration: PrefixMigrationResult | null = null;
+  let settings;
+
+  if (category === "employee") {
+    const prevEmployee = previous as EmployeeSettings;
+    const nextEmployee = parsed as EmployeeSettings;
+    if (nextEmployee.defaultDesignationId) {
+      const designation = await findDesignationById(nextEmployee.defaultDesignationId);
+      if (!designation) {
+        throw ApiError.badRequest("Default role was not found. Choose an existing employee role.");
+      }
+    }
+    if (prefixesDiffer(prevEmployee.idFormat, nextEmployee.idFormat)) {
+      try {
+        // Persist settings in the same transaction as the ID rewrite so a
+        // conflict/failure cannot leave codes migrated without saving EMP###.
+        prefixMigration = await migrateEmployeeIdPrefix({
+          previousIdFormat: prevEmployee.idFormat,
+          newIdFormat: nextEmployee.idFormat,
+          persistEmployeeSettings: nextEmployee,
+          updatedBy: req.user!.id,
+        });
+        settings = await refreshSettingsCache();
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to update existing employee IDs for the new prefix.";
+        throw ApiError.badRequest(message);
+      }
+    } else {
+      settings = await updateCategory(category, parsed as never, req.user!.id);
+    }
+  } else {
+    settings = await updateCategory(category, parsed as never, req.user!.id);
+  }
+
+  const auditAction =
+    category === "audit" ? "settings.audit_retention_update" : "settings.update";
+  await logAudit(req, auditAction, "settings", undefined, {
     category,
     previous,
     next: parsed,
+    ...(prefixMigration
+      ? {
+          employeeIdPrefixMigration: {
+            from: prefixMigration.previousPrefix,
+            to: prefixMigration.nextPrefix,
+            renamedCount: prefixMigration.renamedCount,
+            remappedDueToConflictCount: prefixMigration.remappedDueToConflictCount,
+          },
+        }
+      : {}),
   });
-  res.json({ settings, category: settings[category] });
+  res.json({
+    settings,
+    category: settings[category],
+    ...(prefixMigration
+      ? {
+          employeeIdPrefixMigration: {
+            from: prefixMigration.previousPrefix,
+            to: prefixMigration.nextPrefix,
+            renamedCount: prefixMigration.renamedCount,
+            remappedDueToConflictCount: prefixMigration.remappedDueToConflictCount,
+          },
+        }
+      : {}),
+  });
+});
+
+function sendBackupDownload(res: Response, filename: string, payload: unknown): void {
+  const json = JSON.stringify(payload, null, 2);
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(json);
+}
+
+async function markBackupCompleted(userId: string): Promise<string> {
+  const lastBackupAt = new Date().toISOString();
+  const next: BackupSettings = {
+    ...getSettings().backup,
+    lastBackupAt,
+  };
+  await updateCategory("backup", next, userId);
+  return lastBackupAt;
+}
+
+export const getBackupStatus = asyncHandler(async (_req: Request, res: Response) => {
+  const [status, backup] = await Promise.all([
+    backupService.getDatabaseStatus(),
+    Promise.resolve(getSettings().backup),
+  ]);
+  res.json({ status, backup });
+});
+
+export const getStorageStatus = asyncHandler(async (_req: Request, res: Response) => {
+  const [status, storage] = await Promise.all([
+    backupService.getDatabaseStatus(),
+    getStorageBreakdown(),
+  ]);
+  res.json({ status, storage });
+});
+
+export const cleanupData = asyncHandler(async (req: Request, res: Response) => {
+  const input = cleanupConfirmSchema.parse(req.body);
+  const target = input.target as CleanupTarget;
+  if (!CLEANUP_TARGETS.includes(target)) {
+    throw ApiError.badRequest("Unsupported cleanup target");
+  }
+
+  const result = await runDataCleanup(target);
+  const [status, storage] = await Promise.all([
+    backupService.getDatabaseStatus(),
+    getStorageBreakdown(),
+  ]);
+
+  await logAudit(req, "settings.data_cleanup", "settings", undefined, {
+    target,
+    deletedRecords: result.deletedRecords,
+    deletedFiles: result.deletedFiles,
+    details: result.details,
+  });
+
+  res.json({
+    success: true,
+    result,
+    status,
+    storage,
+    backup: getSettings().backup,
+  });
+});
+
+export const runBackupNow = asyncHandler(async (req: Request, res: Response) => {
+  const { payload, filename } = await backupService.createBackupFile("full");
+  const lastBackupAt = await markBackupCompleted(req.user!.id);
+  await logAudit(req, "settings.backup_create", "settings", undefined, {
+    filename,
+    lastBackupAt,
+    tableCounts: payload.manifest.tableCounts,
+  });
+  sendBackupDownload(res, filename, payload);
+});
+
+function sendBinaryDownload(
+  res: Response,
+  filename: string,
+  buffer: Buffer,
+  contentType: string
+): void {
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(buffer);
+}
+
+export const exportReadableReport = asyncHandler(async (req: Request, res: Response) => {
+  const format = String(req.params.format ?? "").toLowerCase();
+  const scopeParam = String(req.query.scope ?? "full").toLowerCase();
+  const scope = scopeParam as ReadableReportScope;
+
+  if (!["pdf", "excel"].includes(format)) {
+    throw ApiError.badRequest("Report format must be pdf or excel");
+  }
+  if (!["full", "employees", "attendance"].includes(scope)) {
+    throw ApiError.badRequest("Invalid report scope");
+  }
+
+  const bundle = await fetchReadableReportBundle(scope);
+  const stamp = bundle.exportedAt.replace(/[:.]/g, "-");
+  const baseName = scope === "full" ? "data-export-report" : `${scope}-report`;
+
+  if (format === "pdf") {
+    const buffer = await buildReadableReportPdf(bundle);
+    const filename = `ozone-${baseName}-${stamp}.pdf`;
+    await logAudit(req, "settings.export_report", "settings", undefined, {
+      format,
+      scope,
+      filename,
+      totals: bundle.totals,
+    });
+    sendBinaryDownload(res, filename, buffer, "application/pdf");
+    return;
+  }
+
+  const buffer = await buildReadableReportExcel(bundle);
+  const filename = `ozone-${baseName}-${stamp}.xlsx`;
+  await logAudit(req, "settings.export_report", "settings", undefined, {
+    format,
+    scope,
+    filename,
+    totals: bundle.totals,
+  });
+  sendBinaryDownload(
+    res,
+    filename,
+    buffer,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+});
+
+export const exportBackupData = asyncHandler(async (req: Request, res: Response) => {
+  const type = (req.params.type as BackupExportType) ?? "full";
+  if (!["full", "attendance", "employees"].includes(type)) {
+    throw ApiError.badRequest("Invalid export type");
+  }
+  const payload = await backupService.exportTables(type);
+  const stamp = payload.manifest.exportedAt.replace(/[:.]/g, "-");
+  const filename = `ozone-export-${type}-${stamp}.json`;
+  await logAudit(req, "settings.export_data", "settings", undefined, { type, filename });
+  sendBackupDownload(res, filename, payload);
+});
+
+export const restoreBackup = asyncHandler(async (req: Request, res: Response) => {
+  const file = req.file;
+  if (!file) throw ApiError.badRequest("Backup file is required");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(file.buffer.toString("utf8"));
+  } catch {
+    throw ApiError.badRequest("Backup file must be valid JSON");
+  }
+
+  const payload = parseBackupPayload(parsed);
+  const result = await backupService.restoreFromBackupPayload(payload);
+  await refreshSettingsCache();
+  await logAudit(req, "settings.restore_data", "settings", undefined, {
+    restoredTables: result.restoredTables,
+    rowCounts: result.rowCounts,
+  });
+  res.json({
+    success: true,
+    restoredTables: result.restoredTables,
+    rowCounts: result.rowCounts,
+  });
 });
 
 export const exportData = asyncHandler(async (req: Request, res: Response) => {
-  const data = await repo.exportAllData();
+  const payload = await backupService.exportTables("full");
   await logAudit(req, "settings.export_data", "settings");
-  res.json({ exportedAt: new Date().toISOString(), data });
+  res.json({ exportedAt: payload.manifest.exportedAt, data: payload.tables });
 });
 
 export const uploadCompanyLogo = asyncHandler(async (req: Request, res: Response) => {
@@ -128,71 +428,115 @@ export const changeAdminPassword = asyncHandler(async (req: Request, res: Respon
   const ok = await bcrypt.compare(input.currentPassword, row.password_hash);
   if (!ok) throw ApiError.unauthorized("Current password is incorrect");
 
-  const security = getSettings().security;
-  if (input.newPassword.length < security.passwordMinLength) {
-    throw ApiError.badRequest(`Password must be at least ${security.passwordMinLength} characters`);
-  }
-  if (security.requireUppercase && !/[A-Z]/.test(input.newPassword)) {
-    throw ApiError.badRequest("Password must contain an uppercase letter");
-  }
-  if (security.requireNumbers && !/\d/.test(input.newPassword)) {
-    throw ApiError.badRequest("Password must contain a number");
+  const policyError = validatePasswordPolicy(input.newPassword);
+  if (policyError) throw ApiError.badRequest(policyError);
+
+  if (input.currentPassword.trim() === input.newPassword.trim()) {
+    throw ApiError.badRequest("New password must be different from the current password");
   }
 
   const hash = await bcrypt.hash(input.newPassword, 12);
-  await pool.query(`UPDATE employees SET password_hash = $1, must_change_password = false WHERE id = $2`, [
-    hash,
-    req.user!.id,
-  ]);
-  await logAudit(req, "auth.password_change", "employee", req.user!.id);
+  await pool.query(
+    `UPDATE employees
+        SET password_hash = $1,
+            must_change_password = false,
+            password_changed_at = now(),
+            updated_at = now()
+      WHERE id = $2`,
+    [hash, req.user!.id]
+  );
+  await logAudit(req, "auth.password_change", "employee", req.user!.id, {
+    adminCode: req.user!.employeeCode,
+  });
   res.json({ success: true });
 });
 
 export const listAuditLogs = asyncHandler(async (req: Request, res: Response) => {
   const q = auditQuerySchema.parse(req.query);
-  const offset = (q.page - 1) * q.limit;
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-  let idx = 1;
-
-  if (q.action) {
-    conditions.push(`a.action ILIKE $${idx++}`);
-    params.push(`%${q.action}%`);
-  }
-  if (q.from) {
-    conditions.push(`a.created_at >= $${idx++}::date`);
-    params.push(q.from);
-  }
-  if (q.to) {
-    conditions.push(`a.created_at < ($${idx++}::date + interval '1 day')`);
-    params.push(q.to);
-  }
-
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-
-  const countRes = await pool.query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM audit_logs a ${where}`,
-    params
-  );
-
-  params.push(q.limit, offset);
-  const rows = await pool.query(
-    `SELECT a.id, a.action, a.target_type, a.target_id, a.metadata, a.ip_address, a.created_at,
-            e.name AS actor_name, e.employee_code AS actor_code
-     FROM audit_logs a
-     LEFT JOIN employees e ON e.id = a.actor_id
-     ${where}
-     ORDER BY a.created_at DESC
-     LIMIT $${idx++} OFFSET $${idx}`,
-    params
-  );
-
-  res.json({
-    logs: rows.rows,
-    total: parseInt(countRes.rows[0]?.count ?? "0", 10),
+  const result = await listAuditLogsRepo({
     page: q.page,
     limit: q.limit,
+    search: q.search,
+    action: q.action,
+    from: q.from,
+    to: q.to,
+    actorId: q.actorId,
+    module: q.module,
+    actionType: q.actionType,
+    status: q.status,
   });
+
+  res.json({
+    ...result,
+    retentionDays: getSettings().audit.retentionDays,
+    totalAll: await countAuditLogs(),
+    modules: AUDIT_MODULES,
+    actionTypes: AUDIT_ACTION_TYPES,
+    retentionOptions: AUDIT_RETENTION_DAYS,
+  });
+});
+
+export const getAuditLog = asyncHandler(async (req: Request, res: Response) => {
+  const log = await getAuditLogById(req.params.id);
+  if (!log) throw ApiError.notFound("Audit log not found");
+  res.json({ log });
+});
+
+export const clearAuditLogs = asyncHandler(async (req: Request, res: Response) => {
+  auditClearSchema.parse(req.body);
+  const deleted = await clearAllAuditLogs();
+  await logAudit(req, "settings.audit_clear", "audit", undefined, {
+    deletedRecords: deleted,
+  });
+  res.json({
+    success: true,
+    deletedRecords: deleted,
+    retentionDays: getSettings().audit.retentionDays,
+  });
+});
+
+export const exportAuditLogs = asyncHandler(async (req: Request, res: Response) => {
+  const format = auditExportFormatSchema.parse(req.params.format);
+  const q = auditQuerySchema.omit({ page: true, limit: true }).parse(req.query);
+  const logs = await fetchAuditLogsForExport({
+    search: q.search,
+    action: q.action,
+    from: q.from,
+    to: q.to,
+    actorId: q.actorId,
+    module: q.module,
+    actionType: q.actionType,
+    status: q.status,
+  });
+
+  await logAudit(req, "settings.export_report", "audit", undefined, {
+    format,
+    scope: "audit",
+    count: logs.length,
+  });
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  if (format === "excel") {
+    const buffer = await buildAuditLogsExcel(logs);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="ozone-audit-logs-${stamp}.xlsx"`
+    );
+    res.send(buffer);
+    return;
+  }
+
+  const buffer = await buildAuditLogsPdf(logs);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="ozone-audit-logs-${stamp}.pdf"`
+  );
+  res.send(buffer);
 });
 
 export const refreshSettings = asyncHandler(async (_req: Request, res: Response) => {

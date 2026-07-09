@@ -1,3 +1,23 @@
+export type ManualAttendanceStatus =
+  | "present"
+  | "half_day"
+  | "absent"
+  | "leave"
+  | "holiday"
+  | "weekly_off";
+
+export interface ManualAttendancePayload {
+  employeeId: string;
+  date: string;
+  status: ManualAttendanceStatus;
+  reason: string;
+  approvedById?: string;
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
+  totalMinutes?: number | null;
+  override?: boolean;
+}
+
 export type Role = "admin" | "employee";
 
 export interface Employee {
@@ -13,7 +33,20 @@ export interface Employee {
   created_by: string | null;
   deleted_at?: string | null;
   weekly_off_days?: number[];
+  uses_default_weekly_off?: boolean;
   department?: string | null;
+  designation_id?: string | null;
+  /** Job role / designation label (e.g. Draftsman). Separate from auth `role`. */
+  designation?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmployeeDesignation {
+  id: string;
+  name: string;
+  is_system: boolean;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -171,6 +204,7 @@ export interface ScoreboardEntry {
   employee_id: string;
   employee_code: string;
   name: string;
+  designation?: string | null;
   profile_photo_path: string | null;
   total_days_present: number;
   half_days: number;
@@ -188,6 +222,7 @@ export type SiteType = "office" | "project";
 export type CheckInStatus  = "early" | "on_time" | "late" | "half_day";
 export type CheckOutStatus = "early" | "on_time" | "overtime";
 export type DayStatus      = "present" | "half_day" | "absent";
+export type SpecialDayStatus = "weekly_off_worked" | "holiday_worked";
 export type LeaveType   = "full" | "half";
 export type LeaveStatus = "pending" | "approved" | "rejected";
 
@@ -214,6 +249,22 @@ export interface TimingRules {
   checkinOntimeEnd: string;
   halfDayCutoff: string;
   checkoutStandardTime: string;
+  officeStartTime?: string;
+  lateCheckInTime?: string;
+  minHoursPresent?: number;
+  minHoursHalfDay?: number;
+}
+
+export interface AttendanceOverrideNotice {
+  id: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+}
+
+export interface TimingRulesResponse {
+  rules: TimingRules;
+  activeOverride: AttendanceOverrideNotice | null;
 }
 
 export interface Site {
@@ -269,9 +320,15 @@ export interface AttendanceRecord {
   is_half_day: boolean;
   check_out_status: CheckOutStatus | null;
 
+  special_day_status: SpecialDayStatus | null;
+
   is_admin_marked: boolean;
   admin_marked_by: string | null;
   admin_mark_reason: string | null;
+  admin_mark_status: ManualAttendanceStatus | null;
+  admin_approved_by: string | null;
+  admin_marked_by_name?: string | null;
+  admin_approved_by_name?: string | null;
 
   site_name?: string | null;
 
@@ -282,6 +339,7 @@ export interface AttendanceRecord {
 export interface AdminAttendanceRow extends AttendanceRecord {
   employee_code: string;
   employee_name: string;
+  employee_designation?: string | null;
   site_name: string | null;
 }
 
@@ -300,6 +358,8 @@ export interface DashboardSummary {
   lateArrivals: number;
   currentlyCheckedIn: number;
   checkedOutToday: number;
+  holidayWorkedToday: number;
+  weeklyOffWorkedToday: number;
 }
 
 // ─── Monthly attendance grid ───────────────────────────────────────────────
@@ -311,6 +371,7 @@ export type MonthlyCellStatus =
   | "weekly_off"
   | "holiday"
   | "holiday_worked"
+  | "weekly_off_worked"
   | "none";
 
 export interface MonthlyDayCell {
@@ -330,6 +391,7 @@ export interface MonthlySummary {
   weeklyOff: number;
   holidays: number;
   holidayWorked: number;
+  weeklyOffWorked: number;
   totalMinutes: number;
   workingDays: number;
   attendancePercentage: number;
@@ -341,6 +403,7 @@ export interface MonthlyEmployeeRow {
   employeeCode: string;
   name: string;
   department: string | null;
+  designation?: string | null;
   weeklyOffDays: number[];
   days: MonthlyDayCell[];
   summary: MonthlySummary;
@@ -351,6 +414,7 @@ export interface MonthlyGrid {
   month: number;
   label: string;
   daysInMonth: number;
+  defaultWeeklyOffDays: number[];
   employees: MonthlyEmployeeRow[];
   holidays: { date: string; name: string; description: string | null }[];
 }

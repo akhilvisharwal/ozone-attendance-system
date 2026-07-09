@@ -10,15 +10,44 @@ function required(name: string, fallback?: string): string {
   return value;
 }
 
+function normalizeClientUrl(raw: string): string {
+  return raw.trim().replace(/\/+$/, "");
+}
+
+const nodeEnv = process.env.NODE_ENV ?? "development";
+const isProduction = nodeEnv === "production";
+const jwtAccessSecret = required("JWT_ACCESS_SECRET");
+const jwtRefreshSecret = required("JWT_REFRESH_SECRET");
+
+if (isProduction) {
+  const weakSecrets = [
+    "change_this_access_secret_in_production",
+    "change_this_refresh_secret_in_production",
+  ];
+  if (weakSecrets.includes(jwtAccessSecret) || weakSecrets.includes(jwtRefreshSecret)) {
+    throw new Error(
+      "JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be strong unique values in production"
+    );
+  }
+  if (!process.env.CLIENT_URL?.trim()) {
+    throw new Error("CLIENT_URL is required in production (your frontend origin, no trailing slash)");
+  }
+}
+
 export const env = {
   port: parseInt(process.env.PORT ?? "4000", 10),
-  nodeEnv: process.env.NODE_ENV ?? "development",
-  clientUrl: process.env.CLIENT_URL ?? "http://localhost:5173",
+  nodeEnv,
+  clientUrl: normalizeClientUrl(process.env.CLIENT_URL ?? "http://localhost:5173"),
 
   databaseUrl: required("DATABASE_URL"),
+  /**
+   * Optional fixed database plan limit (bytes or with unit suffix: MB/GB/TB).
+   * When unset, the Database panel reports available server disk space instead.
+   */
+  databaseStorageLimit: process.env.DATABASE_STORAGE_LIMIT ?? "",
 
-  jwtAccessSecret: required("JWT_ACCESS_SECRET"),
-  jwtRefreshSecret: required("JWT_REFRESH_SECRET"),
+  jwtAccessSecret,
+  jwtRefreshSecret,
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? "15m",
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "7d",
 
@@ -34,7 +63,8 @@ export const env = {
   uploadDir: process.env.UPLOAD_DIR ?? "uploads",
   maxUploadSizeMb: parseInt(process.env.MAX_UPLOAD_SIZE_MB ?? "8", 10),
 
-  geocodeProvider: process.env.GEOCODE_PROVIDER ?? "nominatim",
+  geocodeProvider: process.env.GEOCODE_PROVIDER ?? "google",
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
 
   // Legacy dashboard "late arrival" cut-off — kept for backward compat
   officeStartTime: process.env.OFFICE_START_TIME ?? "09:30:00",
@@ -46,9 +76,10 @@ export const env = {
   halfDayCutoff:        process.env.HALF_DAY_CUTOFF         ?? "11:30",   // at or after → half-day
   checkoutStandardTime: process.env.CHECKOUT_STANDARD_TIME  ?? "18:30",   // before → 'early' checkout
 
-  isProduction: process.env.NODE_ENV === "production",
+  isProduction,
   /** Enable SSL for managed Postgres (Neon, Render, Supabase, etc.) */
   databaseSsl:
     process.env.DATABASE_SSL === "true" ||
-    (process.env.NODE_ENV === "production" && /neon\.tech|render\.com|supabase\.co|rds\.amazonaws/i.test(process.env.DATABASE_URL ?? "")),
+    (isProduction &&
+      /neon\.tech|render\.com|supabase\.co|rds\.amazonaws/i.test(process.env.DATABASE_URL ?? "")),
 };

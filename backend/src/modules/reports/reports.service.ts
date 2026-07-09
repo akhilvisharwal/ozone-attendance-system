@@ -1,18 +1,21 @@
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { toDateString, formatMinutesAsHours } from "../../utils/date";
-import { getCompanyName, getDocumentCreator } from "../../config/branding";
+import { formatCompanyContactLine, getCompanyName, getDocumentCreator } from "../../config/branding";
 import { drawPdfReportHeader } from "../../utils/pdfBranding";
+import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 
 export interface ReportRow {
   employee_code: string;
   employee_name: string;
+  designation: string | null;
   attendance_date: string;
   check_in_time: string | null;
   check_out_time: string | null;
   total_minutes: number | null;
   day_status: string | null;
+  special_day_status: string | null;
   site_name: string | null;
   work_status: string | null;
   work_summary: string | null;
@@ -24,9 +27,14 @@ const DAY_STATUS_LABEL: Record<string, string> = {
   present: "Present",
   half_day: "Half Day",
   absent: "Absent",
+  holiday_worked: "Worked on Holiday",
+  weekly_off_worked: "Worked on Weekly Off",
 };
 
-export function dayStatusLabel(value: string | null): string {
+export function dayStatusLabel(value: string | null, specialDayStatus?: string | null): string {
+  if (specialDayStatus && DAY_STATUS_LABEL[specialDayStatus]) {
+    return DAY_STATUS_LABEL[specialDayStatus];
+  }
   return value ? DAY_STATUS_LABEL[value] ?? value : "-";
 }
 
@@ -56,8 +64,7 @@ export function resolveDateRange(period: string, from?: string, to?: string): { 
 }
 
 function formatTime(value: string | null): string {
-  if (!value) return "-";
-  return new Date(value).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" });
+  return formatDisplayDateTime(value);
 }
 
 export async function buildExcelReport(rows: ReportRow[], title: string): Promise<Buffer> {
@@ -72,10 +79,17 @@ export async function buildExcelReport(rows: ReportRow[], title: string): Promis
   sheet.mergeCells(2, 1, 2, colCount);
   sheet.getCell(2, 1).value = title;
   sheet.getCell(2, 1).font = { bold: true, size: 11 };
+  const contactLine = formatCompanyContactLine();
+  if (contactLine) {
+    sheet.mergeCells(3, 1, 3, colCount);
+    sheet.getCell(3, 1).value = contactLine;
+    sheet.getCell(3, 1).font = { size: 10, color: { argb: "FF64748B" } };
+  }
 
   sheet.columns = [
     { header: "Employee ID", key: "employee_code", width: 14 },
     { header: "Employee Name", key: "employee_name", width: 24 },
+    { header: "Role", key: "designation", width: 20 },
     { header: "Date", key: "attendance_date", width: 14 },
     { header: "Check-in", key: "check_in_time", width: 20 },
     { header: "Check-out", key: "check_out_time", width: 20 },
@@ -87,17 +101,19 @@ export async function buildExcelReport(rows: ReportRow[], title: string): Promis
     { header: "Check-in Address", key: "check_in_address", width: 40 },
     { header: "Remarks", key: "remarks", width: 30 },
   ];
-  sheet.getRow(3).font = { bold: true };
+  const headerRowIndex = contactLine ? 4 : 3;
+  sheet.getRow(headerRowIndex).font = { bold: true };
 
   for (const row of rows) {
     sheet.addRow({
       employee_code: row.employee_code,
       employee_name: row.employee_name,
+      designation: row.designation ?? "-",
       attendance_date: row.attendance_date,
       check_in_time: formatTime(row.check_in_time),
       check_out_time: formatTime(row.check_out_time),
       working_hours: formatMinutesAsHours(row.total_minutes),
-      day_status: dayStatusLabel(row.day_status),
+      day_status: dayStatusLabel(row.day_status, row.special_day_status),
       site_name: row.site_name ?? "-",
       work_status: row.work_status ?? "-",
       work_summary: row.work_summary ?? "-",
@@ -131,16 +147,17 @@ export async function buildPdfReport(rows: ReportRow[], title: string): Promise<
     });
 
     const columns = [
-      { key: "employee_code", label: "ID", width: 55 },
-      { key: "employee_name", label: "Name", width: 110 },
-      { key: "attendance_date", label: "Date", width: 65 },
-      { key: "check_in_time", label: "Check-in", width: 100 },
-      { key: "check_out_time", label: "Check-out", width: 100 },
-      { key: "working_hours", label: "Hours", width: 55 },
-      { key: "day_status", label: "Attendance", width: 65 },
-      { key: "site_name", label: "Site", width: 85 },
-      { key: "work_status", label: "Status", width: 65 },
-      { key: "remarks", label: "Remarks", width: 110 },
+      { key: "employee_code", label: "ID", width: 50 },
+      { key: "employee_name", label: "Name", width: 95 },
+      { key: "designation", label: "Role", width: 70 },
+      { key: "attendance_date", label: "Date", width: 60 },
+      { key: "check_in_time", label: "Check-in", width: 90 },
+      { key: "check_out_time", label: "Check-out", width: 90 },
+      { key: "working_hours", label: "Hours", width: 50 },
+      { key: "day_status", label: "Attendance", width: 60 },
+      { key: "site_name", label: "Site", width: 75 },
+      { key: "work_status", label: "Status", width: 55 },
+      { key: "remarks", label: "Remarks", width: 95 },
     ];
 
     const startX = doc.page.margins.left;
@@ -178,11 +195,12 @@ export async function buildPdfReport(rows: ReportRow[], title: string): Promise<
       const values: Record<string, string> = {
         employee_code: row.employee_code,
         employee_name: row.employee_name,
+        designation: row.designation ?? "-",
         attendance_date: row.attendance_date,
         check_in_time: formatTime(row.check_in_time),
         check_out_time: formatTime(row.check_out_time),
         working_hours: formatMinutesAsHours(row.total_minutes),
-        day_status: dayStatusLabel(row.day_status),
+        day_status: dayStatusLabel(row.day_status, row.special_day_status),
         site_name: row.site_name ?? "-",
         work_status: row.work_status ?? "-",
         remarks: (row.remarks ?? row.work_summary ?? "-").slice(0, 60),

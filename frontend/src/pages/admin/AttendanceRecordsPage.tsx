@@ -2,19 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
-import { AttendanceStatusBadge, WorkStatusBadge, DayStatusBadge } from "@/components/ui/Badge";
+import { AttendanceRecordList } from "@/components/AttendanceRecordList";
 import { Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { AttendanceDetailModal } from "@/components/AttendanceDetailModal";
+import { ManualAttendanceModal } from "@/components/ManualAttendanceModal";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
-import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
 import * as attendanceApi from "@/api/attendance";
 import type { AdminAttendanceFilterStatus } from "@/api/attendance";
 import { extractErrorMessage } from "@/api/client";
 import type { AdminAttendanceRow } from "@/types";
-import { formatDate, formatMinutesAsHours, formatTime } from "@/utils/format";
-import { formatLocationSummary } from "@/utils/location";
 
 interface FilterState {
   employeeId: string;
@@ -23,15 +21,27 @@ interface FilterState {
   status: AdminAttendanceFilterStatus | "";
 }
 
-const EMPTY_FILTERS: FilterState = {
-  employeeId: "",
-  from: "",
-  to: "",
-  status: "",
-};
-
 const FILTER_CONTROL_CLASS =
   "min-h-[42px] sm:min-h-[38px]";
+
+/** Today's date in the user's local timezone (YYYY-MM-DD for date inputs). */
+function todayLocalDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function defaultDayFilters(): FilterState {
+  const today = todayLocalDateString();
+  return {
+    employeeId: "",
+    from: today,
+    to: today,
+    status: "",
+  };
+}
 
 function validateDateRange(from: string, to: string): string | null {
   if (from && to && from > to) {
@@ -54,16 +64,17 @@ export function AttendanceRecordsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<AdminAttendanceRow | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [filterError, setFilterError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const limit = 25;
 
   const [employeeId, setEmployeeId] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState(() => todayLocalDateString());
+  const [to, setTo] = useState(() => todayLocalDateString());
   const [status, setStatus] = useState<AdminAttendanceFilterStatus | "">("");
-  const [day, setDay] = useState("");
+  const [day, setDay] = useState(() => todayLocalDateString());
 
   const requestIdRef = useRef(0);
 
@@ -121,7 +132,7 @@ export function AttendanceRecordsPage() {
   );
 
   useEffect(() => {
-    fetchRecords(EMPTY_FILTERS, 1);
+    fetchRecords(defaultDayFilters(), 1);
   }, [fetchRecords]);
 
   function applyFilters() {
@@ -129,14 +140,15 @@ export function AttendanceRecordsPage() {
   }
 
   function clearFilters() {
+    const today = todayLocalDateString();
     setEmployeeId("");
-    setFrom("");
-    setTo("");
+    setFrom(today);
+    setTo(today);
     setStatus("");
-    setDay("");
+    setDay(today);
     setFilterError(null);
     setFetchError(null);
-    fetchRecords(EMPTY_FILTERS, 1);
+    fetchRecords(defaultDayFilters(), 1);
   }
 
   function viewDay(date: string) {
@@ -153,46 +165,15 @@ export function AttendanceRecordsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
-  const columns: Column<AdminAttendanceRow>[] = [
-    {
-      header: "Employee",
-      primary: true,
-      cell: (row) => (
-        <div>
-          <p className="font-medium text-slate-900">{row.employee_name}</p>
-          <p className="text-xs text-slate-400">{row.employee_code}</p>
-        </div>
-      ),
-    },
-    { header: "Date", cell: (row) => formatDate(row.attendance_date) },
-    { header: "Check-in", cell: (row) => formatTime(row.check_in_time) },
-    {
-      header: "Check-in Location",
-      cell: (row) => (
-        <span className="block max-w-[12rem] truncate text-sm text-slate-600" title={row.check_in_address ?? undefined}>
-          {formatLocationSummary(row.check_in_address, row.check_in_latitude, row.check_in_longitude)}
-        </span>
-      ),
-    },
-    { header: "Check-out", cell: (row) => formatTime(row.check_out_time) },
-    {
-      header: "Check-out Location",
-      cell: (row) => (
-        <span className="block max-w-[12rem] truncate text-sm text-slate-600" title={row.check_out_address ?? undefined}>
-          {formatLocationSummary(row.check_out_address, row.check_out_latitude, row.check_out_longitude)}
-        </span>
-      ),
-    },
-    { header: "Hours", cell: (row) => formatMinutesAsHours(row.total_minutes) },
-    { header: "Attendance", cell: (row) => <DayStatusBadge status={row.day_status} /> },
-    { header: "Project", cell: (row) => row.site_name ?? "-" },
-    { header: "Work Status", cell: (row) => <WorkStatusBadge status={row.work_status} /> },
-    { header: "Status", cell: (row) => <AttendanceStatusBadge status={row.status} /> },
-  ];
-
   return (
     <div>
-      <PageHeader title="Employee Attendance" subtitle="Browse and filter all attendance records" />
+      <PageHeader
+        title="Employee Attendance"
+        subtitle="Browse and filter all attendance records"
+        action={
+          <Button onClick={() => setManualOpen(true)}>Add Manual Entry</Button>
+        }
+      />
 
       <Card className="mb-4">
         <div className="flex flex-col gap-2 border-b border-slate-100 p-4 sm:flex-row sm:items-end sm:gap-3">
@@ -289,7 +270,11 @@ export function AttendanceRecordsPage() {
           <EmptyState title="No attendance records found" />
         ) : (
           <>
-            <ResponsiveTable columns={columns} data={items} rowKey={(row) => row.id} onRowClick={setSelected} />
+            <AttendanceRecordList
+              records={items}
+              startIndex={(page - 1) * limit}
+              onRecordClick={setSelected}
+            />
 
             <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-500 sm:flex-row lg:px-5">
               <span>
@@ -319,6 +304,12 @@ export function AttendanceRecordsPage() {
       </Card>
 
       <AttendanceDetailModal attendance={selected} onClose={() => setSelected(null)} />
+
+      <ManualAttendanceModal
+        open={manualOpen}
+        onClose={() => setManualOpen(false)}
+        onSaved={() => fetchRecords(currentFilters(), page)}
+      />
     </div>
   );
 }

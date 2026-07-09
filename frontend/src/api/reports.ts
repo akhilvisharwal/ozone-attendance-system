@@ -1,4 +1,5 @@
 import { apiClient } from "./client";
+import type { SpecialDayStatus } from "../types";
 
 export interface ExportReportParams {
   format: "excel" | "pdf";
@@ -18,12 +19,15 @@ export interface ViewReportParams {
 export interface ReportRow {
   employee_code: string;
   employee_name: string;
+  designation?: string | null;
   attendance_date: string;
   check_in_time: string | null;
   check_out_time: string | null;
   total_minutes: number | null;
   working_hours: string;
   day_status: string | null;
+  special_day_status?: SpecialDayStatus | null;
+  attendance_label?: string;
   site_name: string | null;
   work_status: string | null;
   work_summary: string | null;

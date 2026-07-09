@@ -12,8 +12,9 @@ import {
   weeklyOffSchema,
 } from "./employees.validators";
 import * as repo from "./employees.repository";
+import * as designationsRepo from "./designations.repository";
 import { getSettings } from "../settings/settings.cache";
-import { validatePasswordPolicy } from "../../utils/settingsHelpers";
+import { validatePasswordPolicy, resolveEmployeeRoleFromSettings } from "../../utils/settingsHelpers";
 import { logAudit } from "../audit/audit.repository";
 import { storage } from "../../services/storage";
 
@@ -22,23 +23,69 @@ export const createEmployee = asyncHandler(async (req: Request, res: Response) =
   const empSettings = getSettings().employee;
   const weeklyOff = getSettings().weeklyOff.defaultWeeklyOffDays;
 
-  const employeeCode = await generateNextEmployeeCode();
-  const temporaryPassword = generateTemporaryPassword();
-  const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+  const designationId = input.designationId ?? empSettings.defaultDesignationId ?? null;
+  if (!designationId) {
+    throw ApiError.badRequest(
+      "Select a Role / Designation, or set a default role in Settings → Employees"
+    );
+  }
 
-  const employee = await repo.createEmployee({
+  const designation = await designationsRepo.findDesignationById(designationId);
+  if (!designation) throw ApiError.badRequest("Selected Role / Designation was not found");
+
+  // Always create a regular employee account from this panel. Auth role stays employee.
+  const role = resolveEmployeeRoleFromSettings();
+
+  let employee: Awaited<ReturnType<typeof repo.createEmployee>> | null = null;
+  let employeeCode = "";
+  let temporaryPassword = "";
+  let lastError: unknown;
+
+  // Retry once if two admins race on the same next code.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      employeeCode = await generateNextEmployeeCode();
+      temporaryPassword = generateTemporaryPassword();
+      const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+
+      employee = await repo.createEmployee({
+        employeeCode,
+        name: input.name,
+        email: input.email ?? null,
+        phone: input.phone ?? null,
+        passwordHash,
+        role,
+        createdBy: req.user!.id,
+        designationId: designation.id,
+        department: input.department ?? null,
+        weeklyOffDays: weeklyOff,
+        usesDefaultWeeklyOff: true,
+        mustChangePassword: empSettings.requirePasswordChange,
+        isActive: empSettings.activeByDefault,
+      });
+      lastError = null;
+      break;
+    } catch (err) {
+      lastError = err;
+      const code = (err as { code?: string })?.code;
+      if (code !== "23505") throw err;
+    }
+  }
+
+  if (!employee) {
+    throw lastError instanceof Error
+      ? lastError
+      : ApiError.conflict("Could not allocate a unique employee ID. Please try again.");
+  }
+
+  await logAudit(req, "employee.create", "employee", employee.id, {
     employeeCode,
-    name: input.name,
-    email: input.email ?? null,
-    phone: input.phone ?? null,
-    passwordHash,
-    role: empSettings.defaultRole,
-    createdBy: req.user!.id,
-    weeklyOffDays: weeklyOff,
-    mustChangePassword: empSettings.requirePasswordChange,
+    designation: designation.name,
+    designationId: designation.id,
+    idFormat: empSettings.idFormat,
+    requirePasswordChange: empSettings.requirePasswordChange,
+    activeByDefault: empSettings.activeByDefault,
   });
-
-  await logAudit(req, "employee.create", "employee", employee.id, { employeeCode });
 
   res.status(201).json({
     employee,
@@ -55,6 +102,7 @@ export const listEmployees = asyncHandler(async (req: Request, res: Response) =>
   const { items, total } = await repo.listEmployees({
     search: query.search,
     isActive: query.isActive === undefined ? undefined : query.isActive === "true",
+    designationId: query.designationId,
     page: query.page,
     limit: query.limit,
   });
@@ -75,10 +123,25 @@ export const getEmployee = asyncHandler(async (req: Request, res: Response) => {
 
 export const updateEmployee = asyncHandler(async (req: Request, res: Response) => {
   const input = updateEmployeeSchema.parse(req.body);
-  const employee = await repo.updateEmployeeProfile(req.params.id, input);
+
+  if (input.designationId) {
+    const designation = await designationsRepo.findDesignationById(input.designationId);
+    if (!designation) throw ApiError.badRequest("Selected Role / Designation was not found");
+  }
+
+  const employee = await repo.updateEmployeeProfile(req.params.id, {
+    name: input.name,
+    email: input.email,
+    phone: input.phone,
+    department: input.department,
+    designationId: input.designationId,
+  });
   if (!employee) throw ApiError.notFound("Employee not found");
 
-  await logAudit(req, "employee.update", "employee", employee.id, input);
+  await logAudit(req, "employee.update", "employee", employee.id, {
+    ...input,
+    designation: employee.designation ?? null,
+  });
   res.json({ employee });
 });
 
@@ -131,7 +194,15 @@ export const resetEmployeePassword = asyncHandler(async (req: Request, res: Resp
   const passwordHash = await bcrypt.hash(password, 12);
   await repo.updateEmployeePassword(employee.id, passwordHash, mustChangePassword);
 
-  await logAudit(req, "employee.reset_password", "employee", employee.id, { direct: isDirect });
+  const admin = await repo.findEmployeeById(req.user!.id);
+  await logAudit(req, "employee.reset_password", "employee", employee.id, {
+    direct: isDirect,
+    requireChange: mustChangePassword,
+    employeeName: employee.name,
+    employeeCode: employee.employee_code,
+    adminName: admin?.name ?? null,
+    adminCode: req.user!.employeeCode,
+  });
 
   res.json({
     message: isDirect ? "Password updated successfully" : "Password reset successfully",
@@ -170,8 +241,12 @@ export const updateWeeklyOff = asyncHandler(async (req: Request, res: Response) 
   const employee = await repo.findEmployeeById(req.params.id);
   if (!employee || employee.role !== "employee") throw ApiError.notFound("Employee not found");
 
-  const { weeklyOffDays } = weeklyOffSchema.parse(req.body ?? {});
-  const updated = await repo.updateWeeklyOffDays(employee.id, weeklyOffDays);
+  const { weeklyOffDays, useCompanyDefault } = weeklyOffSchema.parse(req.body ?? {});
+  const updated = await repo.updateWeeklyOffDays(
+    employee.id,
+    weeklyOffDays,
+    useCompanyDefault === true
+  );
   if (!updated) throw ApiError.notFound("Employee not found");
 
   await logAudit(req, "employee.update_weekly_off", "employee", employee.id, { weeklyOffDays });

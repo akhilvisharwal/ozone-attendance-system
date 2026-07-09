@@ -1,10 +1,11 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { exportReportQuerySchema, viewReportQuerySchema } from "./reports.validators";
-import { resolveDateRange, buildExcelReport, buildPdfReport } from "./reports.service";
+import { resolveDateRange, buildExcelReport, buildPdfReport, dayStatusLabel } from "./reports.service";
 import { fetchReportRows } from "./reports.repository";
 import { logAudit } from "../audit/audit.repository";
 import { formatMinutesAsHours } from "../../utils/date";
+import { formatDisplayDateTime } from "../../utils/formatDisplay";
 
 /** Returns report rows as JSON for in-browser viewing — no download. */
 export const viewReport = asyncHandler(async (req: Request, res: Response) => {
@@ -15,8 +16,9 @@ export const viewReport = asyncHandler(async (req: Request, res: Response) => {
   const enriched = rows.map((r) => ({
     ...r,
     working_hours: formatMinutesAsHours(r.total_minutes),
-    check_in_time: r.check_in_time ? new Date(r.check_in_time).toLocaleString("en-IN") : null,
-    check_out_time: r.check_out_time ? new Date(r.check_out_time).toLocaleString("en-IN") : null,
+    check_in_time: formatDisplayDateTime(r.check_in_time),
+    check_out_time: formatDisplayDateTime(r.check_out_time),
+    attendance_label: dayStatusLabel(r.day_status, r.special_day_status),
   }));
 
   res.json({ rows: enriched, from, to, total: enriched.length });

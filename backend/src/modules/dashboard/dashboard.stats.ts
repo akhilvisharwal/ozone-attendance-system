@@ -1,4 +1,17 @@
 import { pool } from "../../config/db";
+import { todayDateString } from "../../utils/date";
+import { getSettings } from "../settings/settings.cache";
+import { normalizeWeeklyOffDays, resolveWeeklyOffDays } from "../../utils/weeklyOffDays";
+import * as employeesRepo from "../employees/employees.repository";
+import * as holidaysRepo from "../holidays/holidays.repository";
+import { resolveHolidaysInRange } from "../holidays/holidays.service";
+import * as attendanceRepo from "../attendance/attendance.repository";
+import { getEffectiveClosingTimesForEmployees } from "../attendance/attendanceRules.service";
+import { isPastTimeCutoff } from "../../services/autoAbsence.service";
+import {
+  dashboardBucketFromStatus,
+  resolveDayStatus,
+} from "../attendance/attendanceCalculation.service";
 
 export interface DashboardSummaryResult {
   totalEmployees: number;
@@ -8,6 +21,8 @@ export interface DashboardSummaryResult {
   lateArrivals: number;
   currentlyCheckedIn: number;
   checkedOutToday: number;
+  holidayWorkedToday: number;
+  weeklyOffWorkedToday: number;
 }
 
 /**
@@ -46,7 +61,6 @@ export function classifyEmployeeDayBucket(record: {
     return "present";
   }
 
-  // Checked out without a resolved day status — treat as absent (insufficient / incomplete).
   return "absent";
 }
 
@@ -63,86 +77,74 @@ export function isLateArrival(record: {
 }
 
 export async function getDashboardSummary(today: string): Promise<DashboardSummaryResult> {
-  const result = await pool.query<{
-    total_employees: string;
-    present_today: string;
-    half_day_today: string;
-    absent_today: string;
-    late_arrivals: string;
-    checked_in: string;
-    checked_out: string;
-  }>(
-    `WITH active_employees AS (
-       SELECT id
-         FROM employees
-        WHERE role = 'employee'
-          AND is_active = true
-          AND deleted_at IS NULL
-     ),
-     today_attendance AS (
-       SELECT a.*
-         FROM attendance a
-         INNER JOIN active_employees e ON e.id = a.employee_id
-        WHERE a.attendance_date = $1
-     ),
-     classified AS (
-       SELECT
-         e.id AS employee_id,
-         a.status,
-         a.day_status,
-         a.check_in_status,
-         a.is_half_day,
-         a.is_admin_marked,
-         a.check_in_time,
-         CASE
-           WHEN a.id IS NULL THEN 'absent'
-           WHEN a.status = 'absent' OR a.day_status = 'absent' THEN 'absent'
-           WHEN a.day_status = 'half_day' THEN 'half_day'
-           WHEN a.day_status = 'present' THEN 'present'
-           WHEN a.status = 'checked_in'
-             AND a.day_status IS NULL
-             AND (a.is_half_day OR a.check_in_status = 'half_day') THEN 'half_day'
-           WHEN a.status = 'checked_in' AND a.day_status IS NULL THEN 'present'
-           ELSE 'absent'
-         END AS day_bucket
-       FROM active_employees e
-       LEFT JOIN today_attendance a ON a.employee_id = e.id
-     )
-     SELECT
-       (SELECT COUNT(*) FROM active_employees) AS total_employees,
-       COUNT(*) FILTER (WHERE day_bucket = 'present') AS present_today,
-       COUNT(*) FILTER (WHERE day_bucket = 'half_day') AS half_day_today,
-       COUNT(*) FILTER (WHERE day_bucket = 'absent') AS absent_today,
-       (
-         SELECT COUNT(*)
-           FROM today_attendance a
-          WHERE a.check_in_status = 'late'
-            AND COALESCE(a.is_admin_marked, false) = false
-            AND a.status <> 'absent'
-       ) AS late_arrivals,
-       (
-         SELECT COUNT(*)
-           FROM today_attendance a
-          WHERE a.status = 'checked_in'
-       ) AS checked_in,
-       (
-         SELECT COUNT(*)
-           FROM today_attendance a
-          WHERE a.status = 'checked_out'
-       ) AS checked_out
-     FROM classified`,
-    [today]
-  );
+  const date = today ?? todayDateString();
+  const defaultWeeklyOffDays = normalizeWeeklyOffDays(getSettings().weeklyOff.defaultWeeklyOffDays);
+  const employees = await employeesRepo.listActiveEmployeesForGrid();
+  const employeeIds = employees.map((employee) => employee.id);
 
-  const row = result.rows[0];
+  const [attendanceRows, leaveRows, holidayRows, closingByEmployee] = await Promise.all([
+    attendanceRepo.listAttendanceInRange(date, date),
+    attendanceRepo.listApprovedLeavesInRange(date, date),
+    holidaysRepo.listHolidaysForRange(date, date),
+    getEffectiveClosingTimesForEmployees(date, employeeIds),
+  ]);
+
+  const holidayMap = resolveHolidaysInRange(holidayRows, date, date);
+  const attendanceByEmployee = new Map(attendanceRows.map((row) => [row.employee_id, row]));
+  const leaveSet = new Set(leaveRows.map((row) => `${row.employee_id}|${row.leave_date}`));
+  const now = new Date();
+  const isToday = date === todayDateString();
+
+  let presentToday = 0;
+  let halfDayToday = 0;
+  let absentToday = 0;
+  let holidayWorkedToday = 0;
+  let weeklyOffWorkedToday = 0;
+  let lateArrivals = 0;
+  let currentlyCheckedIn = 0;
+  let checkedOutToday = 0;
+
+  for (const employee of employees) {
+    const weeklyOff = resolveWeeklyOffDays(employee, defaultWeeklyOffDays);
+    const weekday = new Date(`${date}T12:00:00`).getDay();
+    const record = attendanceByEmployee.get(employee.id) ?? null;
+    const closingTime = closingByEmployee.get(employee.id);
+    const isPastClosingCutoff =
+      !isToday || (closingTime ? isPastTimeCutoff(now, closingTime, date) : false);
+
+    const status = resolveDayStatus({
+      record,
+      hasLeave: leaveSet.has(`${employee.id}|${date}`),
+      isHoliday: holidayMap.has(date),
+      isWeeklyOff: weeklyOff.includes(weekday),
+      isFuture: date > todayDateString(),
+      isToday,
+      isPastClosingCutoff,
+    });
+
+    const bucket = dashboardBucketFromStatus(status);
+    if (bucket === "present") presentToday += 1;
+    else if (bucket === "half_day") halfDayToday += 1;
+    else if (bucket === "absent") absentToday += 1;
+
+    if (status === "holiday_worked") holidayWorkedToday += 1;
+    if (status === "weekly_off_worked") weeklyOffWorkedToday += 1;
+
+    if (record?.status === "checked_in") currentlyCheckedIn += 1;
+    if (record?.status === "checked_out") checkedOutToday += 1;
+    if (isLateArrival(record)) lateArrivals += 1;
+  }
+
   return {
-    totalEmployees: parseInt(row?.total_employees ?? "0", 10),
-    presentToday: parseInt(row?.present_today ?? "0", 10),
-    halfDayToday: parseInt(row?.half_day_today ?? "0", 10),
-    absentToday: parseInt(row?.absent_today ?? "0", 10),
-    lateArrivals: parseInt(row?.late_arrivals ?? "0", 10),
-    currentlyCheckedIn: parseInt(row?.checked_in ?? "0", 10),
-    checkedOutToday: parseInt(row?.checked_out ?? "0", 10),
+    totalEmployees: employees.length,
+    presentToday,
+    halfDayToday,
+    absentToday,
+    lateArrivals,
+    currentlyCheckedIn,
+    checkedOutToday,
+    holidayWorkedToday,
+    weeklyOffWorkedToday,
   };
 }
 

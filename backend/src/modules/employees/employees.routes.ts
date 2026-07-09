@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import { upload } from "../../middleware/upload";
 import * as controller from "./employees.controller";
+import * as designationsController from "./designations.controller";
 
 const router = Router();
 
@@ -9,6 +10,12 @@ router.use(requireAuth);
 
 // Employee self-service: update own avatar
 router.patch("/me/avatar", requireRole("employee"), upload.single("avatar"), controller.updateMyAvatar);
+
+// Designation / job-role catalog (admin)
+router.get("/designations", requireRole("admin"), designationsController.listDesignations);
+router.post("/designations", requireRole("admin"), designationsController.createDesignation);
+router.patch("/designations/:id", requireRole("admin"), designationsController.updateDesignation);
+router.delete("/designations/:id", requireRole("admin"), designationsController.deleteDesignation);
 
 // Admin-only management routes
 router.post("/", requireRole("admin"), controller.createEmployee);

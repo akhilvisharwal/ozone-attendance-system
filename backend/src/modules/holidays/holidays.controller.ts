@@ -11,6 +11,7 @@ import {
 import * as repo from "./holidays.repository";
 import { resolveHolidaysInRange, resolveUpcoming } from "./holidays.service";
 import { logAudit } from "../audit/audit.repository";
+import { notifyHoliday } from "../../services/notifications.service";
 
 export const listHolidays = asyncHandler(async (req: Request, res: Response) => {
   const query = listHolidaysQuerySchema.parse(req.query);
@@ -59,6 +60,13 @@ export const createHoliday = asyncHandler(async (req: Request, res: Response) =>
   });
 
   await logAudit(req, "holiday.create", "holiday", holiday.id, { name: holiday.name });
+
+  const holidayDate =
+    holiday.holiday_type === "one_time" && holiday.holiday_date
+      ? holiday.holiday_date
+      : todayDateString();
+  await notifyHoliday({ title: holiday.name, date: holidayDate });
+
   res.status(201).json({ holiday });
 });
 
@@ -113,5 +121,6 @@ export const createHolidayForDate = asyncHandler(async (req: Request, res: Respo
   });
 
   await logAudit(req, "holiday.create", "holiday", holiday.id, { date, name: holiday.name });
+  await notifyHoliday({ title: holiday.name, date });
   res.status(201).json({ holiday });
 });

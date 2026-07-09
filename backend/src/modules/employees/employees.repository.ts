@@ -1,15 +1,25 @@
 import { pool } from "../../config/db";
 import { Employee, PublicEmployee } from "../../types";
 
-const PUBLIC_COLUMNS = `
-  id, employee_code, name, email, phone, department, role, is_active,
-  must_change_password, profile_photo_path, created_by, deleted_at,
-  weekly_off_days, created_at, updated_at
+const EMPLOYEE_SELECT = `
+  e.id, e.employee_code, e.name, e.email, e.phone, e.department,
+  e.designation_id, d.name AS designation,
+  e.role, e.is_active, e.must_change_password, e.profile_photo_path,
+  e.created_by, e.deleted_at, e.weekly_off_days, e.uses_default_weekly_off,
+  e.created_at, e.updated_at
+`;
+
+const EMPLOYEE_FROM = `
+  employees e
+  LEFT JOIN employee_designations d ON d.id = e.designation_id
 `;
 
 export async function findEmployeeByCode(employeeCode: string): Promise<Employee | null> {
   const result = await pool.query<Employee>(
-    "SELECT * FROM employees WHERE employee_code = $1 AND deleted_at IS NULL",
+    `SELECT e.*, d.name AS designation
+       FROM employees e
+       LEFT JOIN employee_designations d ON d.id = e.designation_id
+      WHERE e.employee_code = $1 AND e.deleted_at IS NULL`,
     [employeeCode]
   );
   return result.rows[0] ?? null;
@@ -17,7 +27,10 @@ export async function findEmployeeByCode(employeeCode: string): Promise<Employee
 
 export async function findEmployeeById(id: string): Promise<Employee | null> {
   const result = await pool.query<Employee>(
-    "SELECT * FROM employees WHERE id = $1 AND deleted_at IS NULL",
+    `SELECT e.*, d.name AS designation
+       FROM employees e
+       LEFT JOIN employee_designations d ON d.id = e.designation_id
+      WHERE e.id = $1 AND e.deleted_at IS NULL`,
     [id]
   );
   return result.rows[0] ?? null;
@@ -31,13 +44,21 @@ export async function createEmployee(input: {
   passwordHash: string;
   role: "admin" | "employee";
   createdBy: string;
+  designationId?: string | null;
+  department?: string | null;
   weeklyOffDays?: number[];
+  usesDefaultWeeklyOff?: boolean;
   mustChangePassword?: boolean;
+  isActive?: boolean;
 }): Promise<PublicEmployee> {
-  const result = await pool.query<PublicEmployee>(
-    `INSERT INTO employees (employee_code, name, email, phone, password_hash, role, created_by, weekly_off_days, must_change_password)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING ${PUBLIC_COLUMNS}`,
+  const result = await pool.query<{ id: string }>(
+    `INSERT INTO employees (
+       employee_code, name, email, phone, password_hash, role, created_by,
+       designation_id, department,
+       weekly_off_days, uses_default_weekly_off, must_change_password, is_active
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     RETURNING id`,
     [
       input.employeeCode,
       input.name,
@@ -46,35 +67,47 @@ export async function createEmployee(input: {
       input.passwordHash,
       input.role,
       input.createdBy,
+      input.designationId ?? null,
+      input.department ?? null,
       input.weeklyOffDays ?? [0],
+      input.usesDefaultWeeklyOff ?? true,
       input.mustChangePassword ?? true,
+      input.isActive ?? true,
     ]
   );
-  return result.rows[0];
+  const created = await findEmployeeById(result.rows[0].id);
+  return toPublicEmployee(created!);
 }
 
 export async function listEmployees(params: {
   search?: string;
   isActive?: boolean;
+  designationId?: string;
   page: number;
   limit: number;
 }): Promise<{ items: PublicEmployee[]; total: number }> {
-  const conditions: string[] = ["role = 'employee'", "deleted_at IS NULL"];
+  const conditions: string[] = ["e.role = 'employee'", "e.deleted_at IS NULL"];
   const values: any[] = [];
 
   if (params.search) {
     values.push(`%${params.search}%`);
-    conditions.push(`(name ILIKE $${values.length} OR employee_code ILIKE $${values.length})`);
+    conditions.push(
+      `(e.name ILIKE $${values.length} OR e.employee_code ILIKE $${values.length} OR d.name ILIKE $${values.length})`
+    );
   }
   if (params.isActive !== undefined) {
     values.push(params.isActive);
-    conditions.push(`is_active = $${values.length}`);
+    conditions.push(`e.is_active = $${values.length}`);
+  }
+  if (params.designationId) {
+    values.push(params.designationId);
+    conditions.push(`e.designation_id = $${values.length}`);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const countResult = await pool.query<{ count: string }>(
-    `SELECT COUNT(*) FROM employees ${whereClause}`,
+    `SELECT COUNT(*) FROM ${EMPLOYEE_FROM} ${whereClause}`,
     values
   );
 
@@ -82,8 +115,10 @@ export async function listEmployees(params: {
   values.push(params.limit, offset);
 
   const itemsResult = await pool.query<PublicEmployee>(
-    `SELECT ${PUBLIC_COLUMNS} FROM employees ${whereClause}
-     ORDER BY created_at DESC
+    `SELECT ${EMPLOYEE_SELECT}
+       FROM ${EMPLOYEE_FROM}
+       ${whereClause}
+     ORDER BY e.created_at DESC
      LIMIT $${values.length - 1} OFFSET $${values.length}`,
     values
   );
@@ -94,22 +129,24 @@ export async function listEmployees(params: {
 /** All active, non-deleted employees for admin filter dropdowns (no pagination). */
 export async function listActiveEmployees(): Promise<PublicEmployee[]> {
   const result = await pool.query<PublicEmployee>(
-    `SELECT ${PUBLIC_COLUMNS}
-       FROM employees
-      WHERE role = 'employee' AND deleted_at IS NULL AND is_active = true
-      ORDER BY name ASC`,
+    `SELECT ${EMPLOYEE_SELECT}
+       FROM ${EMPLOYEE_FROM}
+      WHERE e.role = 'employee' AND e.deleted_at IS NULL AND e.is_active = true
+      ORDER BY e.name ASC`,
     []
   );
   return result.rows;
 }
 
 export async function setEmployeeActive(id: string, isActive: boolean): Promise<PublicEmployee | null> {
-  const result = await pool.query<PublicEmployee>(
+  const result = await pool.query<{ id: string }>(
     `UPDATE employees SET is_active = $1 WHERE id = $2 AND role = 'employee'
-     RETURNING ${PUBLIC_COLUMNS}`,
+     RETURNING id`,
     [isActive, id]
   );
-  return result.rows[0] ?? null;
+  if (!result.rows[0]) return null;
+  const employee = await findEmployeeById(result.rows[0].id);
+  return employee ? toPublicEmployee(employee) : null;
 }
 
 export async function updateEmployeePassword(
@@ -118,68 +155,122 @@ export async function updateEmployeePassword(
   mustChangePassword: boolean
 ): Promise<void> {
   await pool.query(
-    "UPDATE employees SET password_hash = $1, must_change_password = $2 WHERE id = $3",
+    `UPDATE employees
+        SET password_hash = $1,
+            must_change_password = $2,
+            password_changed_at = now(),
+            updated_at = now()
+      WHERE id = $3`,
     [passwordHash, mustChangePassword, id]
   );
 }
 
+export async function markMustChangePassword(id: string): Promise<void> {
+  await pool.query(`UPDATE employees SET must_change_password = true, updated_at = now() WHERE id = $1`, [id]);
+}
+
 export async function updateEmployeeProfile(
   id: string,
-  input: { name?: string; email?: string | null; phone?: string | null; department?: string | null }
+  input: {
+    name?: string;
+    email?: string | null;
+    phone?: string | null;
+    department?: string | null;
+    designationId?: string | null;
+  }
 ): Promise<PublicEmployee | null> {
-  const result = await pool.query<PublicEmployee>(
+  const result = await pool.query<{ id: string }>(
     `UPDATE employees SET
        name = COALESCE($1, name),
        email = COALESCE($2, email),
        phone = COALESCE($3, phone),
-       department = COALESCE($4, department)
-     WHERE id = $5 AND role = 'employee'
-     RETURNING ${PUBLIC_COLUMNS}`,
-    [input.name ?? null, input.email ?? null, input.phone ?? null, input.department ?? null, id]
+       department = COALESCE($4, department),
+       designation_id = COALESCE($5, designation_id),
+       updated_at = now()
+     WHERE id = $6 AND role = 'employee'
+     RETURNING id`,
+    [
+      input.name ?? null,
+      input.email ?? null,
+      input.phone ?? null,
+      input.department ?? null,
+      input.designationId === undefined ? null : input.designationId,
+      id,
+    ]
   );
-  return result.rows[0] ?? null;
+  if (!result.rows[0]) return null;
+  const employee = await findEmployeeById(result.rows[0].id);
+  return employee ? toPublicEmployee(employee) : null;
 }
 
 export async function updateProfilePhoto(id: string, photoPath: string | null): Promise<PublicEmployee | null> {
-  const result = await pool.query<PublicEmployee>(
-    `UPDATE employees SET profile_photo_path = $1 WHERE id = $2 RETURNING ${PUBLIC_COLUMNS}`,
+  const result = await pool.query<{ id: string }>(
+    `UPDATE employees SET profile_photo_path = $1, updated_at = now() WHERE id = $2 RETURNING id`,
     [photoPath, id]
   );
-  return result.rows[0] ?? null;
+  if (!result.rows[0]) return null;
+  const employee = await findEmployeeById(result.rows[0].id);
+  return employee ? toPublicEmployee(employee) : null;
 }
 
-/** Sets the employee's individual weekly off days (0=Sun .. 6=Sat). */
-export async function updateWeeklyOffDays(id: string, days: number[]): Promise<PublicEmployee | null> {
+/** Sets an employee's weekly off schedule (custom) or restores the company default. */
+export async function updateWeeklyOffDays(
+  id: string,
+  days: number[],
+  usesDefaultWeeklyOff: boolean
+): Promise<PublicEmployee | null> {
   const unique = Array.from(new Set(days)).sort((a, b) => a - b);
-  const result = await pool.query<PublicEmployee>(
-    `UPDATE employees SET weekly_off_days = $1 WHERE id = $2 AND role = 'employee' AND deleted_at IS NULL
-     RETURNING ${PUBLIC_COLUMNS}`,
-    [unique, id]
+  const result = await pool.query<{ id: string }>(
+    `UPDATE employees
+        SET weekly_off_days = $1,
+            uses_default_weekly_off = $2,
+            updated_at = now()
+      WHERE id = $3
+        AND role = 'employee'
+        AND deleted_at IS NULL
+     RETURNING id`,
+    [unique, usesDefaultWeeklyOff, id]
   );
-  return result.rows[0] ?? null;
+  if (!result.rows[0]) return null;
+  const employee = await findEmployeeById(result.rows[0].id);
+  return employee ? toPublicEmployee(employee) : null;
 }
 
 /** Lightweight list of active employees (with weekly-off) for the monthly grid. */
 export async function listActiveEmployeesForGrid(
   employeeId?: string
-): Promise<{ id: string; employee_code: string; name: string; department: string | null; weekly_off_days: number[] }[]> {
-  const conditions = ["role = 'employee'", "deleted_at IS NULL", "is_active = true"];
-  const values: any[] = [];
+): Promise<
+  {
+    id: string;
+    employee_code: string;
+    name: string;
+    department: string | null;
+    designation: string | null;
+    weekly_off_days: number[];
+    uses_default_weekly_off: boolean;
+  }[]
+> {
+  const conditions = ["e.role = 'employee'", "e.deleted_at IS NULL", "e.is_active = true"];
+  const values: unknown[] = [];
   if (employeeId) {
     values.push(employeeId);
-    conditions.push(`id = $${values.length}`);
+    conditions.push(`e.id = $${values.length}`);
   }
   const result = await pool.query<{
     id: string;
     employee_code: string;
     name: string;
     department: string | null;
+    designation: string | null;
     weekly_off_days: number[];
+    uses_default_weekly_off: boolean;
   }>(
-    `SELECT id, employee_code, name, department, weekly_off_days
-       FROM employees
+    `SELECT e.id, e.employee_code, e.name, e.department, d.name AS designation,
+            e.weekly_off_days, e.uses_default_weekly_off
+       FROM employees e
+       LEFT JOIN employee_designations d ON d.id = e.designation_id
       WHERE ${conditions.join(" AND ")}
-      ORDER BY name ASC`,
+      ORDER BY e.name ASC`,
     values
   );
   return result.rows;
@@ -194,14 +285,16 @@ export async function countActiveEmployees(): Promise<number> {
 
 /** Soft-deletes an employee: hidden from lists but historical records are kept. */
 export async function softDeleteEmployee(id: string): Promise<PublicEmployee | null> {
-  const result = await pool.query<PublicEmployee>(
+  const before = await findEmployeeById(id);
+  if (!before || before.role !== "employee" || before.deleted_at) return null;
+  await pool.query(
     `UPDATE employees
-       SET deleted_at = now(), is_active = false
-     WHERE id = $1 AND role = 'employee' AND deleted_at IS NULL
-     RETURNING ${PUBLIC_COLUMNS}`,
+       SET deleted_at = now(), is_active = false, updated_at = now()
+     WHERE id = $1 AND role = 'employee' AND deleted_at IS NULL`,
     [id]
   );
-  return result.rows[0] ?? null;
+  // soft-deleted rows are filtered by findEmployeeById — return last known public shape
+  return toPublicEmployee({ ...before, deleted_at: new Date().toISOString(), is_active: false });
 }
 
 /** Counts related records so the admin can be warned before deleting. */

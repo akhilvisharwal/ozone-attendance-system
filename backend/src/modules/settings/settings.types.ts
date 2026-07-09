@@ -6,7 +6,11 @@ export interface CompanySettings {
   logoPath: string;
   address: string;
   phone: string;
+  phoneCountryCode: string;
+  secondaryPhone: string;
+  secondaryPhoneCountryCode: string;
   email: string;
+  additionalEmails: string[];
   gstNumber: string;
   timezone: string;
   dateFormat: string;
@@ -43,12 +47,22 @@ export interface WeeklyOffSettings {
   defaultWeeklyOffDays: number[];
 }
 
+/** @deprecated Auth role is always employee for panel-created accounts. Kept for old settings JSON. */
+export type DefaultEmployeeRole = "employee" | "manager" | "admin";
+
 export interface EmployeeSettings {
-  defaultRole: "employee" | "admin";
+  /**
+   * Default job role / designation for newly created employees
+   * (FK to employee_designations.id). Auth role remains "employee".
+   */
+  defaultDesignationId: string | null;
+  /** @deprecated Use defaultDesignationId. Ignored for account creation. */
+  defaultRole?: DefaultEmployeeRole;
   idFormat: string;
   defaultPassword: string;
   requirePasswordChange: boolean;
   profilePhotoRequired: boolean;
+  activeByDefault: boolean;
 }
 
 export interface MobileSettings {
@@ -58,6 +72,8 @@ export interface MobileSettings {
   selfieRequiredCheckOut: boolean;
   allowCameraSwitch: boolean;
   gpsAccuracyThresholdMeters: number;
+  allowOfflineMode: boolean;
+  allowDesktopCheckIn: boolean;
 }
 
 export interface ReportsSettings {
@@ -73,6 +89,9 @@ export interface SecuritySettings {
   passwordMinLength: number;
   requireUppercase: boolean;
   requireNumbers: boolean;
+  requireSpecialCharacters: boolean;
+  passwordExpiryDays: number;
+  lockAccountAfterFailedAttempts: boolean;
   twoFactorEnabled: boolean;
 }
 
@@ -81,6 +100,20 @@ export interface NotificationSettings {
   leaveApproval: boolean;
   attendanceReminder: boolean;
   holidayNotifications: boolean;
+}
+
+export interface BackupSettings {
+  automaticDailyBackup: boolean;
+  lastBackupAt: string | null;
+  /** Configured PostgreSQL plan capacity in GB (default 1). Used by the Database panel. */
+  databaseCapacityGb: number;
+}
+
+export type AuditRetentionDays = 30 | 60 | 90 | 365;
+
+export interface AuditSettings {
+  /** Automatically delete audit logs older than this many days. */
+  retentionDays: AuditRetentionDays;
 }
 
 export interface AppearanceSettings {
@@ -99,7 +132,9 @@ export type SettingsCategory =
   | "reports"
   | "security"
   | "notifications"
-  | "appearance";
+  | "appearance"
+  | "backup"
+  | "audit";
 
 export interface AppSettings {
   company: CompanySettings;
@@ -112,6 +147,8 @@ export interface AppSettings {
   security: SecuritySettings;
   notifications: NotificationSettings;
   appearance: AppearanceSettings;
+  backup: BackupSettings;
+  audit: AuditSettings;
 }
 
 export function buildDefaultSettings(): AppSettings {
@@ -121,7 +158,11 @@ export function buildDefaultSettings(): AppSettings {
       logoPath: env.companyLogoPath,
       address: "",
       phone: "",
+      phoneCountryCode: "+91",
+      secondaryPhone: "",
+      secondaryPhoneCountryCode: "+91",
       email: env.adminEmail,
+      additionalEmails: [],
       gstNumber: "",
       timezone: env.timezone,
       dateFormat: "DD/MM/YYYY",
@@ -149,11 +190,12 @@ export function buildDefaultSettings(): AppSettings {
       defaultWeeklyOffDays: [0],
     },
     employee: {
-      defaultRole: "employee",
+      defaultDesignationId: null,
       idFormat: "OZN###",
       defaultPassword: env.adminPassword,
       requirePasswordChange: true,
       profilePhotoRequired: false,
+      activeByDefault: true,
     },
     mobile: {
       gpsRequiredCheckIn: true,
@@ -162,6 +204,8 @@ export function buildDefaultSettings(): AppSettings {
       selfieRequiredCheckOut: false,
       allowCameraSwitch: true,
       gpsAccuracyThresholdMeters: 100,
+      allowOfflineMode: false,
+      allowDesktopCheckIn: true,
     },
     reports: {
       includeLogo: true,
@@ -175,6 +219,9 @@ export function buildDefaultSettings(): AppSettings {
       passwordMinLength: 8,
       requireUppercase: true,
       requireNumbers: true,
+      requireSpecialCharacters: false,
+      passwordExpiryDays: 0,
+      lockAccountAfterFailedAttempts: true,
       twoFactorEnabled: false,
     },
     notifications: {
@@ -187,6 +234,14 @@ export function buildDefaultSettings(): AppSettings {
       theme: "light",
       accentColor: "#2563eb",
       sidebarCollapsed: false,
+    },
+    backup: {
+      automaticDailyBackup: false,
+      lastBackupAt: null,
+      databaseCapacityGb: 1,
+    },
+    audit: {
+      retentionDays: 90,
     },
   };
 }
@@ -202,4 +257,6 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   "security",
   "notifications",
   "appearance",
+  "backup",
+  "audit",
 ];

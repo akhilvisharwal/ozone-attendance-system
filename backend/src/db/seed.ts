@@ -11,10 +11,13 @@ async function seed() {
   const passwordHash = await bcrypt.hash(password, 12);
 
   if ((existing.rowCount ?? 0) > 0) {
-    await pool.query("UPDATE employees SET password_hash = $1 WHERE employee_code = $2", [
-      passwordHash,
-      env.adminEmployeeId,
-    ]);
+    await pool.query(
+      `UPDATE employees
+          SET password_hash = $1,
+              password_changed_at = now()
+        WHERE employee_code = $2`,
+      [passwordHash, env.adminEmployeeId]
+    );
     console.log(`Updated administrator password for '${env.adminEmployeeId}'.`);
   } else {
     await pool.query(
@@ -26,7 +29,11 @@ async function seed() {
   }
 
   console.log(`  Employee ID: ${env.adminEmployeeId}`);
-  console.log(`  Password:    ${password}`);
+  if (env.isProduction) {
+    console.log("  Password:    (from ADMIN_PASSWORD — not printed in production logs)");
+  } else {
+    console.log(`  Password:    ${password}`);
+  }
   console.log("Please log in and change this password / rotate credentials for production use.");
 }
 

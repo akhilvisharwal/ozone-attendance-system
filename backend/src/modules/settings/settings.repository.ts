@@ -6,6 +6,9 @@ import {
   buildDefaultSettings,
 } from "./settings.types";
 import { normalizeLeaveSettings } from "../../utils/leaveSettings";
+import { normalizeAttendanceSettings, normalizeCompanySettings, normalizeEmployeeSettings, normalizeSecuritySettings } from "../../utils/settingsHelpers";
+import { normalizeMobileSettings } from "../../utils/attendanceCapture";
+import { normalizeBackupSettings } from "../../utils/backupHelpers";
 
 function deepMerge<T extends Record<string, unknown>>(base: T, patch: Partial<T>): T {
   const out = { ...base };
@@ -53,6 +56,12 @@ export async function getMergedSettings(): Promise<AppSettings> {
     }
   }
   out.leave = normalizeLeaveSettings(out.leave);
+  out.company = normalizeCompanySettings(out.company as AppSettings["company"]);
+  out.attendance = normalizeAttendanceSettings(out.attendance as AppSettings["attendance"]);
+  out.employee = normalizeEmployeeSettings(out.employee as AppSettings["employee"]);
+  out.mobile = normalizeMobileSettings(out.mobile as AppSettings["mobile"]);
+  out.security = normalizeSecuritySettings(out.security as AppSettings["security"]);
+  out.backup = normalizeBackupSettings(out.backup as AppSettings["backup"]);
   return out as unknown as AppSettings;
 }
 
@@ -70,23 +79,4 @@ export async function updateSettingsCategory<C extends SettingsCategory>(
     [category, JSON.stringify(value), updatedBy]
   );
   return result.rows[0].value;
-}
-
-export async function exportAllData(): Promise<Record<string, unknown>> {
-  const tables = [
-    "employees",
-    "sites",
-    "attendance_records",
-    "leave_requests",
-    "company_holidays",
-    "tasks",
-    "app_settings",
-    "audit_logs",
-  ];
-  const out: Record<string, unknown> = {};
-  for (const table of tables) {
-    const res = await pool.query(`SELECT * FROM ${table}`);
-    out[table] = res.rows;
-  }
-  return out;
 }

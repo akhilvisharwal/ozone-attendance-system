@@ -6,6 +6,8 @@ import { runMigrations } from "./db/migrate";
 import { initSettingsCache } from "./modules/settings/settings.cache";
 import { startAutoAbsenceScheduler } from "./services/autoAbsence.scheduler";
 import { startTaskReminderScheduler } from "./services/taskReminders.service";
+import { startDailyBackupScheduler } from "./services/backup.scheduler";
+import { startAuditRetentionScheduler } from "./services/auditRetention.scheduler";
 
 async function main() {
   if (env.isProduction) {
@@ -23,6 +25,8 @@ async function main() {
   console.log("Task reminder scheduler started.");
 
   startAutoAbsenceScheduler();
+  startDailyBackupScheduler();
+  startAuditRetentionScheduler();
 
   const app = createApp();
   app.listen(env.port, () => {

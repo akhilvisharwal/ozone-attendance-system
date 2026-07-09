@@ -66,9 +66,18 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
 
-    const isAuthRoute = originalRequest?.url?.includes("/auth/login") || originalRequest?.url?.includes("/auth/refresh");
+    const url = originalRequest?.url ?? "";
+    const isAuthRoute = url.includes("/auth/login") || url.includes("/auth/refresh");
+    // Admin password change returns 401 for wrong current password — do not treat as session expiry.
+    const isStepUpAuth = url.includes("/security/change-password");
 
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthRoute) {
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !isAuthRoute &&
+      !isStepUpAuth
+    ) {
       originalRequest._retry = true;
       const newToken = await refreshAccessToken();
       if (newToken) {

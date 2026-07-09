@@ -1,8 +1,14 @@
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, Briefcase, CheckCircle2, UserX } from "lucide-react";
-import type { AttendanceRecord, DayStatus, TimingRules } from "@/types";
+import type { AttendanceRecord, DayStatus, SpecialDayStatus, TimingRules } from "@/types";
 
-export type TodayAttendanceDisplayStatus = "working" | "present" | "half_day" | "absent";
+export type TodayAttendanceDisplayStatus =
+  | "working"
+  | "present"
+  | "half_day"
+  | "absent"
+  | "holiday_worked"
+  | "weekly_off_worked";
 
 export interface AttendanceHourThresholds {
   minHoursPresent: number;
@@ -39,6 +45,16 @@ const STATUS_PRESENTATIONS: Record<
     label: "Absent",
     tone: "red",
     Icon: UserX,
+  },
+  holiday_worked: {
+    label: "Worked on Holiday",
+    tone: "green",
+    Icon: CheckCircle2,
+  },
+  weekly_off_worked: {
+    label: "Worked on Weekly Off",
+    tone: "green",
+    Icon: CheckCircle2,
   },
 };
 
@@ -85,10 +101,19 @@ function resolveFinalDayStatus(
   return "absent";
 }
 
+function resolveSpecialDayPresentation(
+  specialDayStatus: SpecialDayStatus
+): TodayStatusPresentation {
+  return toPresentation(specialDayStatus);
+}
+
 function resolveFinalAttendanceStatus(
   record: AttendanceRecord,
   thresholds: AttendanceHourThresholds | null
 ): TodayStatusPresentation {
+  if (record.special_day_status) {
+    return resolveSpecialDayPresentation(record.special_day_status);
+  }
   const dayStatus = resolveFinalDayStatus(record, thresholds);
   if (dayStatus === "present") return toPresentation("present");
   if (dayStatus === "half_day") return toPresentation("half_day");
@@ -109,6 +134,9 @@ export function resolveTodayAttendanceStatus(
   }
 
   if (attendance.status === "checked_in") {
+    if (attendance.special_day_status) {
+      return resolveSpecialDayPresentation(attendance.special_day_status);
+    }
     return toPresentation("working");
   }
 

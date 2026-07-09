@@ -1,4 +1,4 @@
-import { getLoginAttemptLimit } from "./settingsHelpers";
+import { getLoginAttemptLimit, isAccountLockEnabled } from "./settingsHelpers";
 
 interface AttemptRecord {
   count: number;
@@ -27,11 +27,15 @@ export function recordFailedLogin(employeeCode: string): { locked: boolean; rema
   const limit = getLoginAttemptLimit();
   const entry = attempts.get(key) ?? { count: 0 };
   entry.count += 1;
-  if (entry.count >= limit) {
+  if (entry.count >= limit && isAccountLockEnabled()) {
     entry.lockedUntil = Date.now() + LOCK_MS;
   }
   attempts.set(key, entry);
-  return { locked: entry.count >= limit, remaining: Math.max(0, limit - entry.count) };
+  const reachedLimit = entry.count >= limit;
+  return {
+    locked: reachedLimit && isAccountLockEnabled(),
+    remaining: Math.max(0, limit - entry.count),
+  };
 }
 
 export function clearLoginAttempts(employeeCode: string): void {

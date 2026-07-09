@@ -5,6 +5,8 @@ export const createEmployeeSchema = z.object({
   email: z.string().email().optional().nullable(),
   phone: z.string().min(6).max(20).optional().nullable(),
   department: z.string().max(100).optional().nullable(),
+  /** Optional when Settings → Employees has a default role configured. */
+  designationId: z.string().uuid("Select a Role / Designation").optional().nullable(),
 });
 
 export const updateEmployeeSchema = z.object({
@@ -12,6 +14,7 @@ export const updateEmployeeSchema = z.object({
   email: z.string().email().optional().nullable(),
   phone: z.string().min(6).max(20).optional().nullable(),
   department: z.string().max(100).optional().nullable(),
+  designationId: z.string().uuid("Select a Role / Designation").optional().nullable(),
 });
 
 export const setActiveSchema = z.object({
@@ -36,11 +39,14 @@ export const weeklyOffSchema = z.object({
   weeklyOffDays: z
     .array(z.number().int().min(0, "Invalid weekday").max(6, "Invalid weekday"))
     .max(7, "Too many days"),
+  /** When true, the employee follows the company default schedule (resolved at runtime). */
+  useCompanyDefault: z.boolean().optional(),
 });
 
 export const listEmployeesQuerySchema = z.object({
   search: z.string().optional(),
   isActive: z.enum(["true", "false"]).optional(),
+  designationId: z.string().uuid().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });

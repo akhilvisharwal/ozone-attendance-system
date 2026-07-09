@@ -1,8 +1,17 @@
 import { toDateString } from "../../utils/date";
+import { getSettings } from "../settings/settings.cache";
+import { normalizeWeeklyOffDays, resolveWeeklyOffDays } from "../../utils/weeklyOffDays";
 import * as repo from "./attendance.repository";
 import * as employeesRepo from "../employees/employees.repository";
 import * as holidaysRepo from "../holidays/holidays.repository";
 import { resolveHolidaysInRange } from "../holidays/holidays.service";
+import {
+  buildSummaryFromDays,
+  resolveDayStatus,
+  WORKED_MINUTE_STATUSES,
+} from "./attendanceCalculation.service";
+import { getEffectiveClosingTimesForEmployees } from "./attendanceRules.service";
+import { isPastTimeCutoff } from "../../services/autoAbsence.service";
 
 export type MonthlyCellStatus =
   | "present"
@@ -12,6 +21,7 @@ export type MonthlyCellStatus =
   | "weekly_off"
   | "holiday"
   | "holiday_worked"
+  | "weekly_off_worked"
   | "none";
 
 export interface MonthlyDayCell {
@@ -31,6 +41,7 @@ export interface MonthlySummary {
   weeklyOff: number;
   holidays: number;
   holidayWorked: number;
+  weeklyOffWorked: number;
   totalMinutes: number;
   workingDays: number;
   attendancePercentage: number;
@@ -42,6 +53,7 @@ export interface MonthlyEmployeeRow {
   employeeCode: string;
   name: string;
   department: string | null;
+  designation: string | null;
   weeklyOffDays: number[];
   days: MonthlyDayCell[];
   summary: MonthlySummary;
@@ -52,6 +64,16 @@ export interface MonthlyGrid {
   month: number; // 1-12
   label: string;
   daysInMonth: number;
+  defaultWeeklyOffDays: number[];
+  employees: MonthlyEmployeeRow[];
+  holidays: { date: string; name: string; description: string | null }[];
+}
+
+export interface AttendanceRangeGrid {
+  from: string;
+  to: string;
+  label: string;
+  defaultWeeklyOffDays: number[];
   employees: MonthlyEmployeeRow[];
   holidays: { date: string; name: string; description: string | null }[];
 }
@@ -71,15 +93,174 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-/** Derives a day cell's status from the attendance record's stored day_status. */
-function statusFromRecord(record: any): MonthlyCellStatus {
-  if (record.day_status === "present") return "present";
-  if (record.day_status === "half_day") return "half_day";
-  if (record.day_status === "absent") return "absent";
-  // Still checked in (no checkout yet) — treat as present for the day.
-  if (record.status === "checked_in") return "present";
-  if (record.status === "absent") return "absent";
-  return "present";
+function weekdayForDate(dateStr: string): number {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day).getDay();
+}
+
+function enumerateDates(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const cursor = new Date(`${from}T12:00:00`);
+  const end = new Date(`${to}T12:00:00`);
+  while (cursor <= end) {
+    dates.push(toDateString(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+function buildDayCell(input: {
+  dateStr: string;
+  record: any | undefined;
+  weeklyOff: number[];
+  holidayMap: Map<string, { name: string; description: string | null }>;
+  leaveSet: Set<string>;
+  employeeId: string;
+  todayStr: string;
+  now: Date;
+  closingTime: { hour: number; minute: number } | undefined;
+}): MonthlyDayCell {
+  const {
+    dateStr,
+    record,
+    weeklyOff,
+    holidayMap,
+    leaveSet,
+    employeeId,
+    todayStr,
+    now,
+    closingTime,
+  } = input;
+  const day = Number(dateStr.slice(-2));
+  const weekday = weekdayForDate(dateStr);
+  const key = `${employeeId}|${dateStr}`;
+  const isFuture = dateStr > todayStr;
+  const isToday = dateStr === todayStr;
+  const isWeeklyOff = weeklyOff.includes(weekday);
+  const holidayInfo = holidayMap.get(dateStr);
+  const isHoliday = Boolean(holidayInfo);
+  const isPastClosingCutoff =
+    !isToday || (closingTime ? isPastTimeCutoff(now, closingTime, todayStr) : false);
+
+  const status = resolveDayStatus({
+    record: record ?? null,
+    hasLeave: leaveSet.has(key),
+    isHoliday,
+    isWeeklyOff,
+    isFuture,
+    isToday,
+    isPastClosingCutoff,
+  });
+
+  let totalMinutes: number | null = null;
+  let late = false;
+  if (record) {
+    if (WORKED_MINUTE_STATUSES.has(status)) {
+      totalMinutes = record.total_minutes ?? null;
+    }
+    late =
+      record.check_in_status === "late" &&
+      !record.is_admin_marked &&
+      Boolean(record.check_in_time);
+  }
+
+  return {
+    day,
+    date: dateStr,
+    status,
+    totalMinutes,
+    late,
+    holidayName: holidayInfo?.name ?? null,
+  };
+}
+
+async function loadGridContext(from: string, to: string, employeeId?: string, siteId?: string) {
+  const todayStr = toDateString(new Date());
+  const defaultWeeklyOffDays = normalizeWeeklyOffDays(getSettings().weeklyOff.defaultWeeklyOffDays);
+  const employees = await employeesRepo.listActiveEmployeesForGrid(employeeId);
+  const attendanceRows = await repo.listAttendanceInRange(from, to, employeeId, siteId);
+  const leaveRows = await repo.listApprovedLeavesInRange(from, to, employeeId);
+  const holidayRows = await holidaysRepo.listHolidaysForRange(from, to);
+  const holidayMap = resolveHolidaysInRange(holidayRows, from, to);
+  const holidaysList = Array.from(holidayMap.values())
+    .sort((a, b) => a.holiday_date.localeCompare(b.holiday_date))
+    .map((h) => ({ date: h.holiday_date, name: h.name, description: h.description }));
+
+  const attendanceMap = new Map<string, any>();
+  for (const row of attendanceRows) {
+    attendanceMap.set(`${row.employee_id}|${row.attendance_date}`, row);
+  }
+  const leaveSet = new Set<string>();
+  for (const row of leaveRows) {
+    leaveSet.add(`${row.employee_id}|${row.leave_date}`);
+  }
+
+  const closingByEmployee = await getEffectiveClosingTimesForEmployees(
+    todayStr,
+    employees.map((emp) => emp.id)
+  );
+
+  return {
+    todayStr,
+    now: new Date(),
+    defaultWeeklyOffDays,
+    employees,
+    holidayMap,
+    holidaysList,
+    attendanceMap,
+    leaveSet,
+    closingByEmployee,
+  };
+}
+
+/** Builds attendance grid for an arbitrary date range — shared by monthly, scoreboard, and reports. */
+export async function buildAttendanceGridForRange(params: {
+  from: string;
+  to: string;
+  employeeId?: string;
+  siteId?: string;
+}): Promise<AttendanceRangeGrid> {
+  const { from, to } = params;
+  const ctx = await loadGridContext(from, to, params.employeeId, params.siteId);
+  const dates = enumerateDates(from, to);
+
+  const rows: MonthlyEmployeeRow[] = ctx.employees.map((emp) => {
+    const weeklyOff = resolveWeeklyOffDays(emp, ctx.defaultWeeklyOffDays);
+    const closingTime = ctx.closingByEmployee.get(emp.id);
+    const days = dates.map((dateStr) =>
+      buildDayCell({
+        dateStr,
+        record: ctx.attendanceMap.get(`${emp.id}|${dateStr}`),
+        weeklyOff,
+        holidayMap: ctx.holidayMap,
+        leaveSet: ctx.leaveSet,
+        employeeId: emp.id,
+        todayStr: ctx.todayStr,
+        now: ctx.now,
+        closingTime,
+      })
+    );
+
+    return {
+      employeeId: emp.id,
+      employeeCode: emp.employee_code,
+      name: emp.name,
+      department: emp.department ?? null,
+      designation: emp.designation ?? null,
+      weeklyOffDays: weeklyOff,
+      days,
+      summary: buildSummaryFromDays(days, ctx.todayStr),
+    };
+  });
+
+  return {
+    from,
+    to,
+    label: `${from} to ${to}`,
+    defaultWeeklyOffDays: ctx.defaultWeeklyOffDays,
+    employees: rows,
+    holidays: ctx.holidaysList,
+  };
 }
 
 export async function buildMonthlyGrid(params: {
@@ -92,132 +273,12 @@ export async function buildMonthlyGrid(params: {
   const daysInMonth = new Date(year, month, 0).getDate();
   const from = `${year}-${String(month).padStart(2, "0")}-01`;
   const to = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
-  const todayStr = toDateString(new Date());
 
-  const employees = await employeesRepo.listActiveEmployeesForGrid(params.employeeId);
-  const attendanceRows = await repo.listAttendanceInRange(from, to, params.employeeId, params.siteId);
-  const leaveRows = await repo.listApprovedLeavesInRange(from, to, params.employeeId);
-  const holidayRows = await holidaysRepo.listHolidaysForRange(from, to);
-  const holidayMap = resolveHolidaysInRange(holidayRows, from, to);
-  const holidaysList = Array.from(holidayMap.values())
-    .sort((a, b) => a.holiday_date.localeCompare(b.holiday_date))
-    .map((h) => ({ date: h.holiday_date, name: h.name, description: h.description }));
-
-  // Index attendance + leave by "employeeId|date".
-  const attendanceMap = new Map<string, any>();
-  for (const row of attendanceRows) {
-    attendanceMap.set(`${row.employee_id}|${row.attendance_date}`, row);
-  }
-  const leaveSet = new Set<string>();
-  for (const row of leaveRows) {
-    leaveSet.add(`${row.employee_id}|${row.leave_date}`);
-  }
-
-  const rows: MonthlyEmployeeRow[] = employees.map((emp) => {
-    const weeklyOff = emp.weekly_off_days ?? [];
-    const days: MonthlyDayCell[] = [];
-    const summary: MonthlySummary = {
-      present: 0,
-      halfDay: 0,
-      absent: 0,
-      leave: 0,
-      weeklyOff: 0,
-      holidays: 0,
-      holidayWorked: 0,
-      totalMinutes: 0,
-      workingDays: 0,
-      attendancePercentage: 0,
-      lateCheckIns: 0,
-    };
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const weekday = new Date(year, month - 1, day).getDay();
-      const key = `${emp.id}|${dateStr}`;
-      const record = attendanceMap.get(key);
-      const isFuture = dateStr > todayStr;
-      const isWeeklyOff = weeklyOff.includes(weekday);
-      const holidayInfo = holidayMap.get(dateStr);
-      const isHoliday = Boolean(holidayInfo);
-
-      let status: MonthlyCellStatus;
-      let totalMinutes: number | null = null;
-      let late = false;
-
-      if (record && isHoliday) {
-        status = "holiday_worked";
-        totalMinutes = record.total_minutes ?? null;
-        late = record.check_in_status === "late";
-      } else if (record) {
-        status = statusFromRecord(record);
-        totalMinutes = record.total_minutes ?? null;
-        late = record.check_in_status === "late";
-      } else if (leaveSet.has(key)) {
-        status = "leave";
-      } else if (isHoliday) {
-        status = "holiday";
-      } else if (isWeeklyOff) {
-        status = "weekly_off";
-      } else if (isFuture) {
-        status = "none";
-      } else {
-        status = "absent";
-      }
-
-      switch (status) {
-        case "present":
-          summary.present += 1;
-          break;
-        case "half_day":
-          summary.halfDay += 1;
-          break;
-        case "absent":
-          summary.absent += 1;
-          break;
-        case "leave":
-          summary.leave += 1;
-          break;
-        case "weekly_off":
-          summary.weeklyOff += 1;
-          break;
-        case "holiday":
-          summary.holidays += 1;
-          break;
-        case "holiday_worked":
-          summary.holidayWorked += 1;
-          break;
-      }
-      if (totalMinutes) summary.totalMinutes += totalMinutes;
-      if (late) summary.lateCheckIns += 1;
-
-      days.push({
-        day,
-        date: dateStr,
-        status,
-        totalMinutes,
-        late,
-        holidayName: holidayInfo?.name ?? null,
-      });
-    }
-
-    // Working days = days attendance was expected (present + half + absent).
-    summary.workingDays = summary.present + summary.halfDay + summary.absent;
-    summary.attendancePercentage =
-      summary.workingDays > 0
-        ? Math.round(
-            ((summary.present + summary.halfDay * 0.5 + summary.holidayWorked) / summary.workingDays) * 1000
-          ) / 10
-        : 0;
-
-    return {
-      employeeId: emp.id,
-      employeeCode: emp.employee_code,
-      name: emp.name,
-      department: emp.department ?? null,
-      weeklyOffDays: weeklyOff,
-      days,
-      summary,
-    };
+  const rangeGrid = await buildAttendanceGridForRange({
+    from,
+    to,
+    employeeId: params.employeeId,
+    siteId: params.siteId,
   });
 
   return {
@@ -225,8 +286,9 @@ export async function buildMonthlyGrid(params: {
     month,
     label: `${MONTH_NAMES[month - 1]} ${year}`,
     daysInMonth,
-    employees: rows,
-    holidays: holidaysList,
+    defaultWeeklyOffDays: rangeGrid.defaultWeeklyOffDays,
+    employees: rangeGrid.employees,
+    holidays: rangeGrid.holidays,
   };
 }
 

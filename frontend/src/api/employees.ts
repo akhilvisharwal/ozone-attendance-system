@@ -1,11 +1,26 @@
 import { apiClient } from "./client";
-import type { DependencyCounts, Employee, PaginatedResponse } from "@/types";
+import type {
+  DependencyCounts,
+  Employee,
+  EmployeeDesignation,
+  PaginatedResponse,
+} from "@/types";
 
 export interface CreateEmployeeInput {
   name: string;
   email?: string | null;
   phone?: string | null;
   department?: string | null;
+  /** Optional when Settings → Employees has a default role. */
+  designationId?: string | null;
+}
+
+export interface UpdateEmployeeInput {
+  name?: string;
+  email?: string | null;
+  phone?: string | null;
+  department?: string | null;
+  designationId?: string | null;
 }
 
 export interface NewEmployeeCredentials {
@@ -18,9 +33,53 @@ export async function createEmployee(input: CreateEmployeeInput) {
   return res.data;
 }
 
-export async function listEmployees(params: { search?: string; isActive?: boolean; page?: number; limit?: number }) {
+export async function listEmployees(params: {
+  search?: string;
+  isActive?: boolean;
+  designationId?: string;
+  page?: number;
+  limit?: number;
+}) {
   const res = await apiClient.get<PaginatedResponse<Employee>>("/employees", { params });
   return res.data;
+}
+
+export interface DesignationsResponse {
+  items: EmployeeDesignation[];
+  total: number;
+  defaultDesignationId: string | null;
+}
+
+export async function listDesignations(): Promise<EmployeeDesignation[]> {
+  const res = await apiClient.get<DesignationsResponse>("/employees/designations");
+  return res.data.items;
+}
+
+export async function fetchDesignations(): Promise<DesignationsResponse> {
+  const res = await apiClient.get<DesignationsResponse>("/employees/designations");
+  return res.data;
+}
+
+export async function createDesignation(name: string): Promise<EmployeeDesignation> {
+  const res = await apiClient.post<{ designation: EmployeeDesignation }>("/employees/designations", {
+    name,
+  });
+  return res.data.designation;
+}
+
+export async function updateDesignation(
+  id: string,
+  name: string
+): Promise<EmployeeDesignation> {
+  const res = await apiClient.patch<{ designation: EmployeeDesignation }>(
+    `/employees/designations/${id}`,
+    { name }
+  );
+  return res.data.designation;
+}
+
+export async function deleteDesignation(id: string): Promise<void> {
+  await apiClient.delete(`/employees/designations/${id}`);
 }
 
 /** All active employees for filter dropdowns (sorted by name, no pagination cap issues). */
@@ -34,7 +93,7 @@ export async function getEmployeeById(id: string) {
   return res.data.employee;
 }
 
-export async function updateEmployee(id: string, input: Partial<CreateEmployeeInput>) {
+export async function updateEmployee(id: string, input: UpdateEmployeeInput) {
   const res = await apiClient.patch<{ employee: Employee }>(`/employees/${id}`, input);
   return res.data.employee;
 }
@@ -84,8 +143,15 @@ export async function adminDeleteEmployeeAvatar(id: string): Promise<Employee> {
 }
 
 /** Admin: set an employee's individual weekly off days (0=Sun .. 6=Sat). */
-export async function updateWeeklyOff(id: string, weeklyOffDays: number[]): Promise<Employee> {
-  const res = await apiClient.patch<{ employee: Employee }>(`/employees/${id}/weekly-off`, { weeklyOffDays });
+export async function updateWeeklyOff(
+  id: string,
+  weeklyOffDays: number[],
+  useCompanyDefault = false
+): Promise<Employee> {
+  const res = await apiClient.patch<{ employee: Employee }>(`/employees/${id}/weekly-off`, {
+    weeklyOffDays,
+    useCompanyDefault,
+  });
   return res.data.employee;
 }
 

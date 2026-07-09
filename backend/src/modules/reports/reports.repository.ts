@@ -16,13 +16,14 @@ export async function fetchReportRows(filters: {
 
   const result = await pool.query<ReportRow>(
     `SELECT
-       e.employee_code, e.name AS employee_name,
+       e.employee_code, e.name AS employee_name, d.name AS designation,
        a.attendance_date::text AS attendance_date,
-       a.check_in_time, a.check_out_time, a.total_minutes, a.day_status,
+       a.check_in_time, a.check_out_time, a.total_minutes, a.day_status, a.special_day_status,
        s.name AS site_name, a.work_status, a.work_summary,
        a.check_in_address, a.remarks
      FROM attendance a
      JOIN employees e ON e.id = a.employee_id
+     LEFT JOIN employee_designations d ON d.id = e.designation_id
      LEFT JOIN sites s ON s.id = a.site_id
      WHERE ${conditions.join(" AND ")}
      ORDER BY a.attendance_date DESC, e.employee_code ASC`,

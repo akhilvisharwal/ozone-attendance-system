@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import * as attendanceApi from "@/api/attendance";
 import { usePublicSettings } from "@/contexts/SettingsContext";
@@ -15,13 +15,31 @@ export function TodayAttendanceStatusCard({
   attendance: AttendanceRecord | null;
   className?: string;
 }) {
-  const { publicSettings } = usePublicSettings();
+  const { publicSettings, refresh: refreshPublicSettings } = usePublicSettings();
   const [rules, setRules] = useState<TimingRules | null>(null);
   const [now, setNow] = useState(() => new Date());
 
-  useEffect(() => {
-    attendanceApi.getTimingRules().then(setRules).catch(() => setRules(null));
+  const loadTimingRules = useCallback(() => {
+    attendanceApi
+      .getTimingRules()
+      .then((response) => setRules(response.rules))
+      .catch(() => setRules(null));
   }, []);
+
+  useEffect(() => {
+    loadTimingRules();
+  }, [loadTimingRules]);
+
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        loadTimingRules();
+        void refreshPublicSettings();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [loadTimingRules, refreshPublicSettings]);
 
   useEffect(() => {
     const tick = () => setNow(new Date());

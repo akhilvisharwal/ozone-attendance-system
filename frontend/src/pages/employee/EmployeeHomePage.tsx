@@ -1,46 +1,37 @@
 import { useCallback, useEffect, useState } from "react";
-import type { ReactNode } from "react";
-import {
-  Building2,
-  CalendarHeart,
-  CheckCircle2,
-  Clock,
-  LogOut,
-  MapPin,
-} from "lucide-react";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { CheckCircle2, LogOut } from "lucide-react";
+import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
-import { SecureImage } from "@/components/SecureImage";
 import { WorkStatusBadge } from "@/components/ui/Badge";
-import { TodayAttendanceStatusCard } from "@/components/TodayAttendanceStatusCard";
-import { useAuth } from "@/auth/AuthContext";
 import * as attendanceApi from "@/api/attendance";
-import * as holidaysApi from "@/api/holidays";
 import type { AttendanceRecord } from "@/types";
-import type { ResolvedHoliday } from "@/api/holidays";
 import { formatDate, formatMinutesAsHours, formatTime } from "@/utils/format";
+import { AttendanceOverrideNoticeBanner } from "@/components/AttendanceOverrideNoticeBanner";
+import { usePublicSettings } from "@/contexts/SettingsContext";
 import { CheckInPanel } from "./CheckInPanel";
 import { CheckOutPanel } from "./CheckOutPanel";
 import { CheckOutConfirmModal } from "@/components/CheckOutConfirmModal";
-import { TaskDashboardWidget } from "@/components/tasks/TaskDashboardWidget";
-import * as tasksApi from "@/api/tasks";
-import type { TaskAnalytics } from "@/types";
+import { useOfflineAttendanceSync } from "@/hooks/useOfflineAttendanceSync";
+import { peekPendingAttendance, getPendingAttendance } from "@/utils/offlineAttendanceQueue";
+import { Alert } from "@/components/ui/Alert";
 
 export function EmployeeHomePage() {
-  const { employee } = useAuth();
+  const { publicSettings, refresh: refreshPublicSettings } = usePublicSettings();
   const [attendance, setAttendance] = useState<AttendanceRecord | null | undefined>(undefined);
-  const [upcomingHolidays, setUpcomingHolidays] = useState<ResolvedHoliday[]>([]);
   const [showCheckOutConfirm, setShowCheckOutConfirm] = useState(false);
   const [showCheckOutForm, setShowCheckOutForm] = useState(false);
-  const [taskAnalytics, setTaskAnalytics] = useState<TaskAnalytics | null>(null);
+
+  const [pendingCount, setPendingCount] = useState(0);
 
   const refresh = useCallback(() => {
-    attendanceApi.myToday().then(setAttendance);
-    holidaysApi.getUpcomingHolidays(5).then(setUpcomingHolidays).catch(() => setUpcomingHolidays([]));
-    tasksApi.getMyTaskAnalytics().then(setTaskAnalytics).catch(() => setTaskAnalytics(null));
+    attendanceApi.myToday().then((record) => {
+      setAttendance(record);
+      setPendingCount(getPendingAttendance().length);
+    });
   }, []);
+
+  useOfflineAttendanceSync(refresh);
 
   useEffect(() => {
     refresh();
@@ -50,11 +41,12 @@ export function EmployeeHomePage() {
     function handleVisibilityChange() {
       if (document.visibilityState === "visible") {
         refresh();
+        void refreshPublicSettings();
       }
     }
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [refresh]);
+  }, [refresh, refreshPublicSettings]);
 
   useEffect(() => {
     if (attendance?.status !== "checked_in") {
@@ -66,6 +58,7 @@ export function EmployeeHomePage() {
   function handleCheckedIn() {
     setShowCheckOutConfirm(false);
     setShowCheckOutForm(false);
+    setPendingCount(getPendingAttendance().length);
     refresh();
   }
 
@@ -75,50 +68,37 @@ export function EmployeeHomePage() {
     refresh();
   }
 
-  function handleContinueToCheckOut() {
-    setShowCheckOutConfirm(false);
-    setShowCheckOutForm(true);
-  }
-
   return (
-    <div>
-      <PageHeader
-        title={`Welcome, ${employee?.name ?? ""}`}
-        subtitle={formatDate(new Date().toISOString())}
-      />
+    <div className="mx-auto w-full max-w-lg space-y-3">
+      <AttendanceOverrideNoticeBanner override={publicSettings?.attendanceOverride} compact />
+      {pendingCount > 0 && (
+        <Alert variant="info">
+          Syncing pending attendance when your connection is available…
+        </Alert>
+      )}
+      {attendance === undefined && (
+        <div className="flex justify-center py-16">
+          <Spinner label="Loading attendance…" />
+        </div>
+      )}
 
-      <TaskDashboardWidget analytics={taskAnalytics} tasksLink="/tasks" title="My Tasks" />
-
-      {upcomingHolidays.length > 0 && (
-        <Card className="mb-4">
-          <CardHeader title="Upcoming Holidays" />
-          <CardBody className="divide-y divide-slate-100 p-0">
-            {upcomingHolidays.map((h) => (
-              <div key={`${h.id}-${h.holiday_date}`} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
-                  <CalendarHeart className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-medium text-slate-900">{h.name}</p>
-                  <p className="text-xs text-slate-500">{formatDate(h.holiday_date)}</p>
-                </div>
-              </div>
-            ))}
+      {attendance === null && peekPendingAttendance()?.type === "check-in" && (
+        <Card>
+          <CardBody className="px-6 py-8 text-center">
+            <h2 className="text-lg font-semibold text-slate-900">Check-in saved offline</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Your check-in will sync automatically when you are back online.
+            </p>
           </CardBody>
         </Card>
       )}
 
-      {attendance === undefined && <Spinner />}
-
-      {attendance === null && (
-        <>
-          <TodayAttendanceStatusCard attendance={null} className="mb-4" />
-          <CheckInPanel onCheckedIn={handleCheckedIn} />
-        </>
+      {attendance === null && peekPendingAttendance()?.type !== "check-in" && (
+        <CheckInPanel onCheckedIn={handleCheckedIn} />
       )}
 
       {attendance && attendance.status === "checked_in" && !showCheckOutForm && (
-        <CheckedInSummaryCard
+        <CheckedInConfirmation
           attendance={attendance}
           onStartCheckOut={() => setShowCheckOutConfirm(true)}
         />
@@ -127,7 +107,10 @@ export function EmployeeHomePage() {
       <CheckOutConfirmModal
         open={showCheckOutConfirm}
         onCancel={() => setShowCheckOutConfirm(false)}
-        onContinue={handleContinueToCheckOut}
+        onContinue={() => {
+          setShowCheckOutConfirm(false);
+          setShowCheckOutForm(true);
+        }}
       />
 
       {attendance && attendance.status === "checked_in" && showCheckOutForm && (
@@ -138,164 +121,79 @@ export function EmployeeHomePage() {
         />
       )}
 
-      {attendance && attendance.status === "checked_out" && <CompletedCard attendance={attendance} />}
+      {attendance && attendance.status === "checked_out" && (
+        <CompletedCard attendance={attendance} />
+      )}
     </div>
   );
 }
 
-function CheckedInSummaryCard({
+function CheckedInConfirmation({
   attendance,
   onStartCheckOut,
 }: {
   attendance: AttendanceRecord;
   onStartCheckOut: () => void;
 }) {
-  const elapsedMinutes = attendance.check_in_time
-    ? Math.max(
-        0,
-        Math.round((Date.now() - new Date(attendance.check_in_time).getTime()) / 60000)
-      )
-    : null;
-
   return (
     <Card>
-      <CardHeader
-        title="Checked In Successfully"
-        subtitle="Your attendance is recorded. Check out when you finish work for the day."
-      />
-      <CardBody className="flex flex-col gap-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-          <SecureImage
-            path={attendance.check_in_selfie_path}
-            alt="Check-in selfie"
-            className="h-28 w-28 flex-shrink-0 rounded-xl object-cover ring-1 ring-slate-200"
-          />
-          <div className="grid flex-1 gap-3 sm:grid-cols-2">
-            <SummaryItem
-              icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-              label="Check-in Time"
-              value={formatTime(attendance.check_in_time)}
-            />
-            <SummaryItem
-              icon={<Clock className="h-4 w-4 text-slate-500" />}
-              label="Time Elapsed"
-              value={elapsedMinutes !== null ? formatMinutesAsHours(elapsedMinutes) : "-"}
-            />
-            {attendance.site_name && (
-              <SummaryItem
-                icon={<Building2 className="h-4 w-4 text-slate-500" />}
-                label="Project / Site"
-                value={attendance.site_name}
-              />
-            )}
-            {attendance.check_in_address && (
-              <SummaryItem
-                icon={<MapPin className="h-4 w-4 text-slate-500" />}
-                label="Check-in Location"
-                value={attendance.check_in_address}
-                className="sm:col-span-2"
-              />
-            )}
-          </div>
+      <CardBody className="flex flex-col items-center gap-6 px-6 py-10 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
+          <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
         </div>
-
-        <TodayAttendanceStatusCard attendance={attendance} />
-
-        {(attendance.work_summary || attendance.work_status) && (
-          <div className="rounded-lg bg-slate-50 p-4 text-sm">
-            {attendance.work_summary && (
-              <div>
-                <p className="font-medium text-slate-700">Work Summary (at check-in)</p>
-                <p className="mt-1 text-slate-600">{attendance.work_summary}</p>
-              </div>
-            )}
-            {attendance.work_status && (
-              <div className={attendance.work_summary ? "mt-3" : undefined}>
-                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Work Status</p>
-                <WorkStatusBadge status={attendance.work_status} />
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="rounded-lg border border-brand-100 bg-brand-50/60 p-4">
-          <p className="text-sm text-slate-600">
-            When you are ready to finish for the day, continue to check-out to submit your work summary and complete
-            attendance.
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">You&apos;re checked in</h2>
+          <p className="mt-2 text-3xl font-semibold tabular-nums text-brand-600">
+            {formatTime(attendance.check_in_time)}
           </p>
-          <Button
-            size="lg"
-            className="mt-4 w-full sm:w-auto"
-            icon={<LogOut className="h-5 w-5" />}
-            onClick={onStartCheckOut}
-          >
-            Check Out
-          </Button>
+          {attendance.site_name && (
+            <p className="mt-2 text-sm text-slate-500">{attendance.site_name}</p>
+          )}
         </div>
+        <Button
+          size="lg"
+          className="min-h-[3.25rem] w-full max-w-sm text-base font-semibold"
+          icon={<LogOut className="h-5 w-5" />}
+          onClick={onStartCheckOut}
+        >
+          Check Out
+        </Button>
       </CardBody>
     </Card>
-  );
-}
-
-function SummaryItem({
-  icon,
-  label,
-  value,
-  className,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  className?: string;
-}) {
-  return (
-    <div className={className}>
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-1 flex items-start gap-1.5 text-sm font-medium text-slate-900">
-        <span className="mt-0.5 flex-shrink-0">{icon}</span>
-        <span>{value}</span>
-      </p>
-    </div>
   );
 }
 
 function CompletedCard({ attendance }: { attendance: AttendanceRecord }) {
   return (
     <Card>
-      <CardHeader title="Today's Attendance Complete" subtitle="You have successfully checked out for the day" />
-      <CardBody className="flex flex-col gap-5">
-        <TodayAttendanceStatusCard attendance={attendance} />
-
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <Stat icon={<Clock className="h-4 w-4" />} label="Check-in" value={formatTime(attendance.check_in_time)} />
-          <Stat icon={<Clock className="h-4 w-4" />} label="Check-out" value={formatTime(attendance.check_out_time)} />
-          <Stat label="Total Hours" value={formatMinutesAsHours(attendance.total_minutes)} />
+      <CardBody className="flex flex-col items-center gap-5 px-6 py-10 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+          <CheckCircle2 className="h-7 w-7" aria-hidden="true" />
         </div>
-
-        {attendance.work_status && (
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Work Status</span>
-            <WorkStatusBadge status={attendance.work_status} />
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Attendance complete</h2>
+          <p className="mt-1 text-sm text-slate-500">{formatDate(attendance.attendance_date)}</p>
+        </div>
+        <div className="grid w-full max-w-sm grid-cols-3 gap-3 text-left">
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">In</p>
+            <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatTime(attendance.check_in_time)}</p>
           </div>
-        )}
-
-        <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
-          <p className="font-medium text-slate-700">Work Summary</p>
-          <p className="mt-1">{attendance.work_summary}</p>
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Out</p>
+            <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatTime(attendance.check_out_time)}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Hours</p>
+            <p className="mt-0.5 text-sm font-semibold text-slate-900">
+              {formatMinutesAsHours(attendance.total_minutes)}
+            </p>
+          </div>
         </div>
+        {attendance.work_status && (
+          <WorkStatusBadge status={attendance.work_status} />
+        )}
       </CardBody>
     </Card>
-  );
-}
-
-function Stat({ icon, label, value }: { icon?: ReactNode; label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</span>
-      <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-        {icon}
-        {value}
-      </span>
-    </div>
   );
 }

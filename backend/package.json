@@ -4,6 +4,9 @@
   "description": "Backend API for Ozone Aircon Attendance Management System",
   "main": "dist/index.js",
   "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
@@ -13,7 +16,8 @@
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
     "reset-admin-password": "node scripts/reset-admin-password.js",
-    "lint": "eslint src --ext .ts"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

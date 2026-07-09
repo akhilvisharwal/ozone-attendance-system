@@ -49,7 +49,7 @@ export function DailyWorkReportsPage() {
         )}
       </Card>
 
-      <AttendanceDetailModal attendance={selected} onClose={() => setSelected(null)} />
+      <AttendanceDetailModal attendance={selected} onClose={() => setSelected(null)} showLocationDetails={false} />
     </div>
   );
 }

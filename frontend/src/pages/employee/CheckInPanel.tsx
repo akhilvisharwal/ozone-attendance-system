@@ -1,339 +1,495 @@
-import { useEffect, useState, useCallback } from "react";
-import {
-  Camera, CheckCircle2, MapPin, RefreshCcw, Clock, AlertTriangle, Info, SwitchCamera,
-} from "lucide-react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { CheckCircle2, SwitchCamera } from "lucide-react";
 import { useCamera } from "@/hooks/useCamera";
 import { getCurrentPosition } from "@/hooks/useGeolocation";
 import type { Coordinates } from "@/hooks/useGeolocation";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
-import { Card, CardBody, CardHeader } from "@/components/ui/Card";
-import { Select, Textarea, FieldWrapper } from "@/components/ui/Input";
+import { Card, CardBody } from "@/components/ui/Card";
+import { Select, FieldWrapper } from "@/components/ui/Input";
 import * as attendanceApi from "@/api/attendance";
+import type { CheckInContext } from "@/api/attendance";
 import * as sitesApi from "@/api/sites";
 import { extractErrorMessage } from "@/api/client";
+import { CheckInConfirmModal } from "@/components/CheckInConfirmModal";
+import { AttendanceOverrideNoticeBanner } from "@/components/AttendanceOverrideNoticeBanner";
+import {
+  GPS_REQUIRED_MESSAGE,
+  GPS_WEAK_MESSAGE,
+  LocationCaptureStatus,
+} from "@/components/LocationCaptureStatus";
 import { usePublicSettings } from "@/contexts/SettingsContext";
-import type { CheckInStatus, Site, TimingRules, WorkStatus } from "@/types";
+import { formatDate, formatNowTime } from "@/utils/format";
+import { GPS_TIMEOUT_MS, withTimeout } from "@/utils/async";
+import type { Site, TimingRules, AttendanceOverrideNotice } from "@/types";
+import { useAuth } from "@/auth/AuthContext";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import {
+  desktopCheckInBlocked,
+  offlineCheckInBlocked,
+  OFFLINE_BLOCKED_MESSAGE,
+} from "@/utils/attendanceCapture";
+import { blobToBase64, getPendingAttendance, queuePendingAttendance } from "@/utils/offlineAttendanceQueue";
 
-const WORK_STATUS_OPTIONS: { value: WorkStatus; label: string }[] = [
-  { value: "in_progress", label: "In Progress" },
-  { value: "pending", label: "Pending" },
-  { value: "on_hold", label: "On Hold" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
-];
+const INIT_DATA_TIMEOUT_MS = 15_000;
+const CAMERA_CAPTURE_TIMEOUT_MS = 10_000;
 
 function hhmm(date: Date): string {
   return date.toTimeString().slice(0, 5);
 }
 
-function classifyNow(rules: TimingRules): { status: CheckInStatus; isHalfDay: boolean } {
-  const t = hhmm(new Date());
-  if (t < rules.checkinOpenTime)  return { status: "early",    isHalfDay: false };
-  if (t <= rules.checkinOntimeEnd) return { status: "on_time",  isHalfDay: false };
-  if (t < rules.halfDayCutoff)    return { status: "late",     isHalfDay: false };
-  return                                 { status: "half_day", isHalfDay: true  };
-}
-
-const STATUS_UI: Record<CheckInStatus, { label: string; className: string; Icon: React.ElementType }> = {
-  early:    { label: "Early Arrival",  className: "bg-blue-50 border-blue-200 text-blue-800",   Icon: Info          },
-  on_time:  { label: "On Time",        className: "bg-green-50 border-green-200 text-green-800", Icon: CheckCircle2  },
-  late:     { label: "Late Arrival",   className: "bg-amber-50 border-amber-200 text-amber-800", Icon: AlertTriangle },
-  half_day: { label: "Half Day",       className: "bg-red-50 border-red-200 text-red-800",       Icon: AlertTriangle },
-};
-
 export function CheckInPanel({ onCheckedIn }: { onCheckedIn: () => void }) {
-  const { publicSettings } = usePublicSettings();
+  const { employee } = useAuth();
+  const { publicSettings, refresh: refreshPublicSettings } = usePublicSettings();
   const mobile = publicSettings?.mobile;
   const selfieRequired = mobile?.selfieRequiredCheckIn ?? true;
   const gpsRequired = mobile?.gpsRequiredCheckIn ?? true;
   const allowCameraSwitch = mobile?.allowCameraSwitch ?? true;
   const gpsThreshold = mobile?.gpsAccuracyThresholdMeters ?? 100;
+  const online = useOnlineStatus();
+  const desktopBlocked = desktopCheckInBlocked(mobile);
+  const profilePhotoRequired = publicSettings?.employee?.profilePhotoRequired ?? false;
+  const missingProfilePhoto = profilePhotoRequired && !employee?.profile_photo_path;
 
   const camera = useCamera();
-  const [location, setLocation]     = useState<Coordinates | null>(null);
+  const selfieBlobRef = useRef<Blob | null>(null);
+  const [location, setLocation] = useState<Coordinates | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [capturedBlob, setCapturedBlob]   = useState<Blob | null>(null);
+  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Site + optional work details
-  const [sites, setSites]           = useState<Site[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
   const [loadingSites, setLoadingSites] = useState(true);
-  const [siteId, setSiteId]         = useState("");
-  const [workSummary, setWorkSummary] = useState("");
-  const [workStatus, setWorkStatus] = useState<WorkStatus | "">("");
+  const [siteId, setSiteId] = useState("");
 
   const [rules, setRules] = useState<TimingRules | null>(null);
-  const [currentStatus, setCurrentStatus] = useState<{ status: CheckInStatus; isHalfDay: boolean } | null>(null);
-  const [nowStr, setNowStr] = useState(hhmm(new Date()));
+  const [activeOverride, setActiveOverride] = useState<AttendanceOverrideNotice | null>(null);
+  const [checkInContext, setCheckInContext] = useState<CheckInContext | null>(null);
+  const [showOffDayConfirm, setShowOffDayConfirm] = useState(false);
+  const [nowStr, setNowStr] = useState(formatNowTime());
+  const [todayLabel, setTodayLabel] = useState(formatDate(new Date().toISOString()));
 
-  useEffect(() => {
-    attendanceApi.getTimingRules()
-      .then(r => setRules(r))
-      .catch(() => { /* non-critical; check-in still works */ });
+  const loadEmployeeContext = useCallback(async () => {
+    try {
+      const [timing, context] = await Promise.all([
+        withTimeout(
+          attendanceApi.getTimingRules(),
+          INIT_DATA_TIMEOUT_MS,
+          "Could not load timing rules."
+        ),
+        withTimeout(
+          attendanceApi.getCheckInContext(),
+          INIT_DATA_TIMEOUT_MS,
+          "Could not load check-in context."
+        ),
+      ]);
+      setRules(timing.rules);
+      setActiveOverride(timing.activeOverride ?? context.activeOverride);
+      setCheckInContext(context);
+    } catch (err) {
+      console.error("[CheckInPanel] failed to load employee context:", err);
+    }
   }, []);
 
   useEffect(() => {
-    sitesApi.listSites()
-      .then(setSites)
-      .catch(() => setSubmitError("Could not load the site list. Please refresh the page."))
-      .finally(() => setLoadingSites(false));
+    void loadEmployeeContext();
+  }, [loadEmployeeContext]);
+
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void loadEmployeeContext();
+        void refreshPublicSettings();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [loadEmployeeContext, refreshPublicSettings]);
+
+  const overrideNotice = useMemo(
+    () => activeOverride ?? publicSettings?.attendanceOverride ?? null,
+    [activeOverride, publicSettings?.attendanceOverride]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const loadedSites = await withTimeout(
+          sitesApi.listSites(),
+          INIT_DATA_TIMEOUT_MS,
+          "Could not load the site list."
+        );
+        if (!cancelled) setSites(loadedSites);
+      } catch (err) {
+        console.error("[CheckInPanel] failed to load sites:", err);
+        if (!cancelled) setSubmitError("Could not load sites. Please refresh the page.");
+      } finally {
+        if (!cancelled) setLoadingSites(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (sites.length === 1) {
+      setSiteId(sites[0].id);
+    }
+  }, [sites]);
 
   useEffect(() => {
     const tick = () => {
-      setNowStr(hhmm(new Date()));
-      if (rules) setCurrentStatus(classifyNow(rules));
+      const now = new Date();
+      setNowStr(formatNowTime());
+      setTodayLabel(formatDate(now.toISOString()));
     };
     tick();
-    const id = setInterval(tick, 30_000);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [rules]);
+  }, []);
 
-  useEffect(() => {
-    if (selfieRequired) camera.start("user");
-    if (gpsRequired) {
-      getCurrentPosition()
-        .then(setLocation)
-        .catch((err: Error) => setLocationError(err.message));
-    }
-    return () => camera.stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selfieRequired, gpsRequired]);
-
-  const handleCapture = useCallback(async () => {
-    try {
-      const blob = await camera.capture();
-      setCapturedBlob(blob);
-      setCapturedPreview(URL.createObjectURL(blob));
-      camera.stop();
-    } catch {
-      setSubmitError("Could not capture selfie. Please try again.");
-    }
-  }, [camera]);
-
-  function handleRetake() {
-    setCapturedBlob(null);
-    if (capturedPreview) URL.revokeObjectURL(capturedPreview);
-    setCapturedPreview(null);
-    camera.start(camera.facingMode);
-  }
-
-  async function retryLocation() {
+  const fetchLocation = useCallback(async () => {
+    setLocationLoading(true);
     setLocationError(null);
     setLocation(null);
     try {
-      setLocation(await getCurrentPosition());
+      const coords = await getCurrentPosition({ timeoutMs: GPS_TIMEOUT_MS });
+      setLocation(coords);
     } catch (err) {
-      setLocationError((err as Error).message);
+      console.error("[CheckInPanel] location fetch failed:", err);
+      setLocationError(
+        err instanceof Error ? err.message : "Unable to detect your location. Please enable GPS."
+      );
+    } finally {
+      setLocationLoading(false);
     }
-  }
+  }, []);
 
-  async function handleConfirm() {
+  useEffect(() => {
+    if (selfieRequired) {
+      void camera.start("user").catch((err) => {
+        console.error("[CheckInPanel] camera start failed:", err);
+      });
+    }
+    if (gpsRequired) {
+      void fetchLocation();
+    }
+    return () => camera.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selfieRequired, gpsRequired, fetchLocation]);
+
+  const isHalfDayCheckIn = useMemo(() => {
+    if (!rules) return false;
+    const t = hhmm(new Date());
+    return t >= rules.halfDayCutoff;
+  }, [rules, nowStr]);
+
+  const validateCheckInForm = useCallback(
+    (blob: Blob | null): string | null => {
+      if (missingProfilePhoto) {
+        return "A profile photo is required before check-in. Upload your photo from the menu, then try again.";
+      }
+      if (selfieRequired && !blob) {
+        return "Could not capture selfie. Please try again.";
+      }
+      if (gpsRequired && locationLoading) {
+        return "Detecting location… please wait a moment.";
+      }
+      if (gpsRequired && !location) {
+        return locationError ?? GPS_REQUIRED_MESSAGE;
+      }
+      if (location && location.accuracy > gpsThreshold) {
+        return GPS_WEAK_MESSAGE;
+      }
+      if (!siteId) {
+        return sites.length === 0 ? "No site available. Contact your administrator." : "Please select a site.";
+      }
+      return null;
+    },
+    [
+      gpsRequired,
+      gpsThreshold,
+      location,
+      locationError,
+      locationLoading,
+      missingProfilePhoto,
+      selfieRequired,
+      siteId,
+      sites.length,
+    ]
+  );
+
+  const submitCheckIn = useCallback(
+    async (selfieOverride?: Blob | null) => {
+      if (submitting) return;
+
+      const blob = selfieOverride ?? capturedBlob;
+      const validationError = validateCheckInForm(blob);
+      if (validationError) {
+        setSubmitError(validationError);
+        setShowOffDayConfirm(false);
+        return;
+      }
+
+      setSubmitting(true);
+      setSubmitError(null);
+
+      try {
+        if (desktopBlocked) {
+          setSubmitError("Attendance capture from desktop or web browsers is disabled. Please use a mobile device.");
+          return;
+        }
+        if (offlineCheckInBlocked(mobile, online)) {
+          setSubmitError(OFFLINE_BLOCKED_MESSAGE);
+          return;
+        }
+
+        const payload = {
+          selfie: selfieRequired ? blob : null,
+          latitude: location?.latitude ?? null,
+          longitude: location?.longitude ?? null,
+          accuracy: location?.accuracy,
+          siteId,
+          deviceInfo: navigator.userAgent,
+        };
+
+        if (!online && mobile?.allowOfflineMode) {
+          queuePendingAttendance({
+            type: "check-in",
+            createdAt: new Date().toISOString(),
+            siteId,
+            latitude: payload.latitude,
+            longitude: payload.longitude,
+            accuracy: payload.accuracy,
+            deviceInfo: payload.deviceInfo,
+            selfieBase64: blob ? await blobToBase64(blob) : null,
+          });
+          setShowOffDayConfirm(false);
+          onCheckedIn();
+          return;
+        }
+
+        await attendanceApi.checkIn(payload);
+        setShowOffDayConfirm(false);
+        onCheckedIn();
+      } catch (err) {
+        console.error("[CheckInPanel] check-in API failed:", err);
+        setSubmitError(extractErrorMessage(err, "Check-in failed. Please try again."));
+        setShowOffDayConfirm(false);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [capturedBlob, location, mobile, onCheckedIn, online, selfieRequired, siteId, submitting, validateCheckInForm, desktopBlocked]
+  );
+
+  const handleCheckIn = useCallback(async () => {
+    if (submitting) return;
+
     setSubmitError(null);
-    if (selfieRequired && !capturedBlob) { setSubmitError("Please capture a live selfie before checking in."); return; }
-    if (gpsRequired && !location) { setSubmitError("A live GPS location is required. Please allow location access."); return; }
-    if (location && location.accuracy > gpsThreshold) {
-      setSubmitError(`GPS accuracy (${Math.round(location.accuracy)}m) is too low. Required: within ${gpsThreshold}m.`);
+
+    let blob = capturedBlob;
+    if (selfieRequired && !blob) {
+      if (!camera.isActive) {
+        setSubmitError("Camera is not ready. Please allow camera access.");
+        return;
+      }
+      try {
+        blob = await withTimeout(
+          camera.capture(),
+          CAMERA_CAPTURE_TIMEOUT_MS,
+          "Selfie capture timed out. Please try again."
+        );
+        selfieBlobRef.current = blob;
+        setCapturedBlob(blob);
+        setCapturedPreview(URL.createObjectURL(blob));
+        camera.stop();
+      } catch (err) {
+        console.error("[CheckInPanel] selfie capture failed:", err);
+        setSubmitError(
+          err instanceof Error ? err.message : "Could not capture selfie. Please try again."
+        );
+        return;
+      }
+    }
+
+    const validationError = validateCheckInForm(blob);
+    if (validationError) {
+      setSubmitError(validationError);
       return;
     }
-    if (!siteId) { setSubmitError("Please select the project/site you are working at."); return; }
 
-    setSubmitting(true);
-    try {
-      await attendanceApi.checkIn({
-        selfie: selfieRequired ? capturedBlob : null,
-        latitude: location?.latitude ?? null,
-        longitude: location?.longitude ?? null,
-        accuracy: location?.accuracy,
-        siteId,
-        workSummary: workSummary || undefined,
-        workStatus:  workStatus || undefined,
-        deviceInfo:  navigator.userAgent,
-      });
-      onCheckedIn();
-    } catch (err) {
-      setSubmitError(extractErrorMessage(err, "Check-in failed. Please try again."));
-    } finally {
-      setSubmitting(false);
+    if (checkInContext?.requiresConfirmation) {
+      setShowOffDayConfirm(true);
+      return;
     }
-  }
+
+    await submitCheckIn(blob);
+  }, [
+    camera,
+    capturedBlob,
+    checkInContext?.requiresConfirmation,
+    selfieRequired,
+    submitCheckIn,
+    submitting,
+    validateCheckInForm,
+  ]);
+
+  const handleOffDayCancel = useCallback(() => {
+    if (submitting) return;
+    setShowOffDayConfirm(false);
+  }, [submitting]);
 
   const readyToCheckIn = Boolean(
     siteId &&
-    (!selfieRequired || capturedBlob) &&
-    (!gpsRequired || (location && location.accuracy <= gpsThreshold))
+    !loadingSites &&
+    !missingProfilePhoto &&
+    (!gpsRequired || (location && !locationLoading && location.accuracy <= gpsThreshold))
   );
+
+  const singleSite = sites.length === 1 ? sites[0] : null;
   const mirror = camera.facingMode === "user";
 
+  const primaryAlert =
+    submitError ??
+    (missingProfilePhoto
+      ? "A profile photo is required before check-in. Upload your photo from the menu, then try again."
+      : null) ??
+    (desktopBlocked
+      ? "Attendance capture from desktop or web browsers is disabled. Please use a mobile device."
+      : null) ??
+    camera.error ??
+    (isHalfDayCheckIn ? "Check-in after the half-day cutoff will be recorded as a half-day." : null);
+
+  const pendingCount = getPendingAttendance().length;
+
   return (
-    <Card>
-      <CardHeader title="Check In" subtitle="Capture a live selfie, confirm your location, and select your site" />
-      <CardBody className="flex flex-col gap-4">
-        {submitError && <Alert variant="error">{submitError}</Alert>}
-        {camera.error && <Alert variant="error">{camera.error}</Alert>}
-
-        {rules && currentStatus && (() => {
-          const ui = STATUS_UI[currentStatus.status];
-          const Icon = ui.Icon;
-          return (
-            <div className={`flex items-start gap-3 rounded-lg border p-3 ${ui.className}`}>
-              <Icon className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <div className="text-sm">
-                <p className="font-semibold">{ui.label} — {nowStr}</p>
-                {currentStatus.status === "early" && (
-                  <p className="text-xs mt-0.5">Check-in window opens at <strong>{rules.checkinOpenTime}</strong>.</p>
-                )}
-                {currentStatus.status === "on_time" && (
-                  <p className="text-xs mt-0.5">You are within the on-time window ({rules.checkinOpenTime} – {rules.checkinOntimeEnd}).</p>
-                )}
-                {currentStatus.status === "late" && (
-                  <p className="text-xs mt-0.5">You are past the on-time window. Checking in before <strong>{rules.halfDayCutoff}</strong> avoids a half-day.</p>
-                )}
-                {currentStatus.status === "half_day" && (
-                  <p className="text-xs mt-0.5">Check-in after {rules.halfDayCutoff} is automatically recorded as a <strong>half-day</strong>.</p>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
-        {rules && (
-          <div className="flex flex-wrap gap-3 text-xs text-gray-500 justify-center">
-            <span className="flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              On-time: {rules.checkinOpenTime}–{rules.checkinOntimeEnd}
-            </span>
-            <span>·</span>
-            <span>Half-day after: {rules.halfDayCutoff}</span>
-            <span>·</span>
-            <span>Standard checkout: {rules.checkoutStandardTime}</span>
+    <>
+      <Card className="overflow-hidden">
+        <CardBody className="flex flex-col gap-6 px-5 py-6 sm:px-8 sm:py-8">
+          <div className="text-center">
+            <p className="text-sm font-medium text-slate-500">{todayLabel}</p>
+            <p className="mt-1 text-4xl font-semibold tabular-nums tracking-tight text-slate-900 sm:text-5xl">
+              {nowStr}
+            </p>
           </div>
-        )}
 
-        {selfieRequired && (
-        <div className="relative mx-auto flex aspect-square w-full max-w-xs items-center justify-center overflow-hidden rounded-xl bg-slate-900">
-          {!capturedPreview && (
-            <video
-              ref={camera.videoRef}
-              muted
-              playsInline
-              className={`h-full w-full object-cover ${mirror ? "scale-x-[-1]" : ""}`}
-            />
-          )}
-          {capturedPreview && <img src={capturedPreview} alt="Captured selfie" className="h-full w-full object-cover" />}
-
-          {/* Switch front/rear camera (only while previewing live) */}
-          {!capturedPreview && (
-            <button
-              type="button"
-              onClick={() => camera.switchCamera()}
-              disabled={!camera.isActive}
-              className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/60 text-white backdrop-blur transition hover:bg-slate-900/80 disabled:opacity-40"
-              title="Switch camera"
+          {primaryAlert && (
+            <Alert
+              variant={
+                submitError || camera.error || desktopBlocked || missingProfilePhoto ? "error" : "info"
+              }
             >
-              <SwitchCamera className="h-4 w-4" />
-              <span className="sr-only">Switch camera</span>
-            </button>
+              {primaryAlert}
+            </Alert>
           )}
-        </div>
-        )}
 
-        {/* Location status */}
-        {(gpsRequired || location) && (
-        <div className="flex items-center justify-center gap-2 text-sm">
-          {location ? (
-            <span className="flex items-center gap-1.5 text-emerald-600">
-              <MapPin className="h-4 w-4" /> Location captured ({location.accuracy.toFixed(0)}m accuracy)
-            </span>
-          ) : locationError ? (
-            <span className="flex flex-wrap items-center justify-center gap-2 text-red-600">
-              <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4" /> {locationError}</span>
-              <button type="button" onClick={retryLocation} className="font-medium underline">Retry</button>
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-slate-400">
-              <MapPin className="h-4 w-4 animate-pulse" /> Fetching your location...
-            </span>
+          {!online && mobile?.allowOfflineMode && (
+            <Alert variant="info">
+              You are offline. Attendance will be saved locally and synced when you reconnect.
+            </Alert>
           )}
-        </div>
-        )}
 
-        {selfieRequired && (
-        <div className="flex flex-wrap justify-center gap-3">
-          {!capturedPreview ? (
-            <>
-              <Button onClick={handleCapture} disabled={!camera.isActive} icon={<Camera className="h-4 w-4" />}>
-                Capture Selfie
-              </Button>
-              {allowCameraSwitch && (
-              <Button variant="outline" onClick={() => camera.switchCamera()} disabled={!camera.isActive} icon={<SwitchCamera className="h-4 w-4" />}>
-                {camera.facingMode === "user" ? "Rear Camera" : "Front Camera"}
-              </Button>
+          {pendingCount > 0 && (
+            <Alert variant="info">
+              {pendingCount} pending attendance record{pendingCount === 1 ? "" : "s"} waiting to sync.
+            </Alert>
+          )}
+
+          <AttendanceOverrideNoticeBanner override={overrideNotice} compact />
+
+          {selfieRequired && (
+            <div className="relative mx-auto aspect-[4/5] w-full max-w-[280px] overflow-hidden rounded-2xl bg-slate-900 shadow-lg ring-1 ring-slate-900/10">
+              {!capturedPreview ? (
+                <video
+                  ref={camera.videoRef}
+                  muted
+                  playsInline
+                  className={`h-full w-full object-cover ${mirror ? "scale-x-[-1]" : ""}`}
+                />
+              ) : (
+                <img src={capturedPreview} alt="Captured selfie" className="h-full w-full object-cover" />
               )}
-            </>
-          ) : (
-            <Button variant="outline" onClick={handleRetake} icon={<RefreshCcw className="h-4 w-4" />}>
-              Retake Selfie
-            </Button>
+              {!capturedPreview && allowCameraSwitch && (
+                <button
+                  type="button"
+                  onClick={() => void camera.switchCamera()}
+                  disabled={!camera.isActive || submitting}
+                  className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/70 disabled:opacity-40"
+                  aria-label="Switch camera"
+                >
+                  <SwitchCamera className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           )}
-        </div>
-        )}
 
-        {/* Site + optional work details */}
-        <div className="flex flex-col gap-4 border-t border-slate-100 pt-4">
-          <FieldWrapper label="Project / Site" required>
-            <Select value={siteId} onChange={(e) => setSiteId(e.target.value)} disabled={loadingSites}>
-              <option value="">{loadingSites ? "Loading sites..." : "Select a project or site"}</option>
-              {sites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name}{site.type === "office" ? " (Office)" : ""}
-                </option>
-              ))}
-            </Select>
-          </FieldWrapper>
-
-          <FieldWrapper label="Work Summary" hint="Optional — you can complete this at check-out">
-            <Textarea
-              rows={2}
-              placeholder="What are you planning to work on today?"
-              value={workSummary}
-              onChange={(e) => setWorkSummary(e.target.value)}
+          {gpsRequired && (
+            <LocationCaptureStatus
+              loading={locationLoading}
+              captured={Boolean(location)}
+              error={locationError}
+              onRetry={() => void fetchLocation()}
+              successLabel="✓ Location captured"
             />
-          </FieldWrapper>
+          )}
 
-          <FieldWrapper label="Work Status" hint="Optional">
-            <Select value={workStatus} onChange={(e) => setWorkStatus(e.target.value as WorkStatus | "")}>
-              <option value="">Not set</option>
-              {WORK_STATUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </Select>
-          </FieldWrapper>
-        </div>
+          {sites.length > 1 && (
+            <FieldWrapper label="Project / Site" required>
+              <Select
+                value={siteId}
+                onChange={(e) => setSiteId(e.target.value)}
+                disabled={loadingSites || submitting}
+              >
+                <option value="">{loadingSites ? "Loading…" : "Select site"}</option>
+                {sites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name}
+                    {site.type === "office" ? " (Office)" : ""}
+                  </option>
+                ))}
+              </Select>
+            </FieldWrapper>
+          )}
 
-        <Button
-          onClick={handleConfirm}
-          isLoading={submitting}
-          disabled={!readyToCheckIn}
-          icon={<CheckCircle2 className="h-4 w-4" />}
-          className="mt-1"
-        >
-          Confirm Check In
-        </Button>
+          {singleSite && (
+            <p className="text-center text-sm text-slate-500">
+              Site: <span className="font-medium text-slate-700">{singleSite.name}</span>
+            </p>
+          )}
 
-        {!readyToCheckIn && !submitting && (
-          <p className="text-center text-xs text-slate-400">
-            {[
-              selfieRequired ? "selfie" : null,
-              gpsRequired ? "GPS location" : null,
-              "selected site",
-            ].filter(Boolean).join(", ").replace(/, ([^,]*)$/, " and $1")} required to check in.
-          </p>
-        )}
-      </CardBody>
-    </Card>
+          <Button
+            size="lg"
+            onClick={() => void handleCheckIn()}
+            isLoading={submitting}
+            disabled={
+              (!readyToCheckIn && !(mobile?.allowOfflineMode && !online)) ||
+              submitting ||
+              desktopBlocked ||
+              missingProfilePhoto
+            }
+            icon={<CheckCircle2 className="h-5 w-5" />}
+            className="min-h-[3.25rem] w-full text-base font-semibold"
+          >
+            Check In
+          </Button>
+        </CardBody>
+      </Card>
+
+      <CheckInConfirmModal
+        open={showOffDayConfirm}
+        context={checkInContext}
+        isLoading={submitting}
+        onCancel={handleOffDayCancel}
+        onConfirm={() => submitCheckIn(selfieBlobRef.current ?? capturedBlob)}
+      />
+    </>
   );
 }

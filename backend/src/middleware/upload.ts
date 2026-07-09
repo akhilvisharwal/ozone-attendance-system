@@ -51,4 +51,5 @@ function wrap(middleware: (req: Request, res: Response, cb: (err: unknown) => vo
 export const upload = {
   single: (field: string) => wrap(multerInstance.single(field)),
   array: (field: string, maxCount: number) => wrap(multerInstance.array(field, maxCount)),
+  fields: (fields: { name: string; maxCount: number }[]) => wrap(multerInstance.fields(fields)),
 };

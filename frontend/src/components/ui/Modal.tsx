@@ -68,16 +68,10 @@ export function Modal({
 
     document.body.style.overflow = "hidden";
 
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-
-    document.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = "";
-      document.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !panelRef.current || initialFocus === "none") return;
@@ -145,7 +139,7 @@ export function Modal({
         "modal-backdrop-animate fixed inset-0 z-50 flex justify-center bg-slate-900/45 backdrop-blur-[3px]",
         layout === "centered" ? "items-center p-4" : "items-end p-0 sm:items-center sm:p-4"
       )}
-      onClick={onClose}
+      aria-hidden="true"
     >
       <div
         ref={panelRef}
@@ -156,6 +150,7 @@ export function Modal({
           widthClassName
         )}
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

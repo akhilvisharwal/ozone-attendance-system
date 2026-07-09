@@ -17,5 +17,11 @@
     "noUnusedParameters": false
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "src/scripts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/scripts",
+    "src/**/*.test.ts",
+    "src/**/*.integration.test.ts"
+  ]
 }

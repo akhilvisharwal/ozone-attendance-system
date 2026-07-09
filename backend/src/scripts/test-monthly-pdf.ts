@@ -35,6 +35,7 @@ function buildMockGrid(year: number, month: number, employeeCount: number): Mont
       weeklyOff: 4,
       holidays: 1,
       holidayWorked: 0,
+      weeklyOffWorked: 0,
       workingDays: 22,
       totalMinutes: 9600,
       attendancePercentage: 91,
@@ -46,6 +47,7 @@ function buildMockGrid(year: number, month: number, employeeCount: number): Mont
     month,
     label,
     daysInMonth,
+    defaultWeeklyOffDays: [0],
     holidays: [{ date: `${year}-${String(month).padStart(2, "0")}-15`, name: "Test Holiday", description: null }],
     employees,
   };

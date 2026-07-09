@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { LogOut, Menu, Settings, User, X } from "lucide-react";
+import { LogOut, Menu, User, X } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { SecureImage } from "@/components/SecureImage";
 import { Logo } from "@/components/Logo";
@@ -19,17 +19,17 @@ export interface NavItem {
 export function AppLayout({
   navItems,
   roleLabel,
-  showSettings = false,
 }: {
   navItems: NavItem[];
   roleLabel: string;
-  showSettings?: boolean;
 }) {
   const { employee, logout, refreshMe } = useAuth();
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
+  /** Settings uses an internal split-pane scroll; lock the shell scroll on lg+. */
+  const isSettingsPage = /\/settings\/?$/.test(location.pathname);
 
   const closeDrawer = () => setDrawerOpen(false);
 
@@ -83,44 +83,67 @@ export function AppLayout({
     </nav>
   );
 
+  const profileContent = (
+    <>
+      <div className="relative flex-shrink-0">
+        <div className="h-10 w-10 overflow-hidden rounded-full bg-slate-100">
+          {employee?.profile_photo_path ? (
+            <SecureImage path={employee.profile_photo_path} alt="Profile" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-slate-400">
+              <User className="h-5 w-5" />
+            </div>
+          )}
+        </div>
+        {employee?.role === "employee" && (
+          <button
+            disabled={uploading}
+            onClick={() => avatarInputRef.current?.click()}
+            title="Change profile picture"
+            className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-white shadow hover:bg-brand-700 disabled:opacity-50"
+          >
+            <span className="text-[8px] font-bold leading-none">✎</span>
+          </button>
+        )}
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={handleAvatarChange}
+        />
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-slate-900">{employee?.name}</p>
+        <p className="text-xs text-slate-400">{employee?.employee_code}</p>
+        {employee?.designation && (
+          <p className="truncate text-xs text-slate-500">{employee.designation}</p>
+        )}
+      </div>
+    </>
+  );
+
   const userFooter = (
     <div className="shrink-0 border-t border-slate-100 px-4 py-4 pb-safe">
       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">{roleLabel}</p>
 
-      <div className="flex items-center gap-3">
-        <div className="relative flex-shrink-0">
-          <div className="h-10 w-10 overflow-hidden rounded-full bg-slate-100">
-            {employee?.profile_photo_path ? (
-              <SecureImage path={employee.profile_photo_path} alt="Profile" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-slate-400">
-                <User className="h-5 w-5" />
-              </div>
-            )}
-          </div>
-          {employee?.role === "employee" && (
-            <button
-              disabled={uploading}
-              onClick={() => avatarInputRef.current?.click()}
-              title="Change profile picture"
-              className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-white shadow hover:bg-brand-700 disabled:opacity-50"
-            >
-              <span className="text-[8px] font-bold leading-none">✎</span>
-            </button>
-          )}
-          <input
-            ref={avatarInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={handleAvatarChange}
-          />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-900">{employee?.name}</p>
-          <p className="text-xs text-slate-400">{employee?.employee_code}</p>
-        </div>
-      </div>
+      {employee?.role === "admin" ? (
+        <NavLink
+          to="/admin/settings"
+          onClick={closeDrawer}
+          className={({ isActive }) =>
+            clsx(
+              "flex w-full items-center gap-3 rounded-lg px-2 py-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500",
+              isActive ? "bg-brand-50" : "hover:bg-slate-50"
+            )
+          }
+          aria-label="Open application settings"
+        >
+          {profileContent}
+        </NavLink>
+      ) : (
+        <div className="flex items-center gap-3 px-2 py-2">{profileContent}</div>
+      )}
 
       <button
         onClick={() => logout()}
@@ -132,24 +155,6 @@ export function AppLayout({
     </div>
   );
 
-  const settingsLink = showSettings ? (
-    <div className="shrink-0 border-t border-slate-100 px-3 py-3">
-      <NavLink
-        to="/admin/settings"
-        onClick={closeDrawer}
-        className={({ isActive }) =>
-          clsx(
-            "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-            isActive ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-          )
-        }
-      >
-        <Settings className="h-4 w-4" />
-        Settings
-      </NavLink>
-    </div>
-  ) : null;
-
   return (
     <div className="flex h-dvh overflow-hidden bg-slate-50">
       <aside className="hidden h-full w-64 min-w-0 shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white lg:flex">
@@ -157,7 +162,6 @@ export function AppLayout({
           {brand}
         </div>
         {nav}
-        {settingsLink}
         {userFooter}
       </aside>
 
@@ -166,7 +170,6 @@ export function AppLayout({
           "fixed inset-0 z-40 bg-slate-900/50 transition-opacity lg:hidden",
           drawerOpen ? "opacity-100" : "pointer-events-none opacity-0"
         )}
-        onClick={closeDrawer}
         aria-hidden={!drawerOpen}
       />
       <aside
@@ -188,7 +191,6 @@ export function AppLayout({
           </button>
         </div>
         {nav}
-        {settingsLink}
         {userFooter}
       </aside>
 
@@ -216,15 +218,33 @@ export function AppLayout({
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <main
+          className={clsx(
+            "min-h-0 flex-1 overscroll-contain",
+            isSettingsPage
+              ? "flex flex-col overflow-y-auto lg:overflow-hidden"
+              : "overflow-y-auto"
+          )}
+        >
           <div className="hidden border-b border-slate-200 px-4 py-3 print:block sm:px-6">
             <Logo variant="print" interactive={false} />
           </div>
-          <div className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 pb-safe">
+          <div
+            className={clsx(
+              "mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 pb-safe",
+              isSettingsPage && "flex min-h-0 flex-1 flex-col lg:overflow-hidden"
+            )}
+          >
             <div className="mb-4 hidden shrink-0 justify-end lg:flex">
               <NotificationBell />
             </div>
-            <Outlet />
+            <div
+              className={clsx(
+                isSettingsPage && "flex min-h-0 flex-1 flex-col lg:overflow-hidden"
+              )}
+            >
+              <Outlet />
+            </div>
           </div>
         </main>
       </div>

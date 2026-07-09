@@ -5,8 +5,10 @@ import { ApiError } from "../../utils/errors";
 import { todayDateString, minutesBetween } from "../../utils/date";
 import { storage } from "../../services/storage";
 import { reverseGeocode } from "../../services/geocode";
-import { classifyCheckIn, classifyCheckOut, classifyDayStatus, getTimingRules } from "../../utils/attendanceTiming";
+import { classifyCheckIn, classifyCheckOut, classifyDayStatus, getTimingRulesFromSettings } from "../../utils/attendanceTiming";
 import { getSettings } from "../settings/settings.cache";
+import { validateAttendanceCapture } from "../../utils/attendanceCapture";
+import { getEffectiveAttendanceRules } from "./attendanceRules.service";
 import {
   checkInSchema,
   checkOutSchema,
@@ -14,6 +16,8 @@ import {
   adminListQuerySchema,
   monthlyQuerySchema,
   monthlyExportQuerySchema,
+  manualAttendanceSchema,
+  manualAttendanceDeleteSchema,
 } from "./attendance.validators";
 import * as repo from "./attendance.repository";
 import * as sitesRepo from "../sites/sites.repository";
@@ -24,6 +28,7 @@ import {
 import { buildMonthlyCalendarPdf } from "./attendance.monthlyPdf";
 import { buildMonthlyCalendarExcel } from "./attendance.monthlyExcel";
 import * as employeesRepo from "../employees/employees.repository";
+import { resolveOffDayContext } from "./attendance.offDay";
 import { logAudit } from "../audit/audit.repository";
 
 export const checkIn = asyncHandler(async (req: Request, res: Response) => {
@@ -31,34 +36,43 @@ export const checkIn = asyncHandler(async (req: Request, res: Response) => {
   const selfieFile = req.file;
   const mobile = getSettings().mobile;
   const attendanceSettings = getSettings().attendance;
+  const userAgent = input.deviceInfo ?? req.headers["user-agent"] ?? null;
 
-  if (mobile.selfieRequiredCheckIn && !selfieFile) {
-    throw ApiError.badRequest("A live selfie captured from the camera is required to check in");
-  }
-
-  if (mobile.gpsRequiredCheckIn && (input.latitude === undefined || input.longitude === undefined)) {
-    throw ApiError.badRequest("GPS location is required to check in");
-  }
-
-  if (
-    input.accuracy !== undefined &&
-    input.accuracy > mobile.gpsAccuracyThresholdMeters
-  ) {
-    throw ApiError.badRequest(
-      `GPS accuracy (${Math.round(input.accuracy)}m) exceeds the allowed threshold of ${mobile.gpsAccuracyThresholdMeters}m`
-    );
-  }
+  const captureError = validateAttendanceCapture({
+    mobile,
+    userAgent,
+    action: "check-in",
+    hasSelfie: Boolean(selfieFile),
+    hasGps: input.latitude !== undefined && input.longitude !== undefined,
+    accuracy: input.accuracy,
+  });
+  if (captureError) throw ApiError.badRequest(captureError);
 
   const employeeId = req.user!.id;
+
+  if (getSettings().employee.profilePhotoRequired) {
+    const me = await employeesRepo.findEmployeeById(employeeId);
+    if (!me?.profile_photo_path) {
+      throw ApiError.badRequest(
+        "A profile photo is required before check-in. Upload your photo from the menu, then try again."
+      );
+    }
+  }
+
   const today = todayDateString();
 
   const existing = await repo.findTodayAttendance(employeeId, today);
-  if (existing && !attendanceSettings.allowMultipleCheckIns) {
-    throw ApiError.conflict(
-      existing.status === "checked_in"
-        ? "You have already checked in today"
-        : "You have already completed attendance for today"
-    );
+  if (existing) {
+    if (!attendanceSettings.allowMultipleCheckIns) {
+      throw ApiError.conflict(
+        existing.status === "checked_in"
+          ? "You have already checked in today"
+          : "You have already completed attendance for today"
+      );
+    }
+    if (existing.status === "checked_in") {
+      throw ApiError.conflict("You have already checked in today");
+    }
   }
 
   const site = await sitesRepo.findSiteById(input.siteId);
@@ -67,7 +81,8 @@ export const checkIn = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const checkInTime = new Date();
-  const { status: checkInStatus, isHalfDay } = classifyCheckIn(checkInTime);
+  const { settings: effectiveRules } = await getEffectiveAttendanceRules(today, employeeId);
+  const { status: checkInStatus, isHalfDay } = classifyCheckIn(checkInTime, effectiveRules);
 
   const address =
     input.latitude !== undefined && input.longitude !== undefined
@@ -84,23 +99,46 @@ export const checkIn = asyncHandler(async (req: Request, res: Response) => {
     relativePath = saved.relativePath;
   }
 
-  const record = await repo.createCheckIn({
-    employeeId,
-    date: today,
-    checkInTime,
-    latitude: input.latitude ?? null,
-    longitude: input.longitude ?? null,
-    address,
-    selfiePath: relativePath ?? "",
-    deviceInfo: input.deviceInfo ?? req.headers["user-agent"] ?? null,
+  const offDay = await resolveOffDayContext(employeeId, today);
+
+  const record =
+    existing?.status === "checked_out" && attendanceSettings.allowMultipleCheckIns
+      ? await repo.reopenForCheckIn({
+          id: existing.id,
+          checkInTime,
+          latitude: input.latitude ?? null,
+          longitude: input.longitude ?? null,
+          address,
+          selfiePath: relativePath ?? existing.check_in_selfie_path ?? "",
+          deviceInfo: input.deviceInfo ?? req.headers["user-agent"] ?? null,
+          checkInStatus,
+          isHalfDay,
+          siteId: input.siteId,
+          workSummary: input.workSummary ?? null,
+          workStatus: input.workStatus ?? null,
+        })
+      : await repo.createCheckIn({
+          employeeId,
+          date: today,
+          checkInTime,
+          latitude: input.latitude ?? null,
+          longitude: input.longitude ?? null,
+          address,
+          selfiePath: relativePath ?? "",
+          deviceInfo: input.deviceInfo ?? req.headers["user-agent"] ?? null,
+          checkInStatus,
+          isHalfDay,
+          siteId: input.siteId,
+          workSummary: input.workSummary ?? null,
+          workStatus: input.workStatus ?? null,
+          specialDayStatus: offDay.specialDayStatus,
+        });
+
+  await logAudit(req, "attendance.check_in", "attendance", record.id, {
     checkInStatus,
     isHalfDay,
-    siteId: input.siteId,
-    workSummary: input.workSummary ?? null,
-    workStatus: input.workStatus ?? null,
+    specialDayStatus: offDay.specialDayStatus,
   });
-
-  await logAudit(req, "attendance.check_in", "attendance", record.id, { checkInStatus, isHalfDay });
 
   res.status(201).json({ attendance: record, checkInStatus, isHalfDay });
 });
@@ -109,27 +147,21 @@ export const checkOut = asyncHandler(async (req: Request, res: Response) => {
   const input = checkOutSchema.parse(req.body);
   const mobile = getSettings().mobile;
   const attendanceSettings = getSettings().attendance;
+  const uploaded = req.files as
+    | { selfie?: Express.Multer.File[]; sitePhotos?: Express.Multer.File[] }
+    | undefined;
+  const selfieFile = uploaded?.selfie?.[0];
+  const userAgent = input.deviceInfo ?? req.headers["user-agent"] ?? null;
 
-  if (input.latitude === undefined || input.longitude === undefined) {
-    throw ApiError.badRequest(
-      "GPS location is required to check out. Please enable location services in your browser and try again."
-    );
-  }
-
-  if (input.accuracy === undefined) {
-    throw ApiError.badRequest(
-      "GPS location is required to check out. Please enable location services in your browser and try again."
-    );
-  }
-
-  if (
-    input.accuracy !== undefined &&
-    input.accuracy > mobile.gpsAccuracyThresholdMeters
-  ) {
-    throw ApiError.badRequest(
-      `GPS accuracy (${Math.round(input.accuracy)}m) exceeds the allowed threshold of ${mobile.gpsAccuracyThresholdMeters}m`
-    );
-  }
+  const captureError = validateAttendanceCapture({
+    mobile,
+    userAgent,
+    action: "check-out",
+    hasSelfie: Boolean(selfieFile),
+    hasGps: input.latitude !== undefined && input.longitude !== undefined,
+    accuracy: input.accuracy,
+  });
+  if (captureError) throw ApiError.badRequest(captureError);
 
   const employeeId = req.user!.id;
   const today = todayDateString();
@@ -142,11 +174,21 @@ export const checkOut = asyncHandler(async (req: Request, res: Response) => {
     throw ApiError.conflict("You have already checked out today");
   }
 
-  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+  const sitePhotoFiles = uploaded?.sitePhotos ?? [];
   const sitePhotoPaths: string[] = [];
-  for (const file of files) {
+  for (const file of sitePhotoFiles) {
     const { relativePath } = await storage.save(file.buffer, file.originalname, `site-photos/${req.user!.employeeCode}`);
     sitePhotoPaths.push(relativePath);
+  }
+
+  let checkoutSelfiePath: string | null = null;
+  if (selfieFile) {
+    const saved = await storage.save(
+      selfieFile.buffer,
+      selfieFile.originalname,
+      `selfies/${req.user!.employeeCode}`
+    );
+    checkoutSelfiePath = saved.relativePath;
   }
 
   let address: string | null = null;
@@ -155,25 +197,32 @@ export const checkOut = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const checkOutTime = new Date();
-  const totalMinutes = minutesBetween(new Date(existing.check_in_time as unknown as string), checkOutTime);
-  const checkOutStatus = classifyCheckOut(checkOutTime);
+  const sessionMinutes = minutesBetween(new Date(existing.check_in_time as unknown as string), checkOutTime);
+  const priorMinutes = existing.total_minutes ?? 0;
+  const totalMinutes = priorMinutes + sessionMinutes;
+  const { settings: effectiveRules } = await getEffectiveAttendanceRules(today, employeeId);
+  const checkOutStatus = classifyCheckOut(checkOutTime, effectiveRules);
   const dayStatus = attendanceSettings.autoCalculate
-    ? classifyDayStatus(totalMinutes)
+    ? classifyDayStatus(totalMinutes, effectiveRules)
     : existing.is_half_day
       ? ("half_day" as const)
       : ("present" as const);
 
+  const allPhotoPaths = checkoutSelfiePath
+    ? [checkoutSelfiePath, ...sitePhotoPaths]
+    : sitePhotoPaths;
+
   const record = await repo.completeCheckOut({
     id: existing.id,
     checkOutTime,
-    latitude: input.latitude,
-    longitude: input.longitude,
+    latitude: input.latitude ?? null,
+    longitude: input.longitude ?? null,
     address,
-    gpsAccuracy: input.accuracy,
+    gpsAccuracy: input.accuracy ?? null,
     workSummary: input.workSummary?.trim() || existing.work_summary || null,
     workStatus: input.workStatus,
     remarks: input.remarks ?? null,
-    sitePhotoPaths,
+    sitePhotoPaths: allPhotoPaths,
     totalMinutes,
     checkOutStatus,
     dayStatus,
@@ -187,6 +236,16 @@ export const checkOut = asyncHandler(async (req: Request, res: Response) => {
 export const myToday = asyncHandler(async (req: Request, res: Response) => {
   const record = await repo.findTodayAttendance(req.user!.id, todayDateString());
   res.json({ attendance: record });
+});
+
+/** Returns whether today is a weekly off or holiday (for check-in confirmation). */
+export const myCheckInContext = asyncHandler(async (req: Request, res: Response) => {
+  const date = todayDateString();
+  const [context, { activeOverride }] = await Promise.all([
+    resolveOffDayContext(req.user!.id, date),
+    getEffectiveAttendanceRules(date, req.user!.id),
+  ]);
+  res.json({ date, ...context, activeOverride });
 });
 
 export const myHistory = asyncHandler(async (req: Request, res: Response) => {
@@ -277,8 +336,16 @@ export const adminMonthlyExport = asyncHandler(async (req: Request, res: Respons
 });
 
 /** Returns the configured timing rules so the frontend can display live status. */
-export const timingRules = asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ rules: getTimingRules() });
+export const timingRules = asyncHandler(async (req: Request, res: Response) => {
+  const date =
+    typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+      ? req.query.date
+      : todayDateString();
+  const { settings, activeOverride } = await getEffectiveAttendanceRules(
+    date,
+    req.user!.role === "employee" ? req.user!.id : undefined
+  );
+  res.json({ rules: getTimingRulesFromSettings(settings), activeOverride });
 });
 
 /** Check whether a given employee already has an attendance record for today. */
@@ -298,14 +365,14 @@ const adminMarkSchema = z.object({
   override: z.boolean().optional(),
 });
 
-/** Shared guard: block silent overwrites unless the admin explicitly overrides. */
+/** Shared guard: block silent overwrites of automatic attendance unless admin confirms. */
 async function ensureCanMark(
   employeeId: string,
   date: string,
   override: boolean | undefined
 ) {
   const existing = await repo.findTodayAttendance(employeeId, date);
-  if (existing && !override) {
+  if (existing && !existing.is_admin_marked && !override) {
     throw ApiError.conflict(
       "Attendance has already been recorded for this employee on that date. Confirm the change to override it."
     );
@@ -319,13 +386,16 @@ export const adminMarkPresent = asyncHandler(async (req: Request, res: Response)
   }
   const input = adminMarkSchema.parse(req.body);
   const existing = await ensureCanMark(input.employeeId, input.date, input.override);
+  const { settings: effectiveRules } = await getEffectiveAttendanceRules(input.date, input.employeeId);
 
-  const record = await repo.adminMarkPresent({
+  const record = await repo.upsertManualAttendance({
     employeeId: input.employeeId,
     date: input.date,
+    status: "present",
     adminId: req.user!.id,
-    reason: input.reason ?? null,
-    totalMinutes: Math.round(getSettings().attendance.minHoursPresent * 60),
+    approvedById: req.user!.id,
+    reason: input.reason ?? "Marked present by admin",
+    totalMinutes: Math.round(effectiveRules.minHoursPresent * 60),
   });
 
   await logAudit(req, "attendance.admin_mark_present", "attendance", record.id, {
@@ -341,13 +411,16 @@ export const adminMarkHalfDay = asyncHandler(async (req: Request, res: Response)
   }
   const input = adminMarkSchema.parse(req.body);
   const existing = await ensureCanMark(input.employeeId, input.date, input.override);
+  const { settings: effectiveRules } = await getEffectiveAttendanceRules(input.date, input.employeeId);
 
-  const record = await repo.adminMarkHalfDay({
+  const record = await repo.upsertManualAttendance({
     employeeId: input.employeeId,
     date: input.date,
+    status: "half_day",
     adminId: req.user!.id,
-    reason: input.reason ?? null,
-    totalMinutes: Math.round(getSettings().attendance.minHoursHalfDay * 60),
+    approvedById: req.user!.id,
+    reason: input.reason ?? "Marked half day by admin",
+    totalMinutes: Math.round(effectiveRules.minHoursHalfDay * 60),
   });
 
   await logAudit(req, "attendance.admin_mark_half_day", "attendance", record.id, {
@@ -364,11 +437,13 @@ export const adminMarkAbsent = asyncHandler(async (req: Request, res: Response) 
   const input = adminMarkSchema.parse(req.body);
   const existing = await ensureCanMark(input.employeeId, input.date, input.override);
 
-  const record = await repo.adminMarkAbsent({
+  const record = await repo.upsertManualAttendance({
     employeeId: input.employeeId,
     date: input.date,
+    status: "absent",
     adminId: req.user!.id,
-    reason: input.reason ?? null,
+    approvedById: req.user!.id,
+    reason: input.reason ?? "Marked absent by admin",
   });
 
   await logAudit(req, "attendance.admin_mark_absent", "attendance", record.id, {
@@ -376,4 +451,89 @@ export const adminMarkAbsent = asyncHandler(async (req: Request, res: Response) 
   });
 
   res.status(existing ? 200 : 201).json({ attendance: record });
+});
+
+export const adminGetForDate = asyncHandler(async (req: Request, res: Response) => {
+  const employeeId = z.string().uuid().parse(req.query.employeeId);
+  const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(req.query.date);
+  const record = await repo.findAttendanceWithEmployeeByDate(employeeId, date);
+  res.json({ attendance: record });
+});
+
+export const saveManualAttendance = asyncHandler(async (req: Request, res: Response) => {
+  if (!getSettings().attendance.allowManualOverride) {
+    throw ApiError.forbidden("Manual attendance override is disabled in system settings");
+  }
+
+  const input = manualAttendanceSchema.parse(req.body);
+  const existing = await ensureCanMark(input.employeeId, input.date, input.override ?? true);
+
+  let totalMinutes = input.totalMinutes ?? null;
+  if ((input.status === "present" || input.status === "half_day") && totalMinutes == null) {
+    const { settings: effectiveRules } = await getEffectiveAttendanceRules(input.date, input.employeeId);
+    totalMinutes =
+      input.status === "half_day"
+        ? Math.round(effectiveRules.minHoursHalfDay * 60)
+        : Math.round(effectiveRules.minHoursPresent * 60);
+    if (input.checkInTime && input.checkOutTime) {
+      const computed = Math.max(
+        0,
+        Math.round(
+          (new Date(`${input.date}T${input.checkOutTime}:00`).getTime() -
+            new Date(`${input.date}T${input.checkInTime}:00`).getTime()) /
+            60000
+        )
+      );
+      if (computed > 0) totalMinutes = computed;
+    }
+  }
+
+  const record = await repo.upsertManualAttendance({
+    employeeId: input.employeeId,
+    date: input.date,
+    status: input.status,
+    adminId: req.user!.id,
+    approvedById: input.approvedById ?? req.user!.id,
+    reason: input.reason,
+    checkInTime: input.checkInTime ?? null,
+    checkOutTime: input.checkOutTime ?? null,
+    totalMinutes,
+  });
+
+  await logAudit(req, "attendance.manual_save", "attendance", record.id, {
+    employeeId: input.employeeId,
+    date: input.date,
+    status: input.status,
+    reason: input.reason,
+    approvedById: input.approvedById ?? req.user!.id,
+    overrode: !!existing,
+  });
+
+  const enriched = await repo.findAttendanceWithEmployeeByDate(input.employeeId, input.date);
+  res.status(existing ? 200 : 201).json({ attendance: enriched ?? record });
+});
+
+export const deleteManualAttendance = asyncHandler(async (req: Request, res: Response) => {
+  if (!getSettings().attendance.allowManualOverride) {
+    throw ApiError.forbidden("Manual attendance override is disabled in system settings");
+  }
+
+  const input = manualAttendanceDeleteSchema.parse(req.body);
+  const existing = await repo.findTodayAttendance(input.employeeId, input.date);
+  if (!existing) throw ApiError.notFound("No attendance record found for that employee and date");
+  if (!existing.is_admin_marked) {
+    throw ApiError.conflict("Only manually entered attendance records can be deleted this way");
+  }
+
+  const deleted = await repo.deleteManualAttendance(input.employeeId, input.date);
+  if (!deleted) throw ApiError.notFound("Manual attendance record not found");
+
+  await logAudit(req, "attendance.manual_delete", "attendance", existing.id, {
+    employeeId: input.employeeId,
+    date: input.date,
+    previousStatus: existing.admin_mark_status ?? existing.day_status,
+    reason: existing.admin_mark_reason,
+  });
+
+  res.json({ success: true });
 });

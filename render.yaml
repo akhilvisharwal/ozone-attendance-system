@@ -16,6 +16,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "20"
       - key: DATABASE_URL
         sync: false
       - key: DATABASE_SSL
@@ -32,11 +34,18 @@ services:
         value: local
       - key: UPLOAD_DIR
         value: uploads
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "8"
       - key: ADMIN_EMPLOYEE_ID
         value: OZNADMIN
       - key: ADMIN_PASSWORD
-        generateValue: true
+        sync: false
+      - key: GEOCODE_PROVIDER
+        value: google
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
     disk:
+      # Persists uploads/ (selfies, avatars, site photos) and uploads/backups/
       name: uploads
       mountPath: /opt/render/project/src/backend/uploads
       sizeGB: 1

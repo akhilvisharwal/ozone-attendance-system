@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
-import type { WorkStatus, AttendanceStatus, CheckInStatus, CheckOutStatus, DayStatus } from "@/types";
+import type { WorkStatus, AttendanceStatus, CheckInStatus, CheckOutStatus, DayStatus, SpecialDayStatus, ManualAttendanceStatus } from "@/types";
 
 type Tone = "green" | "amber" | "red" | "slate" | "blue";
 
@@ -109,4 +109,69 @@ export function CheckOutStatusBadge({ status }: { status: CheckOutStatus | null 
 export function HalfDayBadge({ isHalfDay }: { isHalfDay: boolean }) {
   if (!isHalfDay) return null;
   return <Badge tone="red">Half Day</Badge>;
+}
+
+const SPECIAL_DAY_STATUS_LABEL: Record<SpecialDayStatus, string> = {
+  holiday_worked: "Worked on Holiday",
+  weekly_off_worked: "Worked on Weekly Off",
+};
+
+const SPECIAL_DAY_STATUS_CLASSES: Record<SpecialDayStatus, string> = {
+  holiday_worked: "bg-teal-50 text-teal-700 ring-teal-600/20",
+  weekly_off_worked: "bg-indigo-50 text-indigo-700 ring-indigo-600/20",
+};
+
+export function SpecialDayStatusBadge({ status }: { status: SpecialDayStatus | null | undefined }) {
+  if (!status) return null;
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset",
+        SPECIAL_DAY_STATUS_CLASSES[status]
+      )}
+    >
+      {SPECIAL_DAY_STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+/** Shows special off-day status when set, otherwise the regular day status. */
+const MANUAL_STATUS_LABEL: Record<ManualAttendanceStatus, string> = {
+  present: "Present",
+  half_day: "Half Day",
+  absent: "Absent",
+  leave: "Leave",
+  holiday: "Holiday",
+  weekly_off: "Weekly Off",
+};
+
+const MANUAL_STATUS_TONE: Record<ManualAttendanceStatus, Tone> = {
+  present: "green",
+  half_day: "amber",
+  absent: "red",
+  leave: "blue",
+  holiday: "blue",
+  weekly_off: "slate",
+};
+
+export function AttendanceDayBadge({
+  dayStatus,
+  specialDayStatus,
+  adminMarkStatus,
+}: {
+  dayStatus: DayStatus | null | undefined;
+  specialDayStatus?: SpecialDayStatus | null;
+  adminMarkStatus?: ManualAttendanceStatus | null;
+}) {
+  if (adminMarkStatus) {
+    return (
+      <Badge tone={MANUAL_STATUS_TONE[adminMarkStatus]}>
+        {MANUAL_STATUS_LABEL[adminMarkStatus]} (manual)
+      </Badge>
+    );
+  }
+  if (specialDayStatus) {
+    return <SpecialDayStatusBadge status={specialDayStatus} />;
+  }
+  return <DayStatusBadge status={dayStatus ?? null} />;
 }

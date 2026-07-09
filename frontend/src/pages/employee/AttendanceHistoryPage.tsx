@@ -1,36 +1,21 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
-import { AttendanceStatusBadge, DayStatusBadge } from "@/components/ui/Badge";
+import { AttendanceStatusBadge, AttendanceDayBadge } from "@/components/ui/Badge";
 import { AttendanceDetailModal } from "@/components/AttendanceDetailModal";
 import { EmployeeMonthlyCalendar } from "@/components/EmployeeMonthlyCalendar";
-import { ResponsiveTable, FilterBar, type Column } from "@/components/ui/ResponsiveTable";
-import { Input } from "@/components/ui/Input";
-import { Button } from "@/components/ui/Button";
-import * as attendanceApi from "@/api/attendance";
+import { EmployeeMonthlySummaryPanel } from "@/components/EmployeeMonthlySummaryPanel";
+import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
+import { useEmployeeMonthlyDashboard } from "@/hooks/useEmployeeMonthlyDashboard";
 import type { AttendanceRecord } from "@/types";
 import { formatDate, formatMinutesAsHours, formatTime } from "@/utils/format";
 
 export function AttendanceHistoryPage() {
-  const [items, setItems] = useState<AttendanceRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const { month, setMonth, grid, records, extendedStats, loading } = useEmployeeMonthlyDashboard();
   const [selected, setSelected] = useState<AttendanceRecord | null>(null);
 
-  function load() {
-    setLoading(true);
-    attendanceApi
-      .myHistory({ from: from || undefined, to: to || undefined, limit: 50 })
-      .then((res) => setItems(res.items))
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const summary = grid?.employees[0]?.summary ?? null;
 
   const columns: Column<AttendanceRecord>[] = [
     {
@@ -41,44 +26,74 @@ export function AttendanceHistoryPage() {
     { header: "Check-in", cell: (item) => formatTime(item.check_in_time) },
     { header: "Check-out", cell: (item) => formatTime(item.check_out_time) },
     { header: "Hours", cell: (item) => formatMinutesAsHours(item.total_minutes) },
-    { header: "Attendance", cell: (item) => <DayStatusBadge status={item.day_status} /> },
+    {
+      header: "Attendance",
+      cell: (item) => (
+        <AttendanceDayBadge
+          dayStatus={item.day_status}
+          specialDayStatus={item.special_day_status}
+          adminMarkStatus={item.is_admin_marked ? item.admin_mark_status : null}
+        />
+      ),
+    },
     { header: "Status", cell: (item) => <AttendanceStatusBadge status={item.status} /> },
   ];
 
   return (
-    <div>
-      <PageHeader title="My Attendance History" subtitle="View your past check-ins and check-outs" />
+    <div className="space-y-6">
+      <PageHeader
+        title="My Attendance"
+        subtitle="Monthly overview, calendar, and record history"
+      />
 
-      <div className="mb-4">
-        <EmployeeMonthlyCalendar />
+      <div className="grid gap-4 xl:grid-cols-5">
+        <div className="xl:col-span-2">
+          <EmployeeMonthlySummaryPanel
+            label={grid?.label ?? "Selected month"}
+            summary={summary}
+            extended={extendedStats}
+            loading={loading}
+          />
+        </div>
+        <div className="xl:col-span-3">
+          <EmployeeMonthlyCalendar
+            month={month}
+            onMonthChange={setMonth}
+            grid={grid}
+            loading={loading}
+          />
+        </div>
       </div>
 
-      <Card className="mb-4">
-        <FilterBar>
-          <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-          <Button onClick={load} variant="outline" className="sm:self-end">
-            Filter
-          </Button>
-        </FilterBar>
-      </Card>
-
       <Card>
+        <div className="border-b border-slate-100 px-5 py-4">
+          <h3 className="text-base font-semibold text-slate-900">Records</h3>
+          <p className="mt-0.5 text-sm text-slate-500">
+            {grid?.label ?? "Selected month"} · tap a row for details
+          </p>
+        </div>
         {loading ? (
           <Spinner />
-        ) : items.length === 0 ? (
-          <EmptyState title="No attendance records found" description="Try adjusting your date filters" />
+        ) : records.length === 0 ? (
+          <EmptyState
+            title="No attendance records"
+            description="Records for this month will appear here after you check in."
+          />
         ) : (
           <ResponsiveTable
             columns={columns}
-            data={items}
+            data={records}
             rowKey={(item) => item.id}
             onRowClick={setSelected}
           />
         )}
       </Card>
 
-      <AttendanceDetailModal attendance={selected} onClose={() => setSelected(null)} />
+      <AttendanceDetailModal
+        attendance={selected}
+        onClose={() => setSelected(null)}
+        showLocationDetails={false}
+      />
     </div>
   );
 }

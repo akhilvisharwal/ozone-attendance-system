@@ -151,6 +151,67 @@ body {
   }
 }
 
+@keyframes combobox-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.combobox-panel-open {
+  animation: combobox-panel-in 150ms ease-out;
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .combobox-panel-open {
+    animation: none;
+  }
+  .date-picker-panel,
+  .time-picker-panel {
+    transition: none;
+  }
+}
+
+.date-picker-panel {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  transition: opacity 200ms ease-in-out, transform 200ms ease-in-out;
+  transform-origin: top left;
+}
+
+.date-picker-panel--open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.date-picker-panel--closed {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+}
+
+.time-picker-panel {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+  transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top center;
+}
+
+.time-picker-panel--open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.time-picker-panel--closed {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+}
+
 .modal-backdrop-animate {
   animation: modal-backdrop-in 0.18s ease-out forwards;
 }

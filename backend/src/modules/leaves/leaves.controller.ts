@@ -53,7 +53,7 @@ export const submitLeave = asyncHandler(async (req: Request, res: Response) => {
     autoApproved: !leaveSettings.approvalRequired,
   });
 
-  notifyLeaveSubmitted({
+  await notifyLeaveSubmitted({
     employeeName: req.user!.employeeCode,
     leaveDate: input.leaveDate,
     category: input.leaveCategory,
@@ -151,7 +151,8 @@ export const adminReviewLeave = asyncHandler(async (req: Request, res: Response)
 
   await logAudit(req, `leave.${input.status}`, "leave_requests", updated.id);
 
-  notifyLeaveReviewed({
+  await notifyLeaveReviewed({
+    employeeId: leave.employee_id,
     employeeName: leave.employee_code,
     status: input.status,
     leaveDate: leave.leave_date,

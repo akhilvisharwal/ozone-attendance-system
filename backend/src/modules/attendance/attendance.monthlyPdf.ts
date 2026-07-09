@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
-import { getCompanyName, SYSTEM_NAME } from "../../config/branding";
+import { formatCompanyContactLine, getCompanyName, SYSTEM_NAME } from "../../config/branding";
 import { drawPdfLogo } from "../../utils/pdfBranding";
+import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import { formatMinutesAsHours } from "../../utils/date";
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
@@ -24,6 +25,7 @@ const STATUS_STYLES: Record<MonthlyCellStatus, StatusStyle> = {
   weekly_off: { code: "WO", bg: "#e2e8f0", fg: "#475569" },
   holiday: { code: "HO", bg: "#a855f7", fg: "#ffffff" },
   holiday_worked: { code: "HW", bg: "#0d9488", fg: "#ffffff" },
+  weekly_off_worked: { code: "WW", bg: "#4f46e5", fg: "#ffffff" },
   none: { code: "", bg: "#f8fafc", fg: "#cbd5e1" },
 };
 
@@ -34,7 +36,8 @@ const LEGEND_ITEMS: { code: string; label: string; bg: string; fg: string }[] = 
   { code: "L", label: "Leave", bg: "#0ea5e9", fg: "#ffffff" },
   { code: "WO", label: "Weekly Off", bg: "#e2e8f0", fg: "#475569" },
   { code: "HO", label: "Holiday", bg: "#a855f7", fg: "#ffffff" },
-  { code: "HW", label: "Holiday Worked", bg: "#0d9488", fg: "#ffffff" },
+  { code: "HW", label: "Worked on Holiday", bg: "#0d9488", fg: "#ffffff" },
+  { code: "WW", label: "Worked on Weekly Off", bg: "#4f46e5", fg: "#ffffff" },
 ];
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -68,10 +71,7 @@ export async function buildMonthlyCalendarPdf(
     const footerH = 22;
 
     const generatedAt = meta.generatedAt ?? new Date();
-    const dateStr = generatedAt.toLocaleString("en-IN", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
+    const dateStr = formatDisplayDateTime(generatedAt);
 
     const colSn = 16;
     const colName = 68;
@@ -87,6 +87,7 @@ export async function buildMonthlyCalendarPdf(
       { key: "WO", w: 18 },
       { key: "HO", w: 16 },
       { key: "HW", w: 16 },
+      { key: "WW", w: 16 },
       { key: "WD", w: 18 },
       { key: "Hrs", w: 34 },
       { key: "Att%", w: 28 },
@@ -219,7 +220,7 @@ export async function buildMonthlyCalendarPdf(
         { label: "#", w: colSn },
         { label: "Name", w: colName },
         { label: "ID", w: colId },
-        { label: "Dept", w: colDept },
+        { label: "Role", w: colDept },
       ];
       for (const h of infoHeaders) {
         doc.rect(x, subTop, h.w, headerRowH).fill("#f1f5f9");
@@ -232,9 +233,9 @@ export async function buildMonthlyCalendarPdf(
       for (let d = 1; d <= grid.daysInMonth; d++) {
         const dateStr = `${grid.year}-${String(grid.month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
         const wd = new Date(grid.year, grid.month - 1, d).getDay();
-        const weekend = wd === 0 || wd === 6;
+        const weeklyOffColumn = grid.defaultWeeklyOffDays.includes(wd);
         const holiday = grid.holidays.find((h) => h.date === dateStr);
-        doc.rect(x, subTop, dayW, headerRowH).fill(holiday ? "#ede9fe" : weekend ? "#e2e8f0" : "#f1f5f9");
+        doc.rect(x, subTop, dayW, headerRowH).fill(holiday ? "#ede9fe" : weeklyOffColumn ? "#e2e8f0" : "#f1f5f9");
         doc.rect(x, subTop, dayW, headerRowH).stroke("#cbd5e1");
         doc.fillColor(holiday ? "#6d28d9" : "#334155").font("Helvetica-Bold").fontSize(5.5)
           .text(String(d), x, subTop + (holiday ? 2 : 3), { width: dayW, align: "center" });
@@ -279,7 +280,7 @@ export async function buildMonthlyCalendarPdf(
         { text: String(index + 1), w: colSn, align: "center" },
         { text: emp.name, w: colName, align: "left" },
         { text: emp.employeeCode, w: colId, align: "center" },
-        { text: emp.department ?? "-", w: colDept, align: "center" },
+        { text: emp.designation ?? emp.department ?? "-", w: colDept, align: "center" },
       ];
 
       for (const cell of infoCells) {
@@ -315,6 +316,7 @@ export async function buildMonthlyCalendarPdf(
         String(s.weeklyOff),
         String(s.holidays),
         String(s.holidayWorked),
+        String(s.weeklyOffWorked),
         String(s.workingDays),
         hoursLabel,
         `${s.attendancePercentage}%`,
@@ -340,6 +342,10 @@ export async function buildMonthlyCalendarPdf(
         const footerLeft = `${getCompanyName()} · ${SYSTEM_NAME} · Monthly Attendance Register · ${grid.label}`;
         doc.font("Helvetica").fontSize(7).fillColor("#94a3b8")
           .text(footerLeft, margin, fy, { width: contentW * 0.65, align: "left" });
+        const contactLine = formatCompanyContactLine();
+        if (contactLine) {
+          doc.text(contactLine, margin, fy + 9, { width: contentW * 0.65, align: "left" });
+        }
         if (reports.autoPageNumbers) {
           doc.text(
             `Page ${i - range.start + 1} of ${range.count}`,

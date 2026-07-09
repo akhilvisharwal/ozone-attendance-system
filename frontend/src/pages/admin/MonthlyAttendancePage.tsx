@@ -4,10 +4,12 @@ import { CalendarRange, ChevronLeft, ChevronRight, FileSpreadsheet, FileText } f
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { MonthPicker } from "@/components/ui/MonthPicker";
 import { Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { FilterBar } from "@/components/ui/ResponsiveTable";
 import { HolidayFormModal } from "@/components/HolidayFormModal";
+import { ManualAttendanceModal } from "@/components/ManualAttendanceModal";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
 import * as attendanceApi from "@/api/attendance";
 import * as sitesApi from "@/api/sites";
@@ -23,7 +25,8 @@ const STATUS_META: Record<MonthlyCellStatus, { label: string; cell: string; dot:
   leave: { label: "Leave", cell: "bg-sky-500 text-white", dot: "bg-sky-500", code: "L" },
   weekly_off: { label: "Weekly Off", cell: "bg-slate-200 text-slate-500", dot: "bg-slate-300", code: "WO" },
   holiday: { label: "Holiday", cell: "bg-violet-500 text-white", dot: "bg-violet-500", code: "HO" },
-  holiday_worked: { label: "Holiday Worked", cell: "bg-teal-600 text-white", dot: "bg-teal-600", code: "HW" },
+  holiday_worked: { label: "Worked on Holiday", cell: "bg-teal-600 text-white", dot: "bg-teal-600", code: "HW" },
+  weekly_off_worked: { label: "Worked on Weekly Off", cell: "bg-indigo-600 text-white", dot: "bg-indigo-600", code: "WW" },
   none: { label: "—", cell: "bg-slate-50 text-slate-300", dot: "bg-slate-100 border border-slate-200", code: "" },
 };
 
@@ -54,6 +57,7 @@ export function MonthlyAttendancePage() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [holidayDate, setHolidayDate] = useState<string | null>(null);
+  const [manualTarget, setManualTarget] = useState<{ employeeId: string; date: string } | null>(null);
 
   function loadGrid() {
     setLoading(true);
@@ -110,11 +114,11 @@ export function MonthlyAttendancePage() {
             <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, -1))} aria-label="Previous month">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <input
-              type="month"
+            <MonthPicker
               value={month}
-              onChange={(e) => setMonth(e.target.value || currentMonthString())}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-base font-semibold text-slate-800 sm:text-sm"
+              onChange={setMonth}
+              emphasis
+              className="w-[11.5rem]"
             />
             <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, 1))} aria-label="Next month">
               <ChevronRight className="h-4 w-4" />
@@ -149,7 +153,8 @@ export function MonthlyAttendancePage() {
               <option value="leave">Leave</option>
               <option value="weekly_off">Weekly Off</option>
               <option value="holiday">Holiday</option>
-              <option value="holiday_worked">Holiday Worked</option>
+              <option value="holiday_worked">Worked on Holiday</option>
+              <option value="weekly_off_worked">Worked on Weekly Off</option>
             </Select>
           </FilterBar>
 
@@ -206,14 +211,18 @@ export function MonthlyAttendancePage() {
                   {dayNumbers.map((day) => {
                     const dateStr = `${month}-${String(day).padStart(2, "0")}`;
                     const wd = weekdayOf(dateStr);
-                    const weekend = wd === 0 || wd === 6;
+                    const weeklyOffColumn = grid?.defaultWeeklyOffDays.includes(wd) ?? false;
                     const holiday = grid?.holidays.find((h) => h.date === dateStr);
                     return (
                       <th
                         key={day}
                         className={clsx(
                           "border-b border-slate-200 px-0 py-1 text-center text-[11px] font-semibold",
-                          holiday ? "bg-violet-100 text-violet-700" : weekend ? "bg-slate-100 text-slate-500" : "bg-slate-50 text-slate-500"
+                          holiday
+                            ? "bg-violet-100 text-violet-700"
+                            : weeklyOffColumn
+                              ? "bg-slate-100 text-slate-500"
+                              : "bg-slate-50 text-slate-500"
                         )}
                         style={{ minWidth: 30 }}
                       >
@@ -239,6 +248,9 @@ export function MonthlyAttendancePage() {
                     <td className="sticky left-0 z-10 whitespace-nowrap border-b border-slate-100 bg-white px-3 py-2">
                       <p className="font-medium text-slate-900">{emp.name}</p>
                       <p className="text-xs text-slate-400">{emp.employeeCode}</p>
+                      {emp.designation && (
+                        <p className="text-xs text-slate-500">{emp.designation}</p>
+                      )}
                     </td>
                     {emp.days.map((cell) => {
                       const meta = STATUS_META[cell.status];
@@ -251,10 +263,12 @@ export function MonthlyAttendancePage() {
                       ].filter(Boolean).join(" • ");
                       return (
                         <td key={cell.day} className="border-b border-slate-100 p-0.5 text-center">
-                          <div
-                            title={title}
+                          <button
+                            type="button"
+                            title={`${title} — Click to edit manual attendance`}
+                            onClick={() => setManualTarget({ employeeId: emp.employeeId, date: cell.date })}
                             className={clsx(
-                              "relative mx-auto flex h-6 w-6 items-center justify-center rounded text-[10px] font-semibold transition",
+                              "relative mx-auto flex h-6 w-6 items-center justify-center rounded text-[10px] font-semibold transition hover:ring-2 hover:ring-brand-200",
                               meta.cell,
                               dimmed && "opacity-20"
                             )}
@@ -263,7 +277,7 @@ export function MonthlyAttendancePage() {
                             {cell.late && cell.status !== "none" && (
                               <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-orange-600 ring-1 ring-white" />
                             )}
-                          </div>
+                          </button>
                         </td>
                       );
                     })}
@@ -295,6 +309,7 @@ export function MonthlyAttendancePage() {
                   <th className="px-3 py-2 text-center">Weekly Off</th>
                   <th className="px-3 py-2 text-center">Holiday</th>
                   <th className="px-3 py-2 text-center">Hol. Worked</th>
+                  <th className="px-3 py-2 text-center">WO Worked</th>
                   <th className="px-3 py-2 text-center">Working Days</th>
                   <th className="px-3 py-2 text-center">Total Hours</th>
                   <th className="px-3 py-2 text-center">Attendance %</th>
@@ -309,6 +324,9 @@ export function MonthlyAttendancePage() {
                       <td className="px-3 py-2">
                         <p className="font-medium text-slate-900">{emp.name}</p>
                         <p className="text-xs text-slate-400">{emp.employeeCode}</p>
+                        {emp.designation && (
+                          <p className="text-xs text-slate-500">{emp.designation}</p>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-center font-semibold text-emerald-600">{s.present}</td>
                       <td className="px-3 py-2 text-center font-semibold text-amber-600">{s.halfDay}</td>
@@ -317,6 +335,7 @@ export function MonthlyAttendancePage() {
                       <td className="px-3 py-2 text-center text-slate-500">{s.weeklyOff}</td>
                       <td className="px-3 py-2 text-center text-violet-600">{s.holidays}</td>
                       <td className="px-3 py-2 text-center text-teal-600">{s.holidayWorked}</td>
+                      <td className="px-3 py-2 text-center text-indigo-600">{s.weeklyOffWorked}</td>
                       <td className="px-3 py-2 text-center text-slate-700">{s.workingDays}</td>
                       <td className="px-3 py-2 text-center text-slate-700">{formatMinutesAsHours(s.totalMinutes)}</td>
                       <td className="px-3 py-2 text-center">
@@ -349,13 +368,21 @@ export function MonthlyAttendancePage() {
         onClose={() => setHolidayDate(null)}
         onSaved={loadGrid}
       />
+
+      <ManualAttendanceModal
+        open={Boolean(manualTarget)}
+        onClose={() => setManualTarget(null)}
+        onSaved={loadGrid}
+        initialEmployeeId={manualTarget?.employeeId}
+        initialDate={manualTarget?.date}
+      />
     </div>
   );
 }
 
 function Legend() {
   const items: MonthlyCellStatus[] = [
-    "present", "half_day", "absent", "leave", "weekly_off", "holiday", "holiday_worked", "none",
+    "present", "half_day", "absent", "leave", "weekly_off", "holiday", "holiday_worked", "weekly_off_worked", "none",
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3">

@@ -1,10 +1,14 @@
 import { pool } from "../../config/db";
-import { AttendanceRecord, CheckInStatus, CheckOutStatus, DayStatus, WorkStatus } from "../../types";
+import { AttendanceRecord, CheckInStatus, CheckOutStatus, DayStatus, SpecialDayStatus, WorkStatus } from "../../types";
+import type { ManualAttendanceInput } from "./manualAttendance.types";
+import { combineDateAndTime, minutesBetweenTimes } from "./manualAttendance.types";
 
 const ADMIN_LIST_SELECT = `
   a.*,
-  e.employee_code, e.name AS employee_name,
-  s.name AS site_name
+  e.employee_code, e.name AS employee_name, d.name AS employee_designation,
+  s.name AS site_name,
+  marker.name AS admin_marked_by_name,
+  approver.name AS admin_approved_by_name
 `;
 
 export async function findTodayAttendance(employeeId: string, date: string): Promise<AttendanceRecord | null> {
@@ -48,6 +52,7 @@ export async function createCheckIn(input: {
   siteId: string;
   workSummary: string | null;
   workStatus: WorkStatus | null;
+  specialDayStatus?: SpecialDayStatus | null;
 }): Promise<AttendanceRecord> {
   const result = await pool.query<AttendanceRecord>(
     `INSERT INTO attendance (
@@ -55,8 +60,8 @@ export async function createCheckIn(input: {
        check_in_latitude, check_in_longitude, check_in_address,
        check_in_selfie_path, check_in_device_info,
        check_in_status, is_half_day, status,
-       site_id, work_summary, work_status
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'checked_in', $11, $12, $13)
+       site_id, work_summary, work_status, special_day_status
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'checked_in', $11, $12, $13, $14)
      RETURNING *`,
     [
       input.employeeId,
@@ -72,6 +77,65 @@ export async function createCheckIn(input: {
       input.siteId,
       input.workSummary,
       input.workStatus,
+      input.specialDayStatus ?? null,
+    ]
+  );
+  return result.rows[0];
+}
+
+export async function reopenForCheckIn(input: {
+  id: string;
+  checkInTime: Date;
+  latitude: number | null;
+  longitude: number | null;
+  address: string | null;
+  selfiePath: string;
+  deviceInfo: string | null;
+  checkInStatus: CheckInStatus;
+  isHalfDay: boolean;
+  siteId: string;
+  workSummary: string | null;
+  workStatus: WorkStatus | null;
+}): Promise<AttendanceRecord> {
+  const result = await pool.query<AttendanceRecord>(
+    `UPDATE attendance SET
+       check_in_time = $1,
+       check_in_latitude = $2,
+       check_in_longitude = $3,
+       check_in_address = $4,
+       check_in_selfie_path = $5,
+       check_in_device_info = $6,
+       check_in_status = $7,
+       is_half_day = $8,
+       site_id = $9,
+       work_summary = COALESCE($10, work_summary),
+       work_status = COALESCE($11, work_status),
+       check_out_time = NULL,
+       check_out_latitude = NULL,
+       check_out_longitude = NULL,
+       check_out_address = NULL,
+       check_out_gps_accuracy = NULL,
+       check_out_status = NULL,
+       day_status = NULL,
+       site_photo_paths = '{}',
+       remarks = NULL,
+       status = 'checked_in',
+       is_admin_marked = false
+     WHERE id = $12
+     RETURNING *`,
+    [
+      input.checkInTime,
+      input.latitude,
+      input.longitude,
+      input.address,
+      input.selfiePath,
+      input.deviceInfo,
+      input.checkInStatus,
+      input.isHalfDay,
+      input.siteId,
+      input.workSummary,
+      input.workStatus,
+      input.id,
     ]
   );
   return result.rows[0];
@@ -80,10 +144,10 @@ export async function createCheckIn(input: {
 export async function completeCheckOut(input: {
   id: string;
   checkOutTime: Date;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   address: string | null;
-  gpsAccuracy: number;
+  gpsAccuracy: number | null;
   workSummary: string | null;
   workStatus: WorkStatus;
   remarks: string | null;
@@ -256,7 +320,10 @@ export async function listAllAttendance(
     `SELECT ${ADMIN_LIST_SELECT}
      FROM attendance a
      JOIN employees e ON e.id = a.employee_id
+     LEFT JOIN employee_designations d ON d.id = e.designation_id
      LEFT JOIN sites s ON s.id = a.site_id
+     LEFT JOIN employees marker ON marker.id = a.admin_marked_by
+     LEFT JOIN employees approver ON approver.id = a.admin_approved_by
      ${whereClause}
      ORDER BY a.attendance_date DESC, a.check_in_time DESC NULLS LAST
      LIMIT $${limitParam} OFFSET $${offsetParam}`,
@@ -329,9 +396,30 @@ export async function findAttendanceWithEmployeeById(id: string): Promise<any | 
     `SELECT ${ADMIN_LIST_SELECT}
      FROM attendance a
      JOIN employees e ON e.id = a.employee_id
+     LEFT JOIN employee_designations d ON d.id = e.designation_id
      LEFT JOIN sites s ON s.id = a.site_id
+     LEFT JOIN employees marker ON marker.id = a.admin_marked_by
+     LEFT JOIN employees approver ON approver.id = a.admin_approved_by
      WHERE a.id = $1`,
     [id]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function findAttendanceWithEmployeeByDate(
+  employeeId: string,
+  date: string
+): Promise<any | null> {
+  const result = await pool.query(
+    `SELECT ${ADMIN_LIST_SELECT}
+     FROM attendance a
+     JOIN employees e ON e.id = a.employee_id
+     LEFT JOIN employee_designations d ON d.id = e.designation_id
+     LEFT JOIN sites s ON s.id = a.site_id
+     LEFT JOIN employees marker ON marker.id = a.admin_marked_by
+     LEFT JOIN employees approver ON approver.id = a.admin_approved_by
+     WHERE a.employee_id = $1 AND a.attendance_date = $2`,
+    [employeeId, date]
   );
   return result.rows[0] ?? null;
 }
@@ -475,4 +563,150 @@ export async function adminMarkAbsent(input: {
     [input.employeeId, input.date, input.adminId, input.reason]
   );
   return result.rows[0];
+}
+
+function buildManualAttendanceFields(input: ManualAttendanceInput): {
+  checkInTime: Date | null;
+  checkOutTime: Date | null;
+  totalMinutes: number | null;
+  status: AttendanceRecord["status"];
+  dayStatus: DayStatus | null;
+  checkInStatus: CheckInStatus | null;
+  isHalfDay: boolean;
+  checkOutStatus: CheckOutStatus | null;
+} {
+  const { status, date, checkInTime, checkOutTime, totalMinutes } = input;
+
+  if (status === "present" || status === "half_day") {
+    const checkIn = checkInTime ? combineDateAndTime(date, checkInTime) : null;
+    const checkOut = checkOutTime ? combineDateAndTime(date, checkOutTime) : null;
+    const mins =
+      totalMinutes ??
+      (checkInTime && checkOutTime ? minutesBetweenTimes(date, checkInTime, checkOutTime) : null);
+
+    return {
+      checkInTime: checkIn,
+      checkOutTime: checkOut,
+      totalMinutes: mins,
+      status: "checked_out",
+      dayStatus: status,
+      checkInStatus: status === "half_day" ? "half_day" : "on_time",
+      isHalfDay: status === "half_day",
+      checkOutStatus: null,
+    };
+  }
+
+  if (status === "absent") {
+    return {
+      checkInTime: null,
+      checkOutTime: null,
+      totalMinutes: null,
+      status: "absent",
+      dayStatus: "absent",
+      checkInStatus: null,
+      isHalfDay: false,
+      checkOutStatus: null,
+    };
+  }
+
+  return {
+    checkInTime: null,
+    checkOutTime: null,
+    totalMinutes: null,
+    status: "checked_out",
+    dayStatus: null,
+    checkInStatus: null,
+    isHalfDay: false,
+    checkOutStatus: null,
+  };
+}
+
+/** Upserts a fully manual attendance record that overrides automatic calculations for the date. */
+export async function upsertManualAttendance(input: ManualAttendanceInput): Promise<AttendanceRecord> {
+  const fields = buildManualAttendanceFields(input);
+
+  const result = await pool.query<AttendanceRecord>(
+    `INSERT INTO attendance (
+       employee_id, attendance_date,
+       check_in_time, check_out_time,
+       check_in_status, is_half_day, check_out_status,
+       total_minutes, status, day_status,
+       is_admin_marked, admin_marked_by, admin_mark_reason,
+       admin_mark_status, admin_approved_by,
+       special_day_status,
+       check_in_latitude, check_in_longitude, check_in_address, check_in_selfie_path, check_in_device_info,
+       check_out_latitude, check_out_longitude, check_out_address, check_out_gps_accuracy,
+       site_id, work_summary, work_status, remarks, site_photo_paths
+     ) VALUES (
+       $1, $2,
+       $3, $4,
+       $5, $6, $7,
+       $8, $9, $10,
+       true, $11, $12,
+       $13, $14,
+       NULL,
+       NULL, NULL, NULL, NULL, NULL,
+       NULL, NULL, NULL, NULL,
+       NULL, NULL, NULL, NULL, '[]'
+     )
+     ON CONFLICT (employee_id, attendance_date) DO UPDATE SET
+       check_in_time        = EXCLUDED.check_in_time,
+       check_out_time       = EXCLUDED.check_out_time,
+       check_in_status      = EXCLUDED.check_in_status,
+       is_half_day          = EXCLUDED.is_half_day,
+       check_out_status     = EXCLUDED.check_out_status,
+       total_minutes        = EXCLUDED.total_minutes,
+       status               = EXCLUDED.status,
+       day_status           = EXCLUDED.day_status,
+       is_admin_marked      = true,
+       admin_marked_by      = EXCLUDED.admin_marked_by,
+       admin_mark_reason    = EXCLUDED.admin_mark_reason,
+       admin_mark_status    = EXCLUDED.admin_mark_status,
+       admin_approved_by    = EXCLUDED.admin_approved_by,
+       special_day_status   = NULL,
+       check_in_latitude    = NULL,
+       check_in_longitude   = NULL,
+       check_in_address     = NULL,
+       check_in_selfie_path = NULL,
+       check_in_device_info = NULL,
+       check_out_latitude   = NULL,
+       check_out_longitude  = NULL,
+       check_out_address    = NULL,
+       check_out_gps_accuracy = NULL,
+       site_id              = NULL,
+       work_summary         = NULL,
+       work_status          = NULL,
+       remarks              = NULL,
+       site_photo_paths     = '[]',
+       updated_at           = now()
+     RETURNING *`,
+    [
+      input.employeeId,
+      input.date,
+      fields.checkInTime,
+      fields.checkOutTime,
+      fields.checkInStatus,
+      fields.isHalfDay,
+      fields.checkOutStatus,
+      fields.totalMinutes,
+      fields.status,
+      fields.dayStatus,
+      input.adminId,
+      input.reason,
+      input.status,
+      input.approvedById,
+    ]
+  );
+  return result.rows[0];
+}
+
+export async function deleteManualAttendance(employeeId: string, date: string): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM attendance
+      WHERE employee_id = $1
+        AND attendance_date = $2
+        AND is_admin_marked = true`,
+    [employeeId, date]
+  );
+  return (result.rowCount ?? 0) > 0;
 }

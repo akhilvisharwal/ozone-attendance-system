@@ -1,20 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Users, UserCheck, UserX, UserMinus, Clock, LogIn, LogOut, RefreshCw } from "lucide-react";
+import clsx from "clsx";
+import {
+  Users,
+  UserCheck,
+  UserX,
+  UserMinus,
+  Clock,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  CalendarHeart,
+  CalendarDays,
+} from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
-import { AttendanceStatusBadge, WorkStatusBadge, DayStatusBadge } from "@/components/ui/Badge";
+import { AttendanceRecordList } from "@/components/AttendanceRecordList";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { AttendanceDetailModal } from "@/components/AttendanceDetailModal";
-import { TaskDashboardWidget } from "@/components/tasks/TaskDashboardWidget";
-import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
 import * as dashboardApi from "@/api/dashboard";
-import * as tasksApi from "@/api/tasks";
 import { extractErrorMessage } from "@/api/client";
-import type { AdminAttendanceRow, DashboardSummary, TaskAnalytics } from "@/types";
-import { formatMinutesAsHours, formatTime } from "@/utils/format";
+import type { AdminAttendanceRow, DashboardSummary } from "@/types";
 import { sortTodayAttendanceByRecentActivity } from "@/utils/attendanceSort";
 
 export function AdminDashboardPage() {
@@ -25,7 +33,6 @@ export function AdminDashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<AdminAttendanceRow | null>(null);
-  const [taskAnalytics, setTaskAnalytics] = useState<TaskAnalytics | null>(null);
 
   const loadDashboard = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -34,15 +41,13 @@ export function AdminDashboardPage() {
     setError(null);
 
     try {
-      const [summaryRes, todayRes, taskStats] = await Promise.all([
+      const [summaryRes, todayRes] = await Promise.all([
         dashboardApi.getDashboardSummary(),
         dashboardApi.getTodayAttendance(),
-        tasksApi.adminGetTaskAnalytics(),
       ]);
       setSummary(summaryRes.summary);
       setReportDate(summaryRes.date);
       setToday(sortTodayAttendanceByRecentActivity(todayRes));
-      setTaskAnalytics(taskStats);
     } catch (err) {
       setError(extractErrorMessage(err, "Could not load dashboard statistics."));
     } finally {
@@ -66,32 +71,12 @@ export function AdminDashboardPage() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [loadDashboard]);
 
-  const todayColumns: Column<AdminAttendanceRow>[] = [
-    {
-      header: "Employee",
-      primary: true,
-      cell: (row) => (
-        <div>
-          <p className="font-medium text-slate-900">{row.employee_name}</p>
-          <p className="text-xs text-slate-400">{row.employee_code}</p>
-        </div>
-      ),
-    },
-    { header: "Check-in", cell: (row) => formatTime(row.check_in_time) },
-    { header: "Check-out", cell: (row) => formatTime(row.check_out_time) },
-    { header: "Hours", cell: (row) => formatMinutesAsHours(row.total_minutes) },
-    { header: "Attendance", cell: (row) => <DayStatusBadge status={row.day_status} /> },
-    { header: "Project", cell: (row) => row.site_name ?? "-" },
-    { header: "Work Status", cell: (row) => <WorkStatusBadge status={row.work_status} /> },
-    { header: "Status", cell: (row) => <AttendanceStatusBadge status={row.status} /> },
-  ];
-
   const subtitle = reportDate
     ? `Workforce attendance overview for ${reportDate}`
     : "Workforce attendance overview for today";
 
   return (
-    <div>
+    <div className="mx-auto w-full max-w-7xl">
       <PageHeader
         title="Admin Dashboard"
         subtitle={subtitle}
@@ -109,7 +94,7 @@ export function AdminDashboardPage() {
       />
 
       {error && (
-        <div className="mb-4">
+        <div className="mb-5">
           <Alert variant="error">{error}</Alert>
         </div>
       )}
@@ -117,39 +102,54 @@ export function AdminDashboardPage() {
       {loading ? (
         <Spinner />
       ) : (
-        <>
-          <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-7">
-            <StatCard icon={<Users className="h-5 w-5" />} label="Total Employees" value={summary?.totalEmployees ?? 0} />
-            <StatCard icon={<UserCheck className="h-5 w-5" />} label="Present Today" value={summary?.presentToday ?? 0} tone="green" />
-            <StatCard icon={<UserMinus className="h-5 w-5" />} label="Half Day" value={summary?.halfDayToday ?? 0} tone="amber" />
-            <StatCard icon={<UserX className="h-5 w-5" />} label="Absent Today" value={summary?.absentToday ?? 0} tone="red" />
-            <StatCard icon={<Clock className="h-5 w-5" />} label="Late Arrivals" value={summary?.lateArrivals ?? 0} tone="amber" />
-            <StatCard icon={<LogIn className="h-5 w-5" />} label="Checked In" value={summary?.currentlyCheckedIn ?? 0} tone="blue" />
-            <StatCard icon={<LogOut className="h-5 w-5" />} label="Checked Out" value={summary?.checkedOutToday ?? 0} />
-          </div>
+        <div>
+          <section aria-label="Attendance summary">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9">
+              <StatCard icon={<Users className="h-3.5 w-3.5" />} label="Total Employees" value={summary?.totalEmployees ?? 0} />
+              <StatCard icon={<UserCheck className="h-3.5 w-3.5" />} label="Present Today" value={summary?.presentToday ?? 0} tone="green" />
+              <StatCard icon={<UserMinus className="h-3.5 w-3.5" />} label="Half Day" value={summary?.halfDayToday ?? 0} tone="amber" />
+              <StatCard icon={<UserX className="h-3.5 w-3.5" />} label="Absent Today" value={summary?.absentToday ?? 0} tone="red" />
+              <StatCard icon={<CalendarHeart className="h-3.5 w-3.5" />} label="Worked on Holiday" value={summary?.holidayWorkedToday ?? 0} tone="teal" />
+              <StatCard icon={<CalendarDays className="h-3.5 w-3.5" />} label="Worked on Weekly Off" value={summary?.weeklyOffWorkedToday ?? 0} tone="indigo" />
+              <StatCard icon={<Clock className="h-3.5 w-3.5" />} label="Late Arrivals" value={summary?.lateArrivals ?? 0} tone="amber" />
+              <StatCard icon={<LogIn className="h-3.5 w-3.5" />} label="Checked In" value={summary?.currentlyCheckedIn ?? 0} tone="blue" />
+              <StatCard icon={<LogOut className="h-3.5 w-3.5" />} label="Checked Out" value={summary?.checkedOutToday ?? 0} />
+            </div>
+          </section>
 
-          <TaskDashboardWidget analytics={taskAnalytics} tasksLink="/admin/tasks" title="Task Analytics" />
-
-          <Card>
+          <Card className="mt-5">
             <CardHeader title="Today's Attendance" subtitle="Tap a row to view full details" />
             {today.length === 0 ? (
               <EmptyState title="No attendance recorded yet today" />
             ) : (
-              <ResponsiveTable
-                columns={todayColumns}
-                data={today}
-                rowKey={(row) => row.id}
-                onRowClick={setSelected}
+              <AttendanceRecordList
+                records={today}
+                onRecordClick={setSelected}
+                showDate={false}
+                showLocations={false}
+                className="pt-1"
               />
             )}
           </Card>
-        </>
+        </div>
       )}
 
       <AttendanceDetailModal attendance={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }
+
+type StatTone = "slate" | "green" | "red" | "amber" | "blue" | "teal" | "indigo";
+
+const STAT_TONE_CLASSES: Record<StatTone, { icon: string; ring: string }> = {
+  slate: { icon: "bg-slate-100 text-slate-600", ring: "ring-slate-200/80" },
+  green: { icon: "bg-emerald-50 text-emerald-600", ring: "ring-emerald-100" },
+  red: { icon: "bg-red-50 text-red-600", ring: "ring-red-100" },
+  amber: { icon: "bg-amber-50 text-amber-600", ring: "ring-amber-100" },
+  blue: { icon: "bg-blue-50 text-blue-600", ring: "ring-blue-100" },
+  teal: { icon: "bg-teal-50 text-teal-600", ring: "ring-teal-100" },
+  indigo: { icon: "bg-indigo-50 text-indigo-600", ring: "ring-indigo-100" },
+};
 
 function StatCard({
   icon,
@@ -160,24 +160,35 @@ function StatCard({
   icon: ReactNode;
   label: string;
   value: number;
-  tone?: "slate" | "green" | "red" | "amber" | "blue";
+  tone?: StatTone;
 }) {
-  const toneClasses: Record<string, string> = {
-    slate: "bg-slate-100 text-slate-600",
-    green: "bg-emerald-50 text-emerald-600",
-    red: "bg-red-50 text-red-600",
-    amber: "bg-amber-50 text-amber-600",
-    blue: "bg-blue-50 text-blue-600",
-  };
+  const styles = STAT_TONE_CLASSES[tone];
 
   return (
-    <Card className="flex items-center gap-3 p-4">
-      <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${toneClasses[tone]}`}>
+    <Card
+      className={clsx(
+        "flex h-14 min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 shadow-none ring-1 ring-inset sm:h-[3.75rem] sm:gap-2.5 sm:px-3",
+        styles.ring
+      )}
+    >
+      <div
+        className={clsx(
+          "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md sm:h-7 sm:w-7",
+          styles.icon
+        )}
+      >
         {icon}
       </div>
-      <div>
-        <p className="text-xl font-bold text-slate-900">{value}</p>
-        <p className="text-xs text-slate-500">{label}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-base font-semibold tabular-nums leading-none tracking-tight text-slate-900 sm:text-lg">
+          {value}
+        </p>
+        <p
+          className="mt-1 truncate text-[10px] font-medium leading-tight text-slate-500 sm:text-[11px]"
+          title={label}
+        >
+          {label}
+        </p>
       </div>
     </Card>
   );

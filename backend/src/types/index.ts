@@ -7,14 +7,18 @@ export interface Employee {
   email: string | null;
   phone: string | null;
   department: string | null;
+  designation_id: string | null;
+  designation?: string | null;
   password_hash: string;
   role: Role;
   is_active: boolean;
   must_change_password: boolean;
+  password_changed_at?: string | null;
   profile_photo_path: string | null;
   created_by: string | null;
   deleted_at: string | null;
   weekly_off_days: number[];
+  uses_default_weekly_off: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +44,7 @@ export interface ScoreboardEntry {
   employee_id: string;
   employee_code: string;
   name: string;
+  designation?: string | null;
   profile_photo_path: string | null;
   total_days_present: number;
   half_days: number;
@@ -72,6 +77,7 @@ export type SiteType = "office" | "project";
 export type CheckInStatus  = "early" | "on_time" | "late" | "half_day";
 export type CheckOutStatus = "early" | "on_time" | "overtime";
 export type DayStatus      = "present" | "half_day" | "absent";
+export type SpecialDayStatus = "weekly_off_worked" | "holiday_worked";
 export type LeaveType      = "full" | "half";
 export type LeaveStatus    = "pending" | "approved" | "rejected";
 
@@ -137,9 +143,13 @@ export interface AttendanceRecord {
   is_half_day: boolean;
   check_out_status: CheckOutStatus | null;
 
+  special_day_status: SpecialDayStatus | null;
+
   is_admin_marked: boolean;
   admin_marked_by: string | null;
   admin_mark_reason: string | null;
+  admin_mark_status: string | null;
+  admin_approved_by: string | null;
 
   created_at: string;
   updated_at: string;

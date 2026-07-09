@@ -29,7 +29,7 @@ function syncBrandingAssets() {
   if (fs.existsSync(faviconSource)) {
     try {
       execSync("node scripts/generate-favicons.mjs", { cwd: __dirname, stdio: "pipe" });
-    } catch (err) {
+    } catch {
       console.warn("[favicons] Generation skipped — run npm run generate:favicons after npm install");
     }
   }

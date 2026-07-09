@@ -1,12 +1,18 @@
 import { pool } from "../config/db";
 import { todayDateString } from "../utils/date";
+import { getSettings } from "../modules/settings/settings.cache";
+import { normalizeAttendanceSettings } from "../utils/settingsHelpers";
+import {
+  getAutoAbsenceCutoffBounds,
+  getEffectiveClosingTimesForEmployees,
+  parseClosingTime,
+  type TimeOfDay,
+} from "../modules/attendance/attendanceRules.service";
+import { resolveWeeklyOffDays } from "../utils/weeklyOffDays";
 import * as attendanceRepo from "../modules/attendance/attendance.repository";
 import * as employeesRepo from "../modules/employees/employees.repository";
 import * as holidaysRepo from "../modules/holidays/holidays.repository";
 import { resolveHolidaysInRange } from "../modules/holidays/holidays.service";
-
-/** Daily cut-off for automatic absence marking (server local time). */
-export const AUTO_ABSENCE_CUTOFF = { hour: 17, minute: 0 } as const;
 
 const SYSTEM_JOBS_CATEGORY = "system_jobs";
 const AUTO_ABSENCE_REASON = "Auto-marked absent at end of day";
@@ -19,8 +25,51 @@ export interface AutoAbsenceRunResult {
   alreadyRan: boolean;
 }
 
+function localDateString(now: Date): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+export function isPastTimeCutoff(now: Date, cutoff: TimeOfDay, date: string): boolean {
+  if (date !== localDateString(now)) return true;
+  if (now.getHours() > cutoff.hour) return true;
+  if (now.getHours() === cutoff.hour && now.getMinutes() >= cutoff.minute) return true;
+  return false;
+}
+
+/** Latest effective closing time across active employees (legacy single-cutoff helper). */
+export async function getAutoAbsenceCutoffForDate(
+  date: string
+): Promise<{ hour: number; minute: number }> {
+  const employees = await employeesRepo.listActiveEmployeesForGrid();
+  const closingByEmployee = await getEffectiveClosingTimesForEmployees(
+    date,
+    employees.map((employee) => employee.id)
+  );
+  const { latest } = getAutoAbsenceCutoffBounds(closingByEmployee);
+  return latest;
+}
+
+/** @deprecated use getAutoAbsenceCutoffForDate */
+export function getAutoAbsenceCutoff(): { hour: number; minute: number } {
+  const closing = normalizeAttendanceSettings(getSettings().attendance).officeClosingTime;
+  return parseClosingTime(closing);
+}
+
+export async function isPastAutoAbsenceCutoffForDate(
+  date: string,
+  now: Date = new Date()
+): Promise<boolean> {
+  const employees = await employeesRepo.listActiveEmployeesForGrid();
+  const closingByEmployee = await getEffectiveClosingTimesForEmployees(
+    date,
+    employees.map((employee) => employee.id)
+  );
+  const { earliest } = getAutoAbsenceCutoffBounds(closingByEmployee);
+  return isPastTimeCutoff(now, earliest, date);
+}
+
 export function isPastAutoAbsenceCutoff(now: Date = new Date()): boolean {
-  const { hour, minute } = AUTO_ABSENCE_CUTOFF;
+  const { hour, minute } = getAutoAbsenceCutoff();
   if (now.getHours() > hour) return true;
   if (now.getHours() === hour && now.getMinutes() >= minute) return true;
   return false;
@@ -55,23 +104,29 @@ async function setAutoAbsenceLastRunDate(date: string): Promise<void> {
 /**
  * Marks active employees absent when they have no check-in for the day and are
  * not on approved leave, a company holiday, or their weekly off.
+ * Uses each employee's effective closing time (including daily overrides).
  * Idempotent per employee (existing attendance rows are left unchanged).
  */
 export async function runAutoAbsenceMarking(
-  options: { date?: string; force?: boolean } = {}
+  options: { date?: string; force?: boolean; now?: Date } = {}
 ): Promise<AutoAbsenceRunResult> {
   const date = options.date ?? todayDateString();
+  const now = options.now ?? new Date();
 
-  if (!options.force && !isPastAutoAbsenceCutoff()) {
+  const employees = await employeesRepo.listActiveEmployeesForGrid();
+  const employeeIds = employees.map((employee) => employee.id);
+  const closingByEmployee = await getEffectiveClosingTimesForEmployees(date, employeeIds);
+  const { earliest, latest } = getAutoAbsenceCutoffBounds(closingByEmployee);
+
+  if (!options.force && !isPastTimeCutoff(now, earliest, date)) {
     return { date, marked: 0, eligible: 0, skipped: 0, alreadyRan: false };
   }
 
   const lastRun = await getAutoAbsenceLastRunDate();
-  if (!options.force && lastRun === date) {
+  if (!options.force && lastRun === date && isPastTimeCutoff(now, latest, date)) {
     return { date, marked: 0, eligible: 0, skipped: 0, alreadyRan: true };
   }
 
-  const employees = await employeesRepo.listActiveEmployeesForGrid();
   const attendanceRows = await attendanceRepo.listAttendanceInRange(date, date);
   const leaveRows = await attendanceRepo.listApprovedLeavesInRange(date, date);
   const holidayRows = await holidaysRepo.listHolidaysForRange(date, date);
@@ -98,15 +153,26 @@ export async function runAutoAbsenceMarking(
       skipped += 1;
       continue;
     }
-    if ((employee.weekly_off_days ?? []).includes(weekday)) {
+    const weeklyOff = resolveWeeklyOffDays(employee);
+    if (weeklyOff.includes(weekday)) {
       skipped += 1;
       continue;
     }
+
+    const employeeCutoff = closingByEmployee.get(employee.id) ?? latest;
+    if (!options.force && !isPastTimeCutoff(now, employeeCutoff, date)) {
+      skipped += 1;
+      continue;
+    }
+
     toMark.push(employee.id);
   }
 
   const marked = await attendanceRepo.insertAutoAbsentRecords(toMark, date);
-  await setAutoAbsenceLastRunDate(date);
+
+  if (isPastTimeCutoff(now, latest, date)) {
+    await setAutoAbsenceLastRunDate(date);
+  }
 
   if (marked > 0) {
     console.log(

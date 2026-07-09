@@ -1,84 +1,68 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
-import { Button } from "@/components/ui/Button";
-import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 
 export function SettingsSection({
   title,
   description,
   children,
-  onSave,
-  saving,
-  saveLabel = "Save changes",
 }: {
   title: string;
   description?: string;
   children: ReactNode;
-  onSave?: () => void;
-  saving?: boolean;
-  saveLabel?: string;
 }) {
   return (
-    <Card>
-      <CardHeader title={title} subtitle={description} />
-      <CardBody className="flex flex-col gap-4">{children}</CardBody>
-      {onSave && (
-        <div className="border-t border-slate-100 px-5 py-4">
-          <Button onClick={onSave} isLoading={saving}>
-            {saveLabel}
-          </Button>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-export function FieldRow({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div className="grid gap-1 sm:grid-cols-[minmax(0,220px)_1fr] sm:items-start sm:gap-4">
+    <section className="space-y-4">
       <div>
-        <p className="text-sm font-medium text-slate-700">{label}</p>
-        {hint && <p className="text-xs text-slate-400">{hint}</p>}
+        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+        {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
       </div>
-      <div className="min-w-0">{children}</div>
-    </div>
+      {children}
+    </section>
   );
 }
 
 export function ToggleRow({
   label,
-  hint,
+  description,
   checked,
   onChange,
   disabled,
 }: {
   label: string;
-  hint?: string;
+  description?: string;
   checked: boolean;
-  onChange: (v: boolean) => void;
+  onChange: (checked: boolean) => void;
   disabled?: boolean;
 }) {
   return (
-    <FieldRow label={label} hint={hint}>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={clsx(
-          "relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors",
-          checked ? "bg-brand-600" : "bg-slate-300",
-          disabled && "opacity-50"
-        )}
-      >
+    <label
+      className={clsx(
+        "flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 transition-colors",
+        disabled ? "cursor-not-allowed opacity-60" : "hover:border-slate-300 hover:bg-slate-50/80"
+      )}
+    >
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-slate-900">{label}</span>
+        {description && <span className="mt-0.5 block text-xs text-slate-500">{description}</span>}
+      </span>
+      <span className="relative mt-0.5 inline-flex shrink-0">
+        <input
+          type="checkbox"
+          className="peer sr-only"
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.checked)}
+        />
         <span
+          aria-hidden
           className={clsx(
-            "pointer-events-none inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform",
-            checked ? "translate-x-5" : "translate-x-0.5"
+            "h-6 w-11 rounded-full bg-slate-200 transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand-500",
+            "peer-checked:bg-brand-600 peer-disabled:opacity-50",
+            "after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform",
+            "peer-checked:after:translate-x-5"
           )}
         />
-      </button>
-    </FieldRow>
+      </span>
+    </label>
   );
 }

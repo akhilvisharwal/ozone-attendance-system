@@ -9,12 +9,10 @@ import { getApiOrigin } from "@/api/client";
 export type { PublicSettings };
 
 interface SettingsContextValue {
-  settings: AppSettings | null;
   publicSettings: PublicSettings | null;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  saveCategory: <C extends keyof AppSettings>(category: C, value: AppSettings[C]) => Promise<AppSettings>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | undefined>(undefined);
@@ -38,7 +36,7 @@ function applyAppearance(settings: Pick<AppSettings, "appearance">) {
 function applyCompanyMeta(company: PublicSettings["company"]) {
   configureFormatting({
     timezone: company.timezone,
-    timeFormat: company.timeFormat,
+    timeFormat: "12h",
     dateFormat: company.dateFormat,
   });
   if (company.name?.trim()) {
@@ -46,39 +44,14 @@ function applyCompanyMeta(company: PublicSettings["company"]) {
   }
 }
 
-function toPublicSettings(s: AppSettings): PublicSettings {
-  return {
-    company: s.company,
-    mobile: s.mobile,
-    appearance: s.appearance,
-    leave: {
-      categories: s.leave.categories
-        .filter((cat) => cat.enabled)
-        .map((cat) => ({ name: cat.name, yearlyLimit: cat.yearlyLimit })),
-      halfDayAllowed: s.leave.halfDayAllowed,
-      approvalRequired: s.leave.approvalRequired,
-    },
-    weeklyOff: s.weeklyOff,
-    employee: s.employee,
-    attendance: {
-      allowManualOverride: s.attendance.allowManualOverride,
-      minHoursPresent: s.attendance.minHoursPresent,
-      minHoursHalfDay: s.attendance.minHoursHalfDay,
-    },
-    reports: { defaultFormat: s.reports.defaultFormat },
-  };
-}
-
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const { employee } = useAuth();
-  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [publicSettings, setPublicSettings] = useState<PublicSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!employee) {
-      setSettings(null);
       setPublicSettings(null);
       setLoading(false);
       setError(null);
@@ -88,41 +61,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      if (employee.role === "admin") {
-        const s = await settingsApi.fetchSettings();
-        setSettings(s);
-        setPublicSettings(toPublicSettings(s));
-        applyAppearance(s);
-        applyCompanyMeta(s.company);
-      } else {
-        const pub = await settingsApi.fetchPublicSettings();
-        setPublicSettings(pub);
-        applyAppearance({ appearance: pub.appearance });
-        applyCompanyMeta(pub.company);
-      }
+      const pub = await settingsApi.fetchPublicSettings();
+      setPublicSettings(pub);
+      applyAppearance({ appearance: pub.appearance });
+      applyCompanyMeta(pub.company);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load settings");
     } finally {
       setLoading(false);
     }
-  }, [employee?.role, employee?.id]);
+  }, [employee?.id]);
 
   useEffect(() => {
     refresh();
   }, [employee, refresh]);
 
-  const saveCategory = useCallback(async <C extends keyof AppSettings>(category: C, value: AppSettings[C]) => {
-    const updated = await settingsApi.updateSettingsCategory(category, value);
-    setSettings(updated);
-    setPublicSettings(toPublicSettings(updated));
-    if (category === "appearance") applyAppearance(updated);
-    if (category === "company") applyCompanyMeta(updated.company);
-    return updated;
-  }, []);
-
   const value = useMemo(
-    () => ({ settings, publicSettings, loading, error, refresh, saveCategory }),
-    [settings, publicSettings, loading, error, refresh, saveCategory]
+    () => ({ publicSettings, loading, error, refresh }),
+    [publicSettings, loading, error, refresh]
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
@@ -135,8 +91,8 @@ export function useSettings() {
 }
 
 export function usePublicSettings() {
-  const { publicSettings, loading } = useSettings();
-  return { publicSettings, loading };
+  const { publicSettings, loading, refresh } = useSettings();
+  return { publicSettings, loading, refresh };
 }
 
 export function useCompanyLogoUrl(): string | null {

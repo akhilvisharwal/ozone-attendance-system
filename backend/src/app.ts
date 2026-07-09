@@ -29,9 +29,23 @@ export function createApp() {
 
   app.disable("x-powered-by");
   app.use(helmet());
+
+  // CLIENT_URL may be a single origin or comma-separated list (e.g. prod + preview).
+  const allowedOrigins = env.clientUrl
+    .split(",")
+    .map((value) => value.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+
   app.use(
     cors({
-      origin: env.clientUrl,
+      origin(origin, callback) {
+        // Non-browser clients (health checks, curl) send no Origin.
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(null, false);
+      },
       credentials: true,
     })
   );

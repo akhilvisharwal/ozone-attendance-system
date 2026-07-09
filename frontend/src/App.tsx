@@ -79,7 +79,7 @@ function App() {
         </Route>
 
         <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
-          <Route element={<AppLayout navItems={adminNavItems} roleLabel="Administrator" showSettings />}>
+          <Route element={<AppLayout navItems={adminNavItems} roleLabel="Administrator" />}>
             <Route path="/admin" element={<AdminDashboardPage />} />
             <Route path="/admin/employees" element={<EmployeesPage />} />
             <Route path="/admin/attendance" element={<AttendanceRecordsPage />} />

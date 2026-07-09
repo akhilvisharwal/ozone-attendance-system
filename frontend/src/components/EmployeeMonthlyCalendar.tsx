@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/Button";
-import * as attendanceApi from "@/api/attendance";
+import { MonthPicker } from "@/components/ui/MonthPicker";
 import type { MonthlyCellStatus, MonthlyGrid } from "@/types";
-import { formatMinutesAsHours } from "@/utils/format";
+import { formatMinutesAsHours, todayIso } from "@/utils/format";
+import { shiftMonthString } from "@/utils/employeeAttendanceStats";
 
 const STATUS_META: Record<MonthlyCellStatus, { label: string; cell: string; code: string }> = {
   present: { label: "Present", cell: "bg-emerald-500 text-white", code: "P" },
@@ -15,51 +15,44 @@ const STATUS_META: Record<MonthlyCellStatus, { label: string; cell: string; code
   leave: { label: "Leave", cell: "bg-sky-500 text-white", code: "L" },
   weekly_off: { label: "Weekly Off", cell: "bg-slate-200 text-slate-500", code: "WO" },
   holiday: { label: "Holiday", cell: "bg-violet-500 text-white", code: "HO" },
-  holiday_worked: { label: "Holiday Worked", cell: "bg-teal-600 text-white", code: "HW" },
+  holiday_worked: { label: "Worked on Holiday", cell: "bg-teal-600 text-white", code: "HW" },
+  weekly_off_worked: { label: "Worked on Weekly Off", cell: "bg-indigo-600 text-white", code: "WW" },
   none: { label: "—", cell: "bg-slate-50 text-slate-300", code: "" },
 };
 
-function currentMonthString() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+interface EmployeeMonthlyCalendarProps {
+  month: string;
+  onMonthChange: (month: string) => void;
+  grid: MonthlyGrid | null;
+  loading?: boolean;
 }
 
-function shiftMonth(month: string, delta: number) {
-  const [y, m] = month.split("-").map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-/** Compact monthly attendance calendar for employees. */
-export function EmployeeMonthlyCalendar({ compact }: { compact?: boolean }) {
-  const [month, setMonth] = useState(currentMonthString());
-  const [grid, setGrid] = useState<MonthlyGrid | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    attendanceApi.getMyMonthly({ month }).then(setGrid).finally(() => setLoading(false));
-  }, [month]);
-
+/** Monthly attendance calendar for employees (presentational). */
+export function EmployeeMonthlyCalendar({
+  month,
+  onMonthChange,
+  grid,
+  loading,
+}: EmployeeMonthlyCalendarProps) {
   const row = grid?.employees[0];
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader
-        title="My Attendance Calendar"
+        title="Attendance Calendar"
         subtitle={grid?.label}
         action={
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
+            <Button variant="outline" size="sm" onClick={() => onMonthChange(shiftMonthString(month, -1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <input
-              type="month"
+            <MonthPicker
               value={month}
-              onChange={(e) => setMonth(e.target.value || currentMonthString())}
-              className="rounded-lg border border-slate-300 px-2 py-1 text-sm"
+              onChange={onMonthChange}
+              emphasis
+              className="w-[11rem]"
             />
-            <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, 1))}>
+            <Button variant="outline" size="sm" onClick={() => onMonthChange(shiftMonthString(month, 1))}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -67,7 +60,7 @@ export function EmployeeMonthlyCalendar({ compact }: { compact?: boolean }) {
       />
       <CardBody>
         {loading ? (
-          <Spinner />
+          <Spinner label="Loading calendar…" />
         ) : !row ? (
           <p className="text-sm text-slate-500">No calendar data for this month.</p>
         ) : (
@@ -80,7 +73,9 @@ export function EmployeeMonthlyCalendar({ compact }: { compact?: boolean }) {
             )}
             <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                <div key={d} className="text-center text-[10px] font-semibold uppercase text-slate-400">{d}</div>
+                <div key={d} className="text-center text-[10px] font-semibold uppercase text-slate-400">
+                  {d}
+                </div>
               ))}
               {Array.from({ length: new Date(grid!.year, grid!.month - 1, 1).getDay() }).map((_, i) => (
                 <div key={`pad-${i}`} />
@@ -88,11 +83,15 @@ export function EmployeeMonthlyCalendar({ compact }: { compact?: boolean }) {
               {row.days.map((cell) => {
                 const meta = STATUS_META[cell.status];
                 const holiday = grid!.holidays.find((h) => h.date === cell.date);
+                const isToday = cell.date === todayIso();
                 const title = [
                   cell.date,
+                  isToday && cell.status === "none" ? "Today — pending check-in" : null,
                   holiday ? `Holiday: ${holiday.name}` : meta.label,
                   cell.totalMinutes ? formatMinutesAsHours(cell.totalMinutes) : null,
-                ].filter(Boolean).join(" • ");
+                ]
+                  .filter(Boolean)
+                  .join(" • ");
                 return (
                   <div
                     key={cell.day}
@@ -100,26 +99,51 @@ export function EmployeeMonthlyCalendar({ compact }: { compact?: boolean }) {
                     className={clsx(
                       "flex aspect-square flex-col items-center justify-center rounded-md text-[10px] font-semibold sm:text-xs",
                       meta.cell,
-                      holiday && cell.status === "holiday" && "ring-2 ring-violet-300"
+                      holiday && cell.status === "holiday" && "ring-2 ring-violet-300",
+                      isToday && cell.status === "none" && "ring-2 ring-brand-300 ring-offset-1"
                     )}
                   >
                     <span className="text-[9px] opacity-80">{cell.day}</span>
-                    <span>{meta.code}</span>
+                    <span>{isToday && cell.status === "none" ? "·" : meta.code}</span>
                   </div>
                 );
               })}
             </div>
-            {!compact && (
-              <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-4">
-                <div>Present: <strong>{row.summary.present}</strong></div>
-                <div>Absent: <strong>{row.summary.absent}</strong></div>
-                <div>Holidays: <strong>{row.summary.holidays}</strong></div>
-                <div>Hol. Worked: <strong>{row.summary.holidayWorked}</strong></div>
-              </div>
-            )}
+            <CalendarLegend />
           </>
         )}
       </CardBody>
     </Card>
+  );
+}
+
+function CalendarLegend() {
+  const items: MonthlyCellStatus[] = [
+    "present",
+    "half_day",
+    "absent",
+    "leave",
+    "weekly_off",
+    "holiday",
+    "holiday_worked",
+    "weekly_off_worked",
+  ];
+
+  return (
+    <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 border-t border-slate-100 pt-3">
+      {items.map((status) => (
+        <div key={status} className="flex items-center gap-1.5 text-[10px] text-slate-500">
+          <span
+            className={clsx(
+              "inline-flex h-4 w-4 items-center justify-center rounded text-[8px] font-bold",
+              STATUS_META[status].cell
+            )}
+          >
+            {STATUS_META[status].code}
+          </span>
+          {STATUS_META[status].label}
+        </div>
+      ))}
+    </div>
   );
 }

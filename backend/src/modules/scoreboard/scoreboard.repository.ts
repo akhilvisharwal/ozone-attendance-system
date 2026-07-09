@@ -1,5 +1,6 @@
 import { pool } from "../../config/db";
 import { ScoreboardEntry } from "../../types";
+import { buildAttendanceGridForRange } from "../attendance/attendance.monthly";
 
 /**
  * Scoring (attendance + tasks only):
@@ -41,65 +42,80 @@ export function calculateScore(input: {
 }
 
 export async function getScoreboard(filters: { from: string; to: string }): Promise<ScoreboardEntry[]> {
-  const result = await pool.query<ScoreboardEntry>(
-    `WITH
-      attendance_stats AS (
-        SELECT
-          a.employee_id,
-          COUNT(*) FILTER (WHERE a.day_status = 'present') AS days_present,
-          COUNT(*) FILTER (WHERE a.day_status = 'half_day') AS days_half,
-          COUNT(*) FILTER (WHERE a.day_status = 'absent' OR a.status = 'absent') AS days_absent,
-          COUNT(*) FILTER (WHERE a.check_in_status = 'late') AS late_arrivals
-        FROM attendance a
-        WHERE a.attendance_date BETWEEN $1 AND $2
-        GROUP BY a.employee_id
-      ),
-      leave_stats AS (
-        SELECT
-          lr.employee_id,
-          COUNT(*) FILTER (WHERE lr.status = 'approved') AS leave_days
-        FROM leave_requests lr
-        WHERE lr.leave_date BETWEEN $1 AND $2
-        GROUP BY lr.employee_id
-      ),
-      task_stats AS (
-        SELECT
-          t.employee_id,
-          COUNT(*) AS total_tasks,
-          COUNT(*) FILTER (WHERE t.status = 'completed') AS completed_tasks
-        FROM tasks t
-        WHERE COALESCE(t.start_date, t.attendance_date, t.created_at::date) BETWEEN $1 AND $2
-        GROUP BY t.employee_id
-      )
-    SELECT
-      e.id                                                        AS employee_id,
-      e.employee_code,
-      e.name,
-      e.profile_photo_path,
-      COALESCE(ast.days_present, 0)::int                          AS total_days_present,
-      COALESCE(ast.days_half, 0)::int                             AS half_days,
-      COALESCE(ast.days_absent, 0)::int                           AS absent_days,
-      COALESCE(ast.late_arrivals, 0)::int                         AS late_arrivals,
-      COALESCE(ls.leave_days, 0)::int                             AS leave_days,
-      COALESCE(ts.total_tasks, 0)::int                            AS total_tasks,
-      COALESCE(ts.completed_tasks, 0)::int                        AS completed_tasks,
-      GREATEST(0, (
-        COALESCE(ast.days_present, 0) * ${SCORE_WEIGHTS.present}
-        + COALESCE(ast.days_half, 0) * ${SCORE_WEIGHTS.halfDay}
-        + COALESCE(ls.leave_days, 0) * ${SCORE_WEIGHTS.leave}
-        + COALESCE(ts.completed_tasks, 0) * ${SCORE_WEIGHTS.taskCompleted}
-        + COALESCE(ast.late_arrivals, 0) * ${SCORE_WEIGHTS.lateArrival}
-        + COALESCE(ast.days_absent, 0) * ${SCORE_WEIGHTS.absent}
-      ))::int                                                      AS score
-    FROM employees e
-    LEFT JOIN attendance_stats ast ON ast.employee_id = e.id
-    LEFT JOIN leave_stats ls ON ls.employee_id = e.id
-    LEFT JOIN task_stats ts ON ts.employee_id = e.id
-    WHERE e.role = 'employee' AND e.is_active = true AND e.deleted_at IS NULL
-    ORDER BY score DESC, e.name ASC`,
-    [filters.from, filters.to]
+  const [grid, taskResult, photoResult] = await Promise.all([
+    buildAttendanceGridForRange({ from: filters.from, to: filters.to }),
+    pool.query<{
+      employee_id: string;
+      total_tasks: string;
+      completed_tasks: string;
+    }>(
+      `SELECT
+         t.employee_id,
+         COUNT(*) AS total_tasks,
+         COUNT(*) FILTER (WHERE t.status = 'completed') AS completed_tasks
+       FROM tasks t
+       JOIN employees e ON e.id = t.employee_id
+      WHERE e.role = 'employee'
+        AND e.is_active = true
+        AND e.deleted_at IS NULL
+        AND COALESCE(t.start_date, t.attendance_date, t.created_at::date) BETWEEN $1 AND $2
+       GROUP BY t.employee_id`,
+      [filters.from, filters.to]
+    ),
+    pool.query<{ id: string; profile_photo_path: string | null }>(
+      `SELECT id, profile_photo_path
+         FROM employees
+        WHERE role = 'employee'
+          AND is_active = true
+          AND deleted_at IS NULL`
+    ),
+  ]);
+
+  const photoByEmployee = new Map(
+    photoResult.rows.map((row) => [row.id, row.profile_photo_path])
   );
-  return result.rows;
+
+  const taskByEmployee = new Map(
+    taskResult.rows.map((row) => [
+      row.employee_id,
+      {
+        totalTasks: parseInt(row.total_tasks, 10),
+        completedTasks: parseInt(row.completed_tasks, 10),
+      },
+    ])
+  );
+
+  const entries: ScoreboardEntry[] = grid.employees.map((row) => {
+    const summary = row.summary;
+    const tasks = taskByEmployee.get(row.employeeId) ?? { totalTasks: 0, completedTasks: 0 };
+    const daysPresent =
+      summary.present + summary.holidayWorked + summary.weeklyOffWorked;
+
+    return {
+      employee_id: row.employeeId,
+      employee_code: row.employeeCode,
+      name: row.name,
+      designation: row.designation ?? null,
+      profile_photo_path: photoByEmployee.get(row.employeeId) ?? null,
+      total_days_present: daysPresent,
+      half_days: summary.halfDay,
+      absent_days: summary.absent,
+      late_arrivals: summary.lateCheckIns,
+      leave_days: summary.leave,
+      total_tasks: tasks.totalTasks,
+      completed_tasks: tasks.completedTasks,
+      score: calculateScore({
+        daysPresent,
+        halfDays: summary.halfDay,
+        absentDays: summary.absent,
+        lateArrivals: summary.lateCheckIns,
+        leaveDays: summary.leave,
+        completedTasks: tasks.completedTasks,
+      }),
+    };
+  });
+
+  return entries.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }
 
 export function scoreLegendText(): string {

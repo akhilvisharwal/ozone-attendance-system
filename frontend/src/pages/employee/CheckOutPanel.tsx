@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { Building2, ImagePlus, LogOut, MapPin, X, ArrowLeft } from "lucide-react";
+import { Building2, ImagePlus, LogOut, SwitchCamera, X, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
@@ -9,8 +9,24 @@ import type { AttendanceRecord, WorkStatus } from "@/types";
 import * as attendanceApi from "@/api/attendance";
 import { extractErrorMessage } from "@/api/client";
 import { usePublicSettings } from "@/contexts/SettingsContext";
+import { useCamera } from "@/hooks/useCamera";
 import { getCurrentPosition } from "@/hooks/useGeolocation";
 import type { Coordinates } from "@/hooks/useGeolocation";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import {
+  desktopCheckInBlocked,
+  offlineCheckInBlocked,
+  OFFLINE_BLOCKED_MESSAGE,
+} from "@/utils/attendanceCapture";
+import { blobToBase64, queuePendingAttendance } from "@/utils/offlineAttendanceQueue";
+import {
+  GPS_REQUIRED_MESSAGE,
+  GPS_WEAK_MESSAGE,
+  LocationCaptureStatus,
+} from "@/components/LocationCaptureStatus";
+import { withTimeout } from "@/utils/async";
+
+const CAMERA_CAPTURE_TIMEOUT_MS = 10_000;
 
 const WORK_STATUS_OPTIONS: { value: WorkStatus; label: string }[] = [
   { value: "completed", label: "Completed" },
@@ -30,7 +46,18 @@ export function CheckOutPanel({
   onCancel?: () => void;
 }) {
   const { publicSettings } = usePublicSettings();
-  const gpsThreshold = publicSettings?.mobile.gpsAccuracyThresholdMeters ?? 100;
+  const mobile = publicSettings?.mobile;
+  const gpsRequired = mobile?.gpsRequiredCheckOut ?? true;
+  const selfieRequired = mobile?.selfieRequiredCheckOut ?? false;
+  const allowCameraSwitch = mobile?.allowCameraSwitch ?? true;
+  const gpsThreshold = mobile?.gpsAccuracyThresholdMeters ?? 100;
+  const online = useOnlineStatus();
+  const desktopBlocked = desktopCheckInBlocked(mobile);
+
+  const camera = useCamera();
+  const selfieBlobRef = useRef<Blob | null>(null);
+  const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
+  const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
 
   const [workSummary, setWorkSummary] = useState(attendance.work_summary ?? "");
   const [workStatus, setWorkStatus] = useState<WorkStatus>((attendance.work_status as WorkStatus) ?? "completed");
@@ -39,30 +66,37 @@ export function CheckOutPanel({
   const [previews, setPreviews] = useState<string[]>([]);
   const [location, setLocation] = useState<Coordinates | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [locating, setLocating] = useState(true);
+  const [locating, setLocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const fetchLocation = useCallback(async () => {
+    if (!gpsRequired) return;
     setLocating(true);
-    getCurrentPosition()
-      .then((coords) => {
-        if (!cancelled) {
-          setLocation(coords);
-          setLocationError(null);
-        }
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setLocationError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLocating(false);
+    setLocationError(null);
+    setLocation(null);
+    try {
+      const coords = await getCurrentPosition();
+      setLocation(coords);
+    } catch (err) {
+      setLocationError((err as Error).message || GPS_REQUIRED_MESSAGE);
+    } finally {
+      setLocating(false);
+    }
+  }, [gpsRequired]);
+
+  useEffect(() => {
+    if (selfieRequired) {
+      void camera.start("user").catch((err) => {
+        console.error("[CheckOutPanel] camera start failed:", err);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    }
+    if (gpsRequired) {
+      void fetchLocation();
+    }
+    return () => camera.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selfieRequired, gpsRequired, fetchLocation]);
 
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []).slice(0, 5 - photos.length);
@@ -77,17 +111,29 @@ export function CheckOutPanel({
     setPreviews((prev) => prev.filter((_, i) => i !== index));
   }
 
-  async function retryLocation() {
-    setLocationError(null);
-    setLocation(null);
-    setLocating(true);
-    try {
-      setLocation(await getCurrentPosition());
-    } catch (err) {
-      setLocationError((err as Error).message);
-    } finally {
-      setLocating(false);
+  const readyToSubmit = useMemo(() => {
+    if (desktopBlocked) return false;
+    if (gpsRequired && (!location || locating || location.accuracy > gpsThreshold)) return false;
+    if (selfieRequired && !capturedBlob && !camera.isActive) return false;
+    return true;
+  }, [camera.isActive, capturedBlob, desktopBlocked, gpsRequired, gpsThreshold, locating, location, selfieRequired]);
+
+  async function captureSelfieIfNeeded(): Promise<Blob | null> {
+    if (!selfieRequired) return null;
+    if (capturedBlob) return capturedBlob;
+    if (!camera.isActive) {
+      throw new Error("Camera is not ready. Please allow camera access.");
     }
+    const blob = await withTimeout(
+      camera.capture(),
+      CAMERA_CAPTURE_TIMEOUT_MS,
+      "Selfie capture timed out. Please try again."
+    );
+    selfieBlobRef.current = blob;
+    setCapturedBlob(blob);
+    setCapturedPreview(URL.createObjectURL(blob));
+    camera.stop();
+    return blob;
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -98,40 +144,60 @@ export function CheckOutPanel({
       setError("Please select a work status.");
       return;
     }
+    if (desktopBlocked) {
+      setError("Attendance capture from desktop or web browsers is disabled. Please use a mobile device.");
+      return;
+    }
+    if (offlineCheckInBlocked(mobile, online)) {
+      setError(OFFLINE_BLOCKED_MESSAGE);
+      return;
+    }
 
     setSubmitting(true);
     try {
-      let position: Coordinates;
-      try {
-        position = await getCurrentPosition();
-        setLocation(position);
-        setLocationError(null);
-      } catch (err) {
-        const message =
-          (err as Error).message ||
-          "Unable to capture your location. Please enable location services and try again.";
-        setLocationError(message);
-        setError(message);
-        setSubmitting(false);
-        return;
+      const selfie = await captureSelfieIfNeeded();
+      const position = gpsRequired ? location ?? (await getCurrentPosition()) : null;
+
+      if (gpsRequired) {
+        if (!position) {
+          setError(locationError ?? GPS_REQUIRED_MESSAGE);
+          return;
+        }
+        if (position.accuracy > gpsThreshold) {
+          setError(GPS_WEAK_MESSAGE);
+          return;
+        }
       }
 
-      if (position.accuracy > gpsThreshold) {
-        const accuracyError = `GPS accuracy (${Math.round(position.accuracy)}m) is too low. Required: within ${gpsThreshold}m.`;
-        setError(accuracyError);
-        setSubmitting(false);
-        return;
-      }
-
-      await attendanceApi.checkOut({
+      const payload = {
         workSummary: workSummary.trim() || undefined,
         workStatus,
         remarks: remarks || undefined,
         sitePhotos: photos,
-        latitude: position.latitude,
-        longitude: position.longitude,
-        accuracy: position.accuracy,
-      });
+        latitude: position?.latitude ?? null,
+        longitude: position?.longitude ?? null,
+        accuracy: position?.accuracy,
+        selfie,
+        deviceInfo: navigator.userAgent,
+      };
+
+      if (!online && mobile?.allowOfflineMode) {
+        queuePendingAttendance({
+          type: "check-out",
+          createdAt: new Date().toISOString(),
+          workSummary: payload.workSummary,
+          workStatus: payload.workStatus,
+          remarks: payload.remarks,
+          latitude: payload.latitude,
+          longitude: payload.longitude,
+          accuracy: payload.accuracy,
+          selfieBase64: selfie ? await blobToBase64(selfie) : null,
+        });
+        onCheckedOut();
+        return;
+      }
+
+      await attendanceApi.checkOut(payload);
       onCheckedOut();
     } catch (err) {
       setError(extractErrorMessage(err, "Check-out failed. Please review the form and try again."));
@@ -140,11 +206,13 @@ export function CheckOutPanel({
     }
   }
 
+  const mirror = camera.facingMode === "user";
+
   return (
     <Card>
       <CardHeader
         title="Check Out"
-        subtitle="Confirm your location and complete your daily work report"
+        subtitle="Complete your daily work report and confirm check-out"
         action={
           onCancel ? (
             <Button type="button" variant="ghost" size="sm" icon={<ArrowLeft className="h-4 w-4" />} onClick={onCancel}>
@@ -156,6 +224,16 @@ export function CheckOutPanel({
       <CardBody>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {error && <Alert variant="error">{error}</Alert>}
+          {desktopBlocked && (
+            <Alert variant="error">
+              Attendance capture from desktop or web browsers is disabled. Please use a mobile device.
+            </Alert>
+          )}
+          {!online && mobile?.allowOfflineMode && (
+            <Alert variant="info">
+              You are offline. Check-out will be saved locally and synced when you reconnect.
+            </Alert>
+          )}
 
           <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-3">
             <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white text-slate-500 ring-1 ring-slate-200">
@@ -169,35 +247,41 @@ export function CheckOutPanel({
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-            <p className="text-sm font-medium text-slate-900">Check-out Location</p>
-            <p className="mt-1 text-xs text-slate-500">
-              Your current GPS location is required when you confirm check-out.
-            </p>
-            <div className="mt-3 flex items-center gap-2 text-sm">
-              {location ? (
-                <span className="flex items-center gap-1.5 text-emerald-600">
-                  <MapPin className="h-4 w-4" />
-                  Location ready ({Math.round(location.accuracy)}m accuracy)
-                </span>
-              ) : locationError ? (
-                <span className="flex flex-wrap items-center gap-2 text-red-600">
-                  <span className="flex items-center gap-1.5">
-                    <MapPin className="h-4 w-4" />
-                    {locationError}
-                  </span>
-                  <button type="button" onClick={retryLocation} className="font-medium underline">
-                    Retry
-                  </button>
-                </span>
+          {selfieRequired && (
+            <div className="relative mx-auto aspect-[4/5] w-full max-w-[240px] overflow-hidden rounded-2xl bg-slate-900 shadow-lg ring-1 ring-slate-900/10">
+              {!capturedPreview ? (
+                <video
+                  ref={camera.videoRef}
+                  muted
+                  playsInline
+                  className={`h-full w-full object-cover ${mirror ? "scale-x-[-1]" : ""}`}
+                />
               ) : (
-                <span className="flex items-center gap-1.5 text-slate-400">
-                  <MapPin className={`h-4 w-4 ${locating ? "animate-pulse" : ""}`} />
-                  {locating ? "Fetching your location..." : "Waiting for location..."}
-                </span>
+                <img src={capturedPreview} alt="Captured selfie" className="h-full w-full object-cover" />
+              )}
+              {!capturedPreview && allowCameraSwitch && (
+                <button
+                  type="button"
+                  onClick={() => void camera.switchCamera()}
+                  disabled={!camera.isActive || submitting}
+                  className="absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/70 disabled:opacity-40"
+                  aria-label="Switch camera"
+                >
+                  <SwitchCamera className="h-4 w-4" />
+                </button>
               )}
             </div>
-          </div>
+          )}
+
+          {gpsRequired && (
+            <LocationCaptureStatus
+              loading={locating}
+              captured={Boolean(location)}
+              error={locationError}
+              onRetry={() => void fetchLocation()}
+              successLabel="✓ Location captured"
+            />
+          )}
 
           <Textarea
             label="Work Summary"
@@ -254,7 +338,13 @@ export function CheckOutPanel({
             </div>
           </div>
 
-          <Button type="submit" isLoading={submitting} icon={<LogOut className="h-4 w-4" />} className="mt-2">
+          <Button
+            type="submit"
+            isLoading={submitting}
+            disabled={(!readyToSubmit && !(mobile?.allowOfflineMode && !online)) || submitting}
+            icon={<LogOut className="h-4 w-4" />}
+            className="mt-2"
+          >
             Confirm Check Out
           </Button>
         </form>

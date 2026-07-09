@@ -1,11 +1,16 @@
 import type {
+  ChangeEvent,
   InputHTMLAttributes,
   LabelHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
+import { useMemo } from "react";
 import clsx from "clsx";
+import { Combobox, optionsFromSelectChildren } from "./Combobox";
+import { DatePicker } from "./DatePicker";
+import { MonthPicker } from "./MonthPicker";
 
 interface FieldWrapperProps {
   label?: string;
@@ -38,7 +43,53 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   hint?: string;
 }
 
-export function Input({ label, error, hint, required, className, ...props }: InputProps) {
+export function Input({ label, error, hint, required, className, type, value, onChange, ...props }: InputProps) {
+  if (type === "date") {
+    return (
+      <DatePicker
+        label={label}
+        error={error}
+        hint={hint}
+        required={required}
+        className={className}
+        value={value === undefined || value === null ? "" : String(value)}
+        onChange={(nextValue) => {
+          if (onChange) {
+            onChange({ target: { value: nextValue } } as ChangeEvent<HTMLInputElement>);
+          }
+        }}
+        min={props.min !== undefined ? String(props.min) : undefined}
+        max={props.max !== undefined ? String(props.max) : undefined}
+        disabled={props.disabled}
+        id={props.id}
+        name={props.name}
+        placeholder={props.placeholder}
+      />
+    );
+  }
+
+  if (type === "month") {
+    return (
+      <MonthPicker
+        label={label}
+        error={error}
+        hint={hint}
+        required={required}
+        className={className}
+        value={value === undefined || value === null ? "" : String(value)}
+        onChange={(nextValue) => {
+          if (onChange) {
+            onChange({ target: { value: nextValue } } as ChangeEvent<HTMLInputElement>);
+          }
+        }}
+        disabled={props.disabled}
+        id={props.id}
+        name={props.name}
+        placeholder={props.placeholder}
+      />
+    );
+  }
+
   return (
     <FieldWrapper label={label} error={error} hint={hint} required={required}>
       <input
@@ -49,6 +100,9 @@ export function Input({ label, error, hint, required, className, ...props }: Inp
           className
         )}
         required={required}
+        type={type}
+        value={value}
+        onChange={onChange}
         {...props}
       />
     </FieldWrapper>
@@ -62,24 +116,46 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   children: ReactNode;
 }
 
-export function Select({ label, error, hint, required, className, children, ...props }: SelectProps) {
+export function Select({
+  label,
+  error,
+  hint,
+  required,
+  className,
+  children,
+  value,
+  onChange,
+  disabled,
+  id,
+  name,
+}: SelectProps) {
+  const options = useMemo(() => optionsFromSelectChildren(children), [children]);
+  const stringValue = value === undefined || value === null ? "" : String(value);
+
   return (
-    <FieldWrapper label={label} error={error} hint={hint} required={required}>
-      <select
-        className={clsx(
-          "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm",
-          "focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100",
-          error && "border-red-400",
-          className
-        )}
-        required={required}
-        {...props}
-      >
-        {children}
-      </select>
-    </FieldWrapper>
+    <Combobox
+      label={label}
+      error={error}
+      hint={hint}
+      required={required}
+      className={className}
+      options={options}
+      value={stringValue}
+      disabled={disabled}
+      id={id}
+      name={name}
+      onChange={(nextValue) => {
+        if (onChange) {
+          onChange({ target: { value: nextValue } } as ChangeEvent<HTMLSelectElement>);
+        }
+      }}
+    />
   );
 }
+
+export { Combobox, type ComboboxOption } from "./Combobox";
+export { DatePicker } from "./DatePicker";
+export { MonthPicker } from "./MonthPicker";
 
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;

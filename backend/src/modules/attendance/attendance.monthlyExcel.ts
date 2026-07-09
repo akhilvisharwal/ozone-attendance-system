@@ -1,8 +1,9 @@
 import ExcelJS from "exceljs";
 import fs from "fs";
-import { getCompanyName, getDocumentCreator, SYSTEM_NAME } from "../../config/branding";
+import { formatCompanyContactLine, getCompanyName, getDocumentCreator, SYSTEM_NAME } from "../../config/branding";
 import { formatMinutesAsHours } from "../../utils/date";
 import { resolveCompanyLogoPath } from "../../utils/pdfBranding";
+import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
 
@@ -25,6 +26,7 @@ const STATUS_STYLES: Record<MonthlyCellStatus, StatusStyle> = {
   weekly_off: { code: "WO", bg: "FFE2E8F0", fg: "FF475569" },
   holiday: { code: "HO", bg: "FFA855F7", fg: "FFFFFFFF" },
   holiday_worked: { code: "HW", bg: "FF0D9488", fg: "FFFFFFFF" },
+  weekly_off_worked: { code: "WW", bg: "FF4F46E5", fg: "FFFFFFFF" },
   none: { code: "", bg: "FFF8FAFC", fg: "FFCBD5E1" },
 };
 
@@ -35,15 +37,16 @@ const LEGEND_ITEMS: { code: string; label: string; bg: string; fg: string }[] = 
   { code: "L", label: "Leave", bg: "FF0EA5E9", fg: "FFFFFFFF" },
   { code: "WO", label: "Weekly Off", bg: "FFE2E8F0", fg: "FF475569" },
   { code: "HO", label: "Holiday", bg: "FFA855F7", fg: "FFFFFFFF" },
-  { code: "HW", label: "Holiday Worked", bg: "FF0D9488", fg: "FFFFFFFF" },
+  { code: "HW", label: "Worked on Holiday", bg: "FF0D9488", fg: "FFFFFFFF" },
+  { code: "WW", label: "Worked on Weekly Off", bg: "FF4F46E5", fg: "FFFFFFFF" },
 ];
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
 const INFO_COL_COUNT = 4;
-const SUMMARY_COL_COUNT = 10;
-const SUMMARY_KEYS = ["P", "H", "A", "L", "WO", "HO", "HW", "WD", "Hrs", "Att%"] as const;
-const INFO_HEADERS = ["#", "Name", "ID", "Dept"] as const;
+const SUMMARY_COL_COUNT = 11;
+const SUMMARY_KEYS = ["P", "H", "A", "L", "WO", "HO", "HW", "WW", "WD", "Hrs", "Att%"] as const;
+const INFO_HEADERS = ["#", "Name", "ID", "Role"] as const;
 
 const COLORS = {
   headerDark: "FF1E293B",
@@ -98,16 +101,7 @@ function styleCell(
 }
 
 function formatGeneratedAt(date: Date): string {
-  try {
-    const tz = getSettings().company.timezone;
-    return date.toLocaleString("en-IN", {
-      timeZone: tz,
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
-  }
+  return formatDisplayDateTime(date);
 }
 
 /** Builds an HRMS-style monthly attendance register Excel workbook mirroring the PDF layout. */
@@ -298,7 +292,7 @@ export async function buildMonthlyCalendarExcel(
     const col = dayStart + d - 1;
     const dateStrDay = `${grid.year}-${String(grid.month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const wd = new Date(grid.year, grid.month - 1, d).getDay();
-    const weekend = wd === 0 || wd === 6;
+    const weeklyOffColumn = grid.defaultWeeklyOffDays.includes(wd);
     const holiday = grid.holidays.find((h) => h.date === dateStrDay);
     const cell = sheet.getCell(headerRow2, col);
     cell.value = holiday ? `${d}\n${holiday.name.slice(0, 6)}` : `${d}\n${WEEKDAY_LETTERS[wd]}`;
@@ -306,7 +300,7 @@ export async function buildMonthlyCalendarExcel(
       bold: true,
       size: 7,
       fg: holiday ? COLORS.holidayText : COLORS.headerMid,
-      bg: holiday ? COLORS.headerHoliday : weekend ? COLORS.headerWeekend : COLORS.headerLight,
+      bg: holiday ? COLORS.headerHoliday : weeklyOffColumn ? COLORS.headerWeekend : COLORS.headerLight,
       align: { horizontal: "center", vertical: "middle", wrapText: true },
       border: true,
     });
@@ -366,7 +360,7 @@ export async function buildMonthlyCalendarExcel(
         border: true,
       });
       styleCell(row.getCell(4), {
-        value: emp.department ?? "-",
+        value: emp.designation ?? emp.department ?? "-",
         size: 8,
         align: { horizontal: "center", vertical: "middle" },
         bg: rowBg,
@@ -396,6 +390,7 @@ export async function buildMonthlyCalendarExcel(
         s.weeklyOff,
         s.holidays,
         s.holidayWorked,
+        s.weeklyOffWorked,
         s.workingDays,
         formatMinutesAsHours(s.totalMinutes).replace(" ", ""),
         `${s.attendancePercentage}%`,
@@ -424,6 +419,8 @@ export async function buildMonthlyCalendarExcel(
     "Monthly Attendance Register",
     grid.label,
   ];
+  const contactLine = formatCompanyContactLine();
+  if (contactLine) footerParts.push(contactLine);
   if (reports.signatureText?.trim()) {
     footerParts.push(reports.signatureText.trim());
   }

@@ -11,9 +11,9 @@ import * as scoreboardApi from "@/api/scoreboard";
 import type { ScoreboardEntry } from "@/types";
 
 const RANK_ICONS = [
-  <Trophy className="h-5 w-5 text-yellow-500" />,
-  <Medal className="h-5 w-5 text-slate-400" />,
-  <Medal className="h-5 w-5 text-amber-700" />,
+  <Trophy key="rank-1" className="h-5 w-5 text-yellow-500" />,
+  <Medal key="rank-2" className="h-5 w-5 text-slate-400" />,
+  <Medal key="rank-3" className="h-5 w-5 text-amber-700" />,
 ];
 
 type RankedEntry = ScoreboardEntry & { rank: number };
@@ -70,6 +70,7 @@ export function ScoreboardPage() {
             <p className="font-medium text-slate-900">{entry.name}</p>
             <p className="text-xs text-slate-400">
               {entry.employee_code} · Rank #{entry.rank}
+              {entry.designation ? ` · ${entry.designation}` : ""}
             </p>
           </div>
         </div>
@@ -164,6 +165,7 @@ function PodiumCard({ entry, rank }: { entry: ScoreboardEntry; rank: number }) {
       <div className="mt-1">{RANK_ICONS[rank - 1]}</div>
       <p className="mt-1 text-xs font-semibold text-slate-900">{entry.name}</p>
       <p className="text-xs text-slate-400">{entry.employee_code}</p>
+      {entry.designation && <p className="text-[10px] text-slate-500">{entry.designation}</p>}
       <span className="mt-1 inline-flex items-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-700">
         {entry.score} pts
       </span>

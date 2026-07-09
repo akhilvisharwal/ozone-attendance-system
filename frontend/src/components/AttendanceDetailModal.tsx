@@ -1,19 +1,29 @@
 import { MapPin } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { SecureImage } from "@/components/SecureImage";
-import { WorkStatusBadge, AttendanceStatusBadge, DayStatusBadge } from "@/components/ui/Badge";
-import type { AttendanceRecord } from "@/types";
+import { GoogleMapPreview } from "@/components/GoogleMapPreview";
+import { WorkStatusBadge, AttendanceStatusBadge, AttendanceDayBadge } from "@/components/ui/Badge";
+import type { AttendanceRecord, ManualAttendanceStatus } from "@/types";
 import { formatDate, formatDateTime, formatMinutesAsHours, formatTime } from "@/utils/format";
-
-function osmEmbedUrl(lat: number, lng: number): string {
-  const delta = 0.004;
-  const bbox = [lng - delta, lat - delta, lng + delta, lat + delta].join(",");
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&marker=${lat},${lng}&layer=mapnik`;
-}
 
 interface DetailAttendance extends AttendanceRecord {
   employee_code?: string;
   employee_name?: string;
+  employee_designation?: string | null;
+  admin_marked_by_name?: string | null;
+  admin_approved_by_name?: string | null;
+}
+
+function manualStatusLabel(status: ManualAttendanceStatus): string {
+  const labels: Record<ManualAttendanceStatus, string> = {
+    present: "Present",
+    half_day: "Half Day",
+    absent: "Absent",
+    leave: "Leave",
+    holiday: "Holiday",
+    weekly_off: "Weekly Off",
+  };
+  return labels[status];
 }
 
 function LocationSection({
@@ -55,10 +65,10 @@ function LocationSection({
         <p className="text-sm text-slate-400">No location recorded.</p>
       )}
       {hasCoords && (
-        <iframe
-          title={`${title} map`}
-          className="h-48 w-full rounded-lg border border-slate-200"
-          src={osmEmbedUrl(latitude, longitude)}
+        <GoogleMapPreview
+          latitude={latitude}
+          longitude={longitude}
+          label={`${title} map`}
         />
       )}
     </section>
@@ -68,9 +78,11 @@ function LocationSection({
 export function AttendanceDetailModal({
   attendance,
   onClose,
+  showLocationDetails = true,
 }: {
   attendance: DetailAttendance | null;
   onClose: () => void;
+  showLocationDetails?: boolean;
 }) {
   return (
     <Modal open={!!attendance} onClose={onClose} title="Attendance Details" widthClassName="max-w-3xl">
@@ -84,10 +96,17 @@ export function AttendanceDetailModal({
                   <span className="font-normal text-slate-400">({attendance.employee_code})</span>
                 </p>
               )}
+              {attendance.employee_designation && (
+                <p className="text-sm text-slate-600">{attendance.employee_designation}</p>
+              )}
               <p className="text-sm text-slate-500">{formatDate(attendance.attendance_date)}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <DayStatusBadge status={attendance.day_status} />
+              <AttendanceDayBadge
+                dayStatus={attendance.day_status}
+                specialDayStatus={attendance.special_day_status}
+                adminMarkStatus={attendance.is_admin_marked ? attendance.admin_mark_status : null}
+              />
               <AttendanceStatusBadge status={attendance.status} />
               <WorkStatusBadge status={attendance.work_status} />
               {attendance.is_admin_marked && (
@@ -98,7 +117,31 @@ export function AttendanceDetailModal({
             </div>
           </div>
 
-          {attendance.is_admin_marked && attendance.admin_mark_reason && (
+          {attendance.is_admin_marked && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">Manual attendance entry</p>
+              {attendance.admin_mark_status && (
+                <p className="mt-1">
+                  Status: <span className="font-medium">{manualStatusLabel(attendance.admin_mark_status)}</span>
+                </p>
+              )}
+              {attendance.admin_mark_reason && (
+                <p className="mt-1">
+                  Reason: <span className="font-medium">{attendance.admin_mark_reason}</span>
+                </p>
+              )}
+              <p className="mt-1">
+                Marked by{" "}
+                <span className="font-medium">{attendance.admin_marked_by_name ?? "Admin"}</span>
+                {attendance.admin_approved_by_name &&
+                  attendance.admin_approved_by_name !== attendance.admin_marked_by_name && (
+                    <> · Approved by {attendance.admin_approved_by_name}</>
+                  )}
+              </p>
+            </div>
+          )}
+
+          {!attendance.is_admin_marked && attendance.admin_mark_reason && (
             <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
               <span className="font-medium">Admin note: </span>{attendance.admin_mark_reason}
             </div>
@@ -127,23 +170,25 @@ export function AttendanceDetailModal({
             </section>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <LocationSection
-              title="Check-in Location"
-              time={attendance.check_in_time}
-              address={attendance.check_in_address}
-              latitude={attendance.check_in_latitude}
-              longitude={attendance.check_in_longitude}
-            />
-            <LocationSection
-              title="Check-out Location"
-              time={attendance.check_out_time}
-              address={attendance.check_out_address}
-              latitude={attendance.check_out_latitude}
-              longitude={attendance.check_out_longitude}
-              accuracy={attendance.check_out_gps_accuracy}
-            />
-          </div>
+          {showLocationDetails && (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <LocationSection
+                title="Check-in Location"
+                time={attendance.check_in_time}
+                address={attendance.check_in_address}
+                latitude={attendance.check_in_latitude}
+                longitude={attendance.check_in_longitude}
+              />
+              <LocationSection
+                title="Check-out Location"
+                time={attendance.check_out_time}
+                address={attendance.check_out_address}
+                latitude={attendance.check_out_latitude}
+                longitude={attendance.check_out_longitude}
+                accuracy={attendance.check_out_gps_accuracy}
+              />
+            </div>
+          )}
 
           <section className="flex flex-col gap-2">
             <h4 className="text-sm font-semibold text-slate-700">Work Report</h4>

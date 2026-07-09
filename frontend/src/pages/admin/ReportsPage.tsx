@@ -6,7 +6,7 @@ import { Select, Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { EmptyState } from "@/components/ui/Spinner";
-import { WorkStatusBadge, DayStatusBadge } from "@/components/ui/Badge";
+import { WorkStatusBadge, AttendanceDayBadge } from "@/components/ui/Badge";
 import type { DayStatus } from "@/types";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
@@ -71,11 +71,23 @@ export function ReportsPage() {
         </div>
       ),
     },
+    { header: "Role", cell: (row) => row.designation?.trim() || "—" },
     { header: "Date", cell: (row) => row.attendance_date },
     { header: "Check-in", cell: (row) => row.check_in_time ?? "-" },
     { header: "Check-out", cell: (row) => row.check_out_time ?? "-" },
     { header: "Hours", cell: (row) => row.working_hours },
-    { header: "Attendance", cell: (row) => <DayStatusBadge status={(row.day_status as DayStatus | null) ?? null} /> },
+    {
+      header: "Attendance",
+      cell: (row) =>
+        row.special_day_status ? (
+          <AttendanceDayBadge
+            dayStatus={(row.day_status as DayStatus | null) ?? null}
+            specialDayStatus={row.special_day_status}
+          />
+        ) : (
+          <span className="text-sm text-slate-700">{row.attendance_label ?? row.day_status ?? "-"}</span>
+        ),
+    },
     { header: "Project", cell: (row) => row.site_name ?? "-" },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { header: "Work Status", cell: (row) => <WorkStatusBadge status={row.work_status as any} /> },

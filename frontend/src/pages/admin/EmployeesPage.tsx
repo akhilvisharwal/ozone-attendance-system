@@ -19,8 +19,10 @@ import * as employeesApi from "@/api/employees";
 import * as attendanceApi from "@/api/attendance";
 import type { AttendanceRecord, DependencyCounts, Employee } from "@/types";
 import { extractErrorMessage } from "@/api/client";
+import { resolveWeeklyOffDays, employeeUsesDefaultWeeklyOff, normalizeWeeklyOffDays } from "@/utils/weeklyOffDays";
 import { usePublicSettings } from "@/contexts/SettingsContext";
 import { formatDate } from "@/utils/format";
+import { DesignationSelect } from "@/components/DesignationSelect";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -38,6 +40,17 @@ function dayStatusEquivalent(record: AttendanceRecord): MarkAction {
 }
 
 function currentStatusLabel(existing: AttendanceRecord): string {
+  if (existing.is_admin_marked && existing.admin_mark_status) {
+    const labels: Record<string, string> = {
+      present: "Present",
+      half_day: "Half Day",
+      absent: "Absent",
+      leave: "Leave",
+      holiday: "Holiday",
+      weekly_off: "Weekly Off",
+    };
+    return `${labels[existing.admin_mark_status] ?? "Manual"} (admin)`;
+  }
   if (existing.status === "absent" || existing.day_status === "absent") return "Absent";
   if (existing.day_status === "half_day" || existing.is_half_day) return "Half Day";
   if (existing.is_admin_marked) return "Present";
@@ -62,6 +75,26 @@ function generatePassword(length = 10): string {
 
 function TodayStatusBadge({ record }: { record?: AttendanceRecord | null }) {
   if (!record) return <span className="text-xs text-slate-400">Not marked</span>;
+  if (record.is_admin_marked && record.admin_mark_status) {
+    const toneMap: Record<string, "green" | "amber" | "red" | "blue" | "slate"> = {
+      present: "green",
+      half_day: "amber",
+      absent: "red",
+      leave: "blue",
+      holiday: "blue",
+      weekly_off: "slate",
+    };
+    const labelMap: Record<string, string> = {
+      present: "Present",
+      half_day: "Half Day",
+      absent: "Absent",
+      leave: "Leave",
+      holiday: "Holiday",
+      weekly_off: "Weekly Off",
+    };
+    const status = record.admin_mark_status;
+    return <Badge tone={toneMap[status] ?? "slate"}>{labelMap[status] ?? status} (admin)</Badge>;
+  }
   if (record.status === "absent" || record.day_status === "absent") {
     return <Badge tone="red">Absent{record.is_admin_marked ? " (admin)" : ""}</Badge>;
   }
@@ -81,6 +114,7 @@ export function EmployeesPage() {
   const [items, setItems]     = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState("");
+  const [designationFilter, setDesignationFilter] = useState("");
 
   // Today's attendance keyed by employee id, so the page shows an always-current
   // status and can enforce the one-status-per-day lock.
@@ -101,7 +135,11 @@ export function EmployeesPage() {
   function load() {
     setLoading(true);
     Promise.all([
-      employeesApi.listEmployees({ search: search || undefined, limit: 100 }),
+      employeesApi.listEmployees({
+        search: search || undefined,
+        designationId: designationFilter || undefined,
+        limit: 100,
+      }),
       loadToday(),
     ])
       .then(([res]) => setItems(res.items))
@@ -125,7 +163,7 @@ export function EmployeesPage() {
     const marked = todayMap[employee.id];
     return [
       {
-        label: "Change Password",
+        label: "Reset Password",
         icon: <KeyRound className="h-4 w-4" />,
         onClick: () => setPwTarget(employee),
       },
@@ -220,6 +258,12 @@ export function EmployeesPage() {
       ),
     },
     {
+      header: "Role",
+      cell: (e) => (
+        <span className="text-sm text-slate-700">{e.designation?.trim() || "—"}</span>
+      ),
+    },
+    {
       header: "Contact",
       cell: (e) => (
         <div className="min-w-0">
@@ -252,15 +296,25 @@ export function EmployeesPage() {
 
       <Card className="mb-4">
         <form
-          className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end"
+          className="flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-end"
           onSubmit={(e: FormEvent) => { e.preventDefault(); load(); }}
         >
           <div className="w-full sm:w-72">
             <Input
               label="Search"
-              placeholder="Search by name or employee ID"
+              placeholder="Search by name, ID, or role"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="w-full sm:w-64">
+            <DesignationSelect
+              label="Filter by role"
+              value={designationFilter}
+              onChange={setDesignationFilter}
+              allowEmpty
+              allowCustom={false}
+              emptyLabel="All roles"
             />
           </div>
           <Button type="submit" variant="outline" icon={<Search className="h-4 w-4" />} className="sm:self-end">
@@ -291,7 +345,7 @@ export function EmployeesPage() {
         onCreated={(creds) => { setCreateOpen(false); setCredentials(creds); load(); }}
       />
 
-      {/* Credentials reveal */}
+      {/* One-time temporary credentials after create / reset */}
       <CredentialsModal credentials={credentials} onClose={() => setCredentials(null)} />
 
       {/* Edit employee details */}
@@ -306,9 +360,9 @@ export function EmployeesPage() {
         />
       )}
 
-      {/* Change password */}
+      {/* Reset password */}
       {pwTarget && (
-        <ChangePasswordModal
+        <ResetPasswordModal
           employee={pwTarget}
           onClose={() => setPwTarget(null)}
           onDone={(creds) => { setPwTarget(null); setCredentials(creds); }}
@@ -401,16 +455,43 @@ function CreateEmployeeModal({
   const [name, setName]         = useState("");
   const [email, setEmail]       = useState("");
   const [phone, setPhone]       = useState("");
+  const [designationId, setDesignationId] = useState("");
   const [error, setError]       = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setName("");
+    setEmail("");
+    setPhone("");
+    setDesignationId("");
+    setError(null);
+    void employeesApi.fetchDesignations().then((data) => {
+      if (data.defaultDesignationId) {
+        setDesignationId(data.defaultDesignationId);
+      }
+    });
+  }, [open]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!designationId) {
+      setError("Please select a Role / Designation.");
+      return;
+    }
     setSubmitting(true);
     try {
-      const result = await employeesApi.createEmployee({ name, email: email || null, phone: phone || null });
-      setName(""); setEmail(""); setPhone("");
+      const result = await employeesApi.createEmployee({
+        name,
+        email: email || null,
+        phone: phone || null,
+        designationId,
+      });
+      setName("");
+      setEmail("");
+      setPhone("");
+      setDesignationId("");
       onCreated(result.credentials);
     } catch (err) {
       setError(extractErrorMessage(err, "Could not create employee"));
@@ -424,6 +505,12 @@ function CreateEmployeeModal({
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && <Alert variant="error">{error}</Alert>}
         <Input label="Full Name" required value={name} onChange={(e) => setName(e.target.value)} />
+        <DesignationSelect
+          label="Role / Designation"
+          required
+          value={designationId}
+          onChange={setDesignationId}
+        />
         <Input label="Email" type="email" hint="Optional" value={email} onChange={(e) => setEmail(e.target.value)} />
         <Input label="Phone" hint="Optional" value={phone} onChange={(e) => setPhone(e.target.value)} />
         <p className="text-xs text-slate-400">
@@ -435,7 +522,7 @@ function CreateEmployeeModal({
   );
 }
 
-// ─── Credentials reveal ─────────────────────────────────────────────────────
+// ─── One-time temporary credentials ─────────────────────────────────────────
 
 function CredentialsModal({
   credentials,
@@ -477,12 +564,17 @@ function EditEmployeeModal({
   const [email, setEmail] = useState(employee.email ?? "");
   const [phone, setPhone] = useState(employee.phone ?? "");
   const [department, setDepartment] = useState(employee.department ?? "");
+  const [designationId, setDesignationId] = useState(employee.designation_id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!designationId) {
+      setError("Please select a Role / Designation.");
+      return;
+    }
     setSaving(true);
     try {
       const updated = await employeesApi.updateEmployee(employee.id, {
@@ -490,6 +582,7 @@ function EditEmployeeModal({
         email: email || null,
         phone: phone || null,
         department: department || null,
+        designationId,
       });
       onSaved(updated);
     } catch (err) {
@@ -503,7 +596,19 @@ function EditEmployeeModal({
     <Modal open onClose={onClose} title={`Edit — ${employee.name}`}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && <Alert variant="error">{error}</Alert>}
+        <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+          <p><span className="font-medium">Employee ID:</span> {employee.employee_code}</p>
+          {employee.designation && (
+            <p><span className="font-medium">Current role:</span> {employee.designation}</p>
+          )}
+        </div>
         <Input label="Full Name" required value={name} onChange={(e) => setName(e.target.value)} />
+        <DesignationSelect
+          label="Role / Designation"
+          required
+          value={designationId}
+          onChange={setDesignationId}
+        />
         <Input label="Email" type="email" hint="Optional" value={email} onChange={(e) => setEmail(e.target.value)} />
         <Input label="Phone" hint="Optional" value={phone} onChange={(e) => setPhone(e.target.value)} />
         <Input label="Department" hint="Optional — shown on attendance reports" value={department} onChange={(e) => setDepartment(e.target.value)} />
@@ -516,9 +621,9 @@ function EditEmployeeModal({
   );
 }
 
-// ─── Change password (direct entry) ─────────────────────────────────────────
+// ─── Reset password (assign temporary password; shown once) ─────────────────
 
-function ChangePasswordModal({
+function ResetPasswordModal({
   employee,
   onClose,
   onDone,
@@ -530,7 +635,7 @@ function ChangePasswordModal({
   const [password, setPassword] = useState("");
   const [confirm, setConfirm]   = useState("");
   const [show, setShow]         = useState(false);
-  const [requireChange, setRequireChange] = useState(false);
+  const [requireChange, setRequireChange] = useState(true);
   const [error, setError]       = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
 
@@ -554,27 +659,31 @@ function ChangePasswordModal({
       });
       onDone(credentials);
     } catch (err) {
-      setError(extractErrorMessage(err, "Could not update password"));
+      setError(extractErrorMessage(err, "Could not reset password"));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Modal open onClose={onClose} title={`Change Password — ${employee.name}`}>
+    <Modal open onClose={onClose} title={`Reset Password — ${employee.name}`}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && <Alert variant="error">{error}</Alert>}
 
-        <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-          <p><span className="font-medium">Employee:</span> {employee.name}</p>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+          <p>
+            Assign a new temporary password. It is stored only as a secure hash and shown once
+            after save — it cannot be retrieved later.
+          </p>
+          <p className="mt-2"><span className="font-medium">Employee:</span> {employee.name}</p>
           <p><span className="font-medium">ID:</span> {employee.employee_code}</p>
         </div>
 
-        <FieldWrapper label="New Password" required>
+        <FieldWrapper label="Temporary Password" required>
           <div className="relative">
             <Input
               type={show ? "text" : "password"}
-              placeholder="Enter a new password"
+              placeholder="Enter or generate a temporary password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="pr-10"
@@ -623,7 +732,7 @@ function ChangePasswordModal({
         <div className="mt-1 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
           <Button type="submit" isLoading={loading} icon={<KeyRound className="h-4 w-4" />}>
-            Update Password
+            Reset Password
           </Button>
         </div>
       </form>
@@ -706,6 +815,7 @@ function ManagePhotoModal({
           <div className="min-w-0 text-sm text-slate-500">
             <p className="font-medium text-slate-900">{employee.name}</p>
             <p>{employee.employee_code}</p>
+            {employee.designation && <p className="text-slate-600">{employee.designation}</p>}
             <p className="mt-1 text-xs">
               {preview ? "New photo selected — click Upload to save." : employee.profile_photo_path ? "Current profile photo." : "No profile photo set."}
             </p>
@@ -773,19 +883,37 @@ function WeeklyOffModal({
   onSaved: (updated: Employee) => void;
   defaultWeeklyOffDays: number[];
 }) {
-  const [days, setDays]   = useState<number[]>(employee.weekly_off_days ?? defaultWeeklyOffDays);
+  const usesDefaultInitially = employeeUsesDefaultWeeklyOff(employee);
+  const [useCompanyDefault, setUseCompanyDefault] = useState(usesDefaultInitially);
+  const [days, setDays] = useState<number[]>(() =>
+    resolveWeeklyOffDays(employee, defaultWeeklyOffDays)
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function toggle(day: number) {
-    setDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort((a, b) => a - b)));
+    setUseCompanyDefault(false);
+    setDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : normalizeWeeklyOffDays([...prev, day])
+    );
+  }
+
+  function handleUseDefaultChange(checked: boolean) {
+    setUseCompanyDefault(checked);
+    if (checked) {
+      setDays(normalizeWeeklyOffDays(defaultWeeklyOffDays));
+    }
   }
 
   async function handleSave() {
     setError(null);
     setSaving(true);
     try {
-      const updated = await employeesApi.updateWeeklyOff(employee.id, days);
+      const updated = await employeesApi.updateWeeklyOff(
+        employee.id,
+        useCompanyDefault ? defaultWeeklyOffDays : days,
+        useCompanyDefault
+      );
       onSaved(updated);
     } catch (err) {
       setError(extractErrorMessage(err, "Could not update weekly off days"));
@@ -800,35 +928,55 @@ function WeeklyOffModal({
         {error && <Alert variant="error">{error}</Alert>}
 
         <p className="text-sm text-slate-500">
-          Select the days this employee does not work. They won't be marked absent on these days.
-          Employees who work on Sundays should have Sunday left unchecked.
+          Use the company default schedule or set custom weekly off days for this employee. Custom
+          schedules override the default in attendance, reports, and dashboards.
         </p>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {WEEKDAYS.map((wd) => {
-            const active = days.includes(wd.value);
-            return (
-              <button
-                key={wd.value}
-                type="button"
-                onClick={() => toggle(wd.value)}
-                className={
-                  "flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition " +
-                  (active
-                    ? "border-brand-500 bg-brand-50 text-brand-700"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50")
-                }
-              >
-                {wd.label}
-              </button>
-            );
-          })}
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            checked={useCompanyDefault}
+            onChange={(e) => handleUseDefaultChange(e.target.checked)}
+          />
+          <span>
+            <span className="block text-sm font-medium text-slate-900">Use company default weekly off</span>
+            <span className="mt-0.5 block text-xs text-slate-500">
+              Follows Settings → Weekly Off & Holidays automatically when the default changes.
+            </span>
+          </span>
+        </label>
+
+        <div className={useCompanyDefault ? "pointer-events-none opacity-60" : undefined}>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {WEEKDAYS.map((wd) => {
+              const active = days.includes(wd.value);
+              return (
+                <button
+                  key={wd.value}
+                  type="button"
+                  onClick={() => toggle(wd.value)}
+                  disabled={useCompanyDefault}
+                  className={
+                    "flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition " +
+                    (active
+                      ? "border-brand-500 bg-brand-50 text-brand-700"
+                      : "border-slate-200 text-slate-600 hover:bg-slate-50")
+                  }
+                >
+                  {wd.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <p className="text-xs text-slate-400">
-          {days.length === 0
-            ? "No weekly off selected — attendance is expected every day."
-            : `Weekly off: ${days.map((d) => WEEKDAYS[d].label).join(", ")}`}
+          {useCompanyDefault
+            ? `Using company default: ${days.map((d) => WEEKDAYS[d].label).join(", ") || "none"}`
+            : days.length === 0
+              ? "No weekly off selected — attendance is expected every day."
+              : `Custom weekly off: ${days.map((d) => WEEKDAYS[d].label).join(", ")}`}
         </p>
 
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">

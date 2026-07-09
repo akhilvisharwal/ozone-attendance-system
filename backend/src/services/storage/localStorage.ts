@@ -45,6 +45,52 @@ export class LocalStorageDriver implements StorageDriver {
     }
   }
 
+  async renameDirectory(fromRelative: string, toRelative: string): Promise<void> {
+    const fromPath = this.resolveSafe(fromRelative);
+    const toPath = this.resolveSafe(toRelative);
+    if (!fromPath || !toPath || fromPath === toPath) return;
+
+    try {
+      await fs.promises.access(fromPath);
+    } catch {
+      return;
+    }
+
+    await fs.promises.mkdir(path.dirname(toPath), { recursive: true });
+
+    try {
+      await fs.promises.rename(fromPath, toPath);
+      return;
+    } catch {
+      // Destination may already exist — merge contents then remove source.
+    }
+
+    await fs.promises.mkdir(toPath, { recursive: true });
+    const entries = await fs.promises.readdir(fromPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const src = path.join(fromPath, entry.name);
+      const dest = path.join(toPath, entry.name);
+      if (entry.isDirectory()) {
+        await this.renameDirectory(
+          path.posix.join(fromRelative, entry.name),
+          path.posix.join(toRelative, entry.name)
+        );
+      } else {
+        try {
+          await fs.promises.rename(src, dest);
+        } catch {
+          await fs.promises.copyFile(src, dest);
+          await fs.promises.unlink(src);
+        }
+      }
+    }
+    try {
+      await fs.promises.rmdir(fromPath);
+    } catch {
+      // ignore non-empty / missing
+    }
+  }
+
   /** Prevents path traversal outside the uploads root. */
   private resolveSafe(relativePath: string): string | null {
     const fullPath = path.join(ROOT, relativePath);

@@ -1,11 +1,19 @@
 import { apiClient } from "./client";
+import {
+  CHECK_IN_API_TIMEOUT_MS,
+  CHECK_IN_TIMEOUT_MESSAGE,
+  withTimeout,
+} from "../utils/async";
 import type {
   AttendanceRecord,
   AdminAttendanceRow,
   MonthlyGrid,
   PaginatedResponse,
-  TimingRules,
+  TimingRulesResponse,
   WorkStatus,
+  SpecialDayStatus,
+  AttendanceOverrideNotice,
+  ManualAttendancePayload,
 } from "../types";
 
 export interface CheckInInput {
@@ -24,9 +32,11 @@ export interface CheckOutInput {
   workStatus: WorkStatus;
   remarks?: string;
   sitePhotos?: File[];
-  latitude: number;
-  longitude: number;
-  accuracy: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracy?: number;
+  selfie?: Blob | null;
+  deviceInfo?: string;
 }
 
 export interface MyHistoryParams {
@@ -53,9 +63,11 @@ export interface AdminListParams {
   status?: AdminAttendanceFilterStatus;
 }
 
-export async function getTimingRules(): Promise<TimingRules> {
-  const { data } = await apiClient.get<{ rules: TimingRules }>("/attendance/timing-rules");
-  return data.rules;
+export async function getTimingRules(date?: string): Promise<TimingRulesResponse> {
+  const { data } = await apiClient.get<TimingRulesResponse>("/attendance/timing-rules", {
+    params: date ? { date } : undefined,
+  });
+  return data;
 }
 
 export async function checkIn(
@@ -75,11 +87,15 @@ export async function checkIn(
     if (input.workStatus)  fd.append("workStatus", input.workStatus);
     if (input.deviceInfo) fd.append("deviceInfo", input.deviceInfo);
   }
-  const { data } = await apiClient.post<{ attendance: AttendanceRecord; checkInStatus: string; isHalfDay: boolean }>(
+  const request = apiClient.post<{ attendance: AttendanceRecord; checkInStatus: string; isHalfDay: boolean }>(
     "/attendance/check-in",
     fd,
-    { headers: { "Content-Type": "multipart/form-data" } }
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: CHECK_IN_API_TIMEOUT_MS,
+    }
   );
+  const { data } = await withTimeout(request, CHECK_IN_API_TIMEOUT_MS, CHECK_IN_TIMEOUT_MESSAGE);
   return { record: data.attendance, checkInStatus: data.checkInStatus, isHalfDay: data.isHalfDay };
 }
 
@@ -87,10 +103,12 @@ export async function checkOut(input: CheckOutInput): Promise<AttendanceRecord> 
   const fd = new FormData();
   if (input.workSummary?.trim()) fd.append("workSummary", input.workSummary.trim());
   fd.append("workStatus", input.workStatus);
-  fd.append("latitude", String(input.latitude));
-  fd.append("longitude", String(input.longitude));
-  fd.append("accuracy", String(input.accuracy));
+  if (input.latitude !== null && input.latitude !== undefined) fd.append("latitude", String(input.latitude));
+  if (input.longitude !== null && input.longitude !== undefined) fd.append("longitude", String(input.longitude));
+  if (input.accuracy !== undefined) fd.append("accuracy", String(input.accuracy));
   if (input.remarks) fd.append("remarks", input.remarks);
+  if (input.deviceInfo) fd.append("deviceInfo", input.deviceInfo);
+  if (input.selfie) fd.append("selfie", input.selfie, "selfie.jpg");
   for (const photo of input.sitePhotos ?? []) {
     fd.append("sitePhotos", photo);
   }
@@ -105,6 +123,22 @@ export async function checkOut(input: CheckOutInput): Promise<AttendanceRecord> 
 export async function getMyToday(): Promise<AttendanceRecord | null> {
   const { data } = await apiClient.get<{ attendance: AttendanceRecord | null }>("/attendance/me/today");
   return data.attendance;
+}
+
+export interface CheckInContext {
+  date: string;
+  isWeeklyOff: boolean;
+  isHoliday: boolean;
+  holidayName: string | null;
+  requiresConfirmation: boolean;
+  confirmationType: "weekly_off" | "holiday" | null;
+  specialDayStatus: SpecialDayStatus | null;
+  activeOverride: AttendanceOverrideNotice | null;
+}
+
+export async function getCheckInContext(): Promise<CheckInContext> {
+  const { data } = await apiClient.get<CheckInContext>("/attendance/me/check-in-context");
+  return data;
 }
 
 export async function getMyHistory(params?: MyHistoryParams): Promise<PaginatedResponse<AttendanceRecord>> {
@@ -215,6 +249,32 @@ export async function adminMarkAbsent(payload: {
     payload
   );
   return data.attendance;
+}
+
+export async function adminGetAttendanceForDate(
+  employeeId: string,
+  date: string
+): Promise<AdminAttendanceRow | null> {
+  const { data } = await apiClient.get<{ attendance: AdminAttendanceRow | null }>(
+    "/attendance/admin/for-date",
+    { params: { employeeId, date } }
+  );
+  return data.attendance;
+}
+
+export async function saveManualAttendance(payload: ManualAttendancePayload): Promise<AdminAttendanceRow> {
+  const { data } = await apiClient.post<{ attendance: AdminAttendanceRow }>(
+    "/attendance/admin/manual-attendance",
+    payload
+  );
+  return data.attendance;
+}
+
+export async function deleteManualAttendance(payload: {
+  employeeId: string;
+  date: string;
+}): Promise<void> {
+  await apiClient.delete("/attendance/admin/manual-attendance", { data: payload });
 }
 
 // Backward-compatible aliases used by existing pages
