@@ -57,3 +57,4 @@ backend/test-output/
 
 # Cursor / agent assets (local only)
 .cursor/
+.vercel

@@ -95,6 +95,21 @@ Create **one key** (or two separate keys) with restrictions:
 
 After changing Vercel env vars, **redeploy** the frontend so `VITE_*` values are embedded at build time.
 
+### Redeploy frontend (production)
+
+The Vercel project **Root Directory** is `frontend`, so deploy from the **repository root** (not `cd frontend`):
+
+```powershell
+cd C:\path\to\ozone-attendance-system
+$env:VERCEL_ORG_ID="your-team-id"
+$env:VERCEL_PROJECT_ID="your-frontend-project-id"
+npx vercel --prod --yes
+```
+
+Production URL: `https://frontend-zeta-gray-81.vercel.app`
+
+> Do not create a second Vercel project from the repo root without linking to the existing `frontend` project — env vars are per-project.
+
 ### Redeploy after backend URL changes
 
 `VITE_API_URL` is embedded at **build time**. If you change the API URL, trigger a new Vercel deployment.
