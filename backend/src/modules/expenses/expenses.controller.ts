@@ -1,3 +1,4 @@
+import type { Request, Response } from "express";
 import { env } from "../../config/env";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/errors";
