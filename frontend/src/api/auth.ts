@@ -40,7 +40,7 @@ export async function fetchMe() {
 }
 
 export async function changePassword(currentPassword: string, newPassword: string) {
-  const res = await apiClient.post<{ employee: Employee; message: string }>("/auth/change-password", {
+  const res = await apiClient.post<AuthSessionResponse & { message: string }>("/auth/change-password", {
     currentPassword,
     newPassword,
   });

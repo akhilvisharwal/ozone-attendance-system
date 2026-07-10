@@ -7,6 +7,7 @@ import { AttendanceDetailModal } from "@/components/AttendanceDetailModal";
 import { EmployeeMonthlyCalendar } from "@/components/EmployeeMonthlyCalendar";
 import { EmployeeMonthlySummaryPanel } from "@/components/EmployeeMonthlySummaryPanel";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { useEmployeeMonthlyDashboard } from "@/hooks/useEmployeeMonthlyDashboard";
 import type { AttendanceRecord } from "@/types";
 import { formatDate, formatMinutesAsHours, formatTime } from "@/utils/format";
@@ -72,6 +73,7 @@ export function AttendanceHistoryPage() {
             {grid?.label ?? "Selected month"} · tap a row for details
           </p>
         </div>
+        <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
           <Spinner />
         ) : records.length === 0 ? (
@@ -87,6 +89,7 @@ export function AttendanceHistoryPage() {
             onRowClick={setSelected}
           />
         )}
+        </CrossfadeSwitch>
       </Card>
 
       <AttendanceDetailModal

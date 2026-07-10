@@ -1,10 +1,10 @@
 import { Router } from "express";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth, requireAdminPanel, requirePermission } from "../../middleware/auth";
 import { exportReport, viewReport } from "./reports.controller";
 
 const router = Router();
 
-router.use(requireAuth, requireRole("admin"));
+router.use(requireAuth, requireAdminPanel(), requirePermission("viewReports"));
 router.get("/view", viewReport);
 router.get("/export", exportReport);
 

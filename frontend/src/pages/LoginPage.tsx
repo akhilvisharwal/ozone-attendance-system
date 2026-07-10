@@ -1,16 +1,20 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
+import { motion } from "motion/react";
 import { useAuth } from "@/auth/AuthContext";
+import { usePermissions } from "@/auth/usePermissions";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Logo } from "@/components/Logo";
 import { SYSTEM_NAME } from "@/config/branding";
 import { extractErrorMessage } from "@/api/client";
+import { firstAllowedAdminPath, normalizePermissions } from "@/auth/permissions";
 
 export function LoginPage() {
   const { employee, isLoading, login } = useAuth();
+  const { homePath } = usePermissions();
   const navigate = useNavigate();
   const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
@@ -18,7 +22,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (!isLoading && employee) {
-    return <Navigate to={employee.role === "admin" ? "/admin" : "/"} replace />;
+    return <Navigate to={homePath} replace />;
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -27,7 +31,13 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const loggedInEmployee = await login(employeeId.trim().toUpperCase(), password);
-      navigate(loggedInEmployee.role === "admin" ? "/admin" : "/", { replace: true });
+      const dest =
+        loggedInEmployee.role === "employee"
+          ? "/"
+          : loggedInEmployee.role === "admin"
+            ? "/admin"
+            : firstAllowedAdminPath(normalizePermissions(loggedInEmployee.admin_permissions));
+      navigate(dest, { replace: true });
     } catch (err) {
       setError(extractErrorMessage(err, "Invalid employee ID or password"));
     } finally {
@@ -36,10 +46,15 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100 px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white p-8 shadow-soft-lg"
+      >
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <Logo variant="hero" />
+          <Logo variant="hero" interactive={false} />
           <p className="text-sm text-slate-500">{SYSTEM_NAME}</p>
         </div>
 
@@ -72,7 +87,7 @@ export function LoginPage() {
         <p className="mt-6 text-center text-xs text-slate-400">
           Forgot your password? Contact your administrator to reset it.
         </p>
-      </div>
+      </motion.div>
     </div>
   );
 }

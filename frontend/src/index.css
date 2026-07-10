@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
 
 @theme {
   --color-brand-50: #eff6ff;
@@ -11,6 +12,17 @@
   --color-brand-700: #1d4ed8;
   --color-brand-800: #1e40af;
   --color-brand-900: #1e3a8a;
+
+  /* Soft, layered shadows for a modern SaaS "elevated surface" feel.
+     Two stacked shadows (contact + ambient) read as softer than Tailwind's defaults. */
+  --shadow-soft-xs: 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-soft-sm: 0 1px 2px rgb(15 23 42 / 0.04), 0 2px 8px rgb(15 23 42 / 0.05);
+  --shadow-soft-md: 0 2px 4px rgb(15 23 42 / 0.04), 0 8px 24px rgb(15 23 42 / 0.08);
+  --shadow-soft-lg: 0 4px 8px rgb(15 23 42 / 0.04), 0 16px 40px rgb(15 23 42 / 0.12);
+
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html {
@@ -21,7 +33,7 @@ html {
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-slate-50 text-slate-900 antialiased font-sans;
   height: 100%;
   /* Avoid rubber-band horizontal scroll on small screens */
   overflow-x: hidden;
@@ -57,6 +69,9 @@ body {
 }
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pb-5-safe {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
 }
 .pb-6-safe {
   padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
@@ -98,6 +113,17 @@ body {
   flex: 0 1 auto;
 }
 
+/* Small square footprint for constrained spaces (collapsed sidebar rail). */
+.logo-brand--compact {
+  --logo-h: 32px;
+  --logo-w: 32px;
+  justify-content: center;
+}
+
+.logo-brand--compact .logo-brand__img {
+  object-position: center;
+}
+
 /* Interactive affordance */
 .logo-brand--interactive {
   border-radius: 0.375rem;
@@ -128,26 +154,6 @@ body {
   }
   .logo-brand--interactive:active {
     transform: none;
-  }
-}
-
-@keyframes modal-backdrop-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes modal-panel-in {
-  from {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
   }
 }
 
@@ -212,24 +218,57 @@ body {
   transform: translateY(-6px) scale(0.96);
 }
 
-.modal-backdrop-animate {
-  animation: modal-backdrop-in 0.18s ease-out forwards;
-}
-
-.modal-panel-animate {
-  animation: modal-panel-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  transform-origin: center center;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .modal-backdrop-animate,
-  .modal-panel-animate {
-    animation: none;
-  }
-}
-
 @media print {
   .logo-brand--interactive {
     pointer-events: none;
+  }
+}
+
+/* ── Sidebar collapse (icon rail <-> full width) ── */
+.sidebar-shell {
+  transition: width 220ms var(--ease-standard);
+}
+
+.sidebar-label {
+  transition: opacity 150ms var(--ease-standard), width 220ms var(--ease-standard);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sidebar-collapsed .sidebar-label {
+  opacity: 0;
+  width: 0;
+}
+
+/* ── Bottom navigation (mobile, employee) ── */
+@keyframes bottom-nav-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bottom-nav-animate {
+  animation: bottom-nav-in 0.22s var(--ease-standard) forwards;
+}
+
+/* ── Interactive surface lift (cards, list rows) ── */
+.surface-hover {
+  transition: box-shadow 180ms var(--ease-standard), border-color 180ms var(--ease-standard),
+    transform 180ms var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-shell,
+  .sidebar-label,
+  .surface-hover {
+    transition: none;
+  }
+  .bottom-nav-animate {
+    animation: none;
   }
 }

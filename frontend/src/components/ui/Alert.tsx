@@ -25,7 +25,7 @@ export function Alert({
   return (
     <div
       className={clsx(
-        "flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm ring-1 ring-inset",
+        "flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-sm ring-1 ring-inset",
         wrapper,
         className
       )}

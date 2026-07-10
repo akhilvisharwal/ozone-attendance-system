@@ -32,7 +32,7 @@ export function FieldWrapper({ label, error, hint, required, children, labelProp
       )}
       {children}
       {hint && !error && <span className="text-xs text-slate-400">{hint}</span>}
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && <span className="text-xs font-medium text-red-600">{error}</span>}
     </div>
   );
 }
@@ -94,7 +94,7 @@ export function Input({ label, error, hint, required, className, type, value, on
     <FieldWrapper label={label} error={error} hint={hint} required={required}>
       <input
         className={clsx(
-          "w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 sm:py-2 sm:text-sm",
+          "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900 shadow-soft-xs placeholder:text-slate-400 transition-shadow sm:py-2 sm:text-sm",
           "focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100",
           error && "border-red-400 focus:border-red-500 focus:ring-red-100",
           className
@@ -168,7 +168,7 @@ export function Textarea({ label, error, hint, required, className, ...props }: 
     <FieldWrapper label={label} error={error} hint={hint} required={required}>
       <textarea
         className={clsx(
-          "w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 sm:py-2 sm:text-sm",
+          "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900 shadow-soft-xs placeholder:text-slate-400 transition-shadow sm:py-2 sm:text-sm",
           "focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100",
           error && "border-red-400",
           className

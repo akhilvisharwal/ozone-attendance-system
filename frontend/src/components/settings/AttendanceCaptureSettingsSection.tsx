@@ -8,6 +8,7 @@ import { SettingsSaveConfirmModal } from "@/components/settings/SettingsSaveConf
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useToast } from "@/components/ui/Toast";
 import type { MobileSettings } from "@/types/settings";
 
 type CaptureFormState = MobileSettings;
@@ -39,6 +40,7 @@ function validateForm(form: CaptureFormState): FieldErrors {
 
 export function AttendanceCaptureSettingsSection() {
   const { refresh } = useSettings();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -93,6 +95,7 @@ export function AttendanceCaptureSettingsSection() {
       await refresh();
       setConfirmOpen(false);
       setMessage({ type: "success", text: "Attendance capture settings saved successfully." });
+      showToast("Settings saved successfully.");
     } catch (err) {
       setConfirmOpen(false);
       setMessage({

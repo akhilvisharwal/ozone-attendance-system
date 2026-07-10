@@ -101,28 +101,28 @@ describe("employee settings", { skip: process.env.SKIP_DB_TESTS === "1" }, () =>
       role: resolveEmployeeRoleFromSettings(),
       createdBy: adminId,
       designationId: saved.defaultDesignationId!,
-      mustChangePassword: saved.requirePasswordChange,
+      firstLoginCompleted: !saved.requirePasswordChange,
       isActive: saved.activeByDefault,
     });
     createdEmployeeId = employee.id;
 
     assert.equal(employee.employee_code, employeeCode);
     assert.equal(employee.is_active, false);
-    assert.equal(employee.must_change_password, true);
+    assert.equal(employee.first_login_completed, false);
     assert.equal(employee.role, "employee");
     assert.equal(employee.designation_id, draftsmanId);
   });
 
-  it("clears must_change_password after a password update", async () => {
+  it("marks first login complete after the employee sets a new password", async () => {
     assert.ok(createdEmployeeId, "Employee should exist from prior test");
     const row = await findEmployeeById(createdEmployeeId!);
     assert.ok(row);
 
     const newHash = await bcrypt.hash("NewSecure1", 12);
-    await updateEmployeePassword(createdEmployeeId!, newHash, false);
+    await updateEmployeePassword(createdEmployeeId!, newHash, { markFirstLoginComplete: true });
 
     const updated = await findEmployeeById(createdEmployeeId!);
-    assert.equal(updated?.must_change_password, false);
+    assert.equal(updated?.first_login_completed, true);
     const matches = await bcrypt.compare("NewSecure1", updated!.password_hash);
     assert.equal(matches, true);
   });

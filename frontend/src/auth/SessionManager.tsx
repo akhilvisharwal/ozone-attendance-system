@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { SessionTimeoutModal } from "@/components/SessionTimeoutModal";
@@ -36,6 +36,15 @@ export function SessionManager() {
     enabled,
     onRestored: handleRestored,
   });
+
+  useEffect(() => {
+    if (!employee || employee.role !== "junior_admin") return;
+    const onFocus = () => {
+      void refreshMe();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [employee, refreshMe]);
 
   return (
     <SessionTimeoutModal

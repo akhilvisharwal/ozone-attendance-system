@@ -1,12 +1,18 @@
 import { pool } from "../../config/db";
-import { Employee, PublicEmployee } from "../../types";
+import { Employee, PublicEmployee, Role } from "../../types";
+import {
+  emptyPermissions,
+  fullPermissions,
+  normalizePermissions,
+  type AdminPermissions,
+} from "../auth/permissions";
 
 const EMPLOYEE_SELECT = `
   e.id, e.employee_code, e.name, e.email, e.phone, e.department,
   e.designation_id, d.name AS designation,
-  e.role, e.is_active, e.must_change_password, e.profile_photo_path,
+  e.role, e.is_active, e.must_change_password, e.first_login_completed, e.profile_photo_path,
   e.created_by, e.deleted_at, e.weekly_off_days, e.uses_default_weekly_off,
-  e.created_at, e.updated_at
+  e.admin_permissions, e.created_at, e.updated_at
 `;
 
 const EMPLOYEE_FROM = `
@@ -42,22 +48,25 @@ export async function createEmployee(input: {
   email: string | null;
   phone: string | null;
   passwordHash: string;
-  role: "admin" | "employee";
+  role: Role;
   createdBy: string;
   designationId?: string | null;
   department?: string | null;
   weeklyOffDays?: number[];
   usesDefaultWeeklyOff?: boolean;
   mustChangePassword?: boolean;
+  firstLoginCompleted?: boolean;
   isActive?: boolean;
+  adminPermissions?: AdminPermissions;
 }): Promise<PublicEmployee> {
   const result = await pool.query<{ id: string }>(
     `INSERT INTO employees (
        employee_code, name, email, phone, password_hash, role, created_by,
        designation_id, department,
-       weekly_off_days, uses_default_weekly_off, must_change_password, is_active
+       weekly_off_days, uses_default_weekly_off, must_change_password, first_login_completed, is_active,
+       admin_permissions
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
      RETURNING id`,
     [
       input.employeeCode,
@@ -71,8 +80,10 @@ export async function createEmployee(input: {
       input.department ?? null,
       input.weeklyOffDays ?? [0],
       input.usesDefaultWeeklyOff ?? true,
-      input.mustChangePassword ?? true,
+      false,
+      input.firstLoginCompleted ?? false,
       input.isActive ?? true,
+      JSON.stringify(input.adminPermissions ?? emptyPermissions()),
     ]
   );
   const created = await findEmployeeById(result.rows[0].id);
@@ -152,21 +163,43 @@ export async function setEmployeeActive(id: string, isActive: boolean): Promise<
 export async function updateEmployeePassword(
   id: string,
   passwordHash: string,
-  mustChangePassword: boolean
+  options?: { markFirstLoginComplete?: boolean }
 ): Promise<void> {
+  if (options?.markFirstLoginComplete) {
+    await pool.query(
+      `UPDATE employees
+          SET password_hash = $1,
+              first_login_completed = true,
+              must_change_password = false,
+              password_changed_at = now(),
+              updated_at = now()
+        WHERE id = $2`,
+      [passwordHash, id]
+    );
+    return;
+  }
+
   await pool.query(
     `UPDATE employees
         SET password_hash = $1,
-            must_change_password = $2,
+            must_change_password = false,
             password_changed_at = now(),
             updated_at = now()
-      WHERE id = $3`,
-    [passwordHash, mustChangePassword, id]
+      WHERE id = $2`,
+    [passwordHash, id]
   );
 }
 
+/** @deprecated Legacy column — use first_login_completed instead. */
 export async function markMustChangePassword(id: string): Promise<void> {
-  await pool.query(`UPDATE employees SET must_change_password = true, updated_at = now() WHERE id = $1`, [id]);
+  await pool.query(
+    `UPDATE employees
+        SET must_change_password = true,
+            first_login_completed = false,
+            updated_at = now()
+      WHERE id = $1`,
+    [id]
+  );
 }
 
 export async function updateEmployeeProfile(
@@ -321,6 +354,25 @@ export async function countEmployeeDependencies(id: string): Promise<{
 }
 
 export function toPublicEmployee(employee: Employee): PublicEmployee {
-  const { password_hash, ...rest } = employee;
-  return rest;
+  const { password_hash, admin_permissions, ...rest } = employee;
+  const permissions =
+    employee.role === "admin"
+      ? fullPermissions()
+      : employee.role === "junior_admin"
+        ? normalizePermissions(admin_permissions)
+        : emptyPermissions();
+  return { ...rest, admin_permissions: permissions };
+}
+
+export async function getEmployeePermissions(employeeId: string): Promise<AdminPermissions> {
+  const result = await pool.query<{ role: Role; admin_permissions: unknown }>(
+    `SELECT role, admin_permissions FROM employees
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [employeeId]
+  );
+  const row = result.rows[0];
+  if (!row) return emptyPermissions();
+  if (row.role === "admin") return fullPermissions();
+  if (row.role !== "junior_admin") return emptyPermissions();
+  return normalizePermissions(row.admin_permissions);
 }

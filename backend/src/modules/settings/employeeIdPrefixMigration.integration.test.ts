@@ -59,7 +59,7 @@ describe(
           passwordHash: hash,
           role: "employee",
           createdBy: adminId,
-          mustChangePassword: false,
+          firstLoginCompleted: true,
           isActive: true,
         });
         createdIds.push(emp.id);
@@ -140,7 +140,7 @@ describe(
         passwordHash: hash,
         role: "employee",
         createdBy: adminId,
-        mustChangePassword: false,
+        firstLoginCompleted: true,
         isActive: true,
       });
       createdIds.push(occupant.id);
@@ -154,7 +154,7 @@ describe(
         passwordHash: hash,
         role: "employee",
         createdBy: adminId,
-        mustChangePassword: false,
+        firstLoginCompleted: true,
         isActive: true,
       });
       createdIds.push(leftover.id);

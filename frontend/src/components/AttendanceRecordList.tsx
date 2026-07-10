@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import clsx from "clsx";
+import { motion } from "motion/react";
 import type { AdminAttendanceRow } from "@/types";
 import {
   AttendanceDayBadge,
@@ -8,6 +9,7 @@ import {
 } from "@/components/ui/Badge";
 import { formatDate, formatMinutesAsHours, formatTime } from "@/utils/format";
 import { formatLocationSummary } from "@/utils/location";
+import { quickTransition, staggerContainer, staggerItem } from "@/lib/motion";
 
 export interface AttendanceRecordListProps {
   records: AdminAttendanceRow[];
@@ -28,7 +30,12 @@ export function AttendanceRecordList({
   className,
 }: AttendanceRecordListProps) {
   return (
-    <div className={clsx("flex flex-col gap-3 p-4 lg:gap-3.5 lg:p-5", className)}>
+    <motion.div
+      variants={staggerContainer}
+      initial="initial"
+      animate="animate"
+      className={clsx("flex flex-col gap-3 p-4 lg:gap-3.5 lg:p-5", className)}
+    >
       {records.map((record, index) => (
         <AttendanceRecordRow
           key={record.id}
@@ -39,7 +46,7 @@ export function AttendanceRecordList({
           showLocations={showLocations}
         />
       ))}
-    </div>
+    </motion.div>
   );
 }
 
@@ -69,7 +76,10 @@ function AttendanceRecordRow({
   );
 
   return (
-    <article
+    <motion.article
+      variants={staggerItem}
+      whileHover={clickable ? { y: -2 } : undefined}
+      transition={quickTransition}
       role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={onClick}
@@ -139,7 +149,7 @@ function AttendanceRecordRow({
           <AttendanceStatusBadge status={record.status} />
         </ListField>
       </dl>
-    </article>
+    </motion.article>
   );
 }
 

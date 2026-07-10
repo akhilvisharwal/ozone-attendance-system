@@ -20,6 +20,8 @@ import scoreboardRoutes from "./modules/scoreboard/scoreboard.routes";
 import leavesRoutes from "./modules/leaves/leaves.routes";
 import holidaysRoutes from "./modules/holidays/holidays.routes";
 import settingsRoutes from "./modules/settings/settings.routes";
+import juniorAdminsRoutes from "./modules/juniorAdmins/juniorAdmins.routes";
+import expensesRoutes from "./modules/expenses/expenses.routes";
 
 export function createApp() {
   const app = express();
@@ -76,6 +78,8 @@ export function createApp() {
   app.use("/api/leaves", leavesRoutes);
   app.use("/api/holidays", holidaysRoutes);
   app.use("/api/settings", settingsRoutes);
+  app.use("/api/junior-admins", juniorAdminsRoutes);
+  app.use("/api/expenses", expensesRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

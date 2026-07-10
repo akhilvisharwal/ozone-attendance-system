@@ -7,6 +7,7 @@ import { SettingsSaveConfirmModal } from "@/components/settings/SettingsSaveConf
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useToast } from "@/components/ui/Toast";
 import type { NotificationSettings } from "@/types/settings";
 
 type NotificationFormState = NotificationSettings;
@@ -22,6 +23,7 @@ function notificationsToForm(notifications: NotificationSettings): NotificationF
 
 export function NotificationSettingsSection() {
   const { refresh } = useSettings();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -68,6 +70,7 @@ export function NotificationSettingsSection() {
       await refresh();
       setConfirmOpen(false);
       setMessage({ type: "success", text: "Notification settings saved successfully." });
+      showToast("Settings saved successfully.");
     } catch (err) {
       setConfirmOpen(false);
       setMessage({

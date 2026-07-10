@@ -46,7 +46,7 @@ describe("employee reset password flow", { skip: process.env.SKIP_DB_TESTS === "
       passwordHash: await bcrypt.hash("OldPass1!", 12),
       role: "employee",
       createdBy: adminId,
-      mustChangePassword: false,
+      firstLoginCompleted: true,
       isActive: true,
     });
     employeeId = employee.id;
@@ -70,11 +70,13 @@ describe("employee reset password flow", { skip: process.env.SKIP_DB_TESTS === "
     const names = cols.rows.map((r) => r.column_name).sort();
     assert.deepEqual(names, ["password_changed_at", "password_hash"]);
 
-    await updateEmployeePassword(employeeId, await bcrypt.hash(tempPassword, 12), true);
+    await updateEmployeePassword(employeeId, await bcrypt.hash(tempPassword, 12), {
+      markFirstLoginComplete: true,
+    });
     const row = await findEmployeeById(employeeId);
     assert.ok(row);
     assert.equal(await bcrypt.compare(tempPassword, row!.password_hash), true);
-    assert.equal(row!.must_change_password, true);
+    assert.equal(row!.first_login_completed, true);
     assert.equal("password_ciphertext" in (row as object), false);
 
     const pub = toPublicEmployee(row!);
@@ -90,7 +92,6 @@ describe("employee reset password flow", { skip: process.env.SKIP_DB_TESTS === "
       employeeId,
       {
         direct: true,
-        requireChange: true,
         employeeName: emp!.name,
         employeeCode: emp!.employee_code,
         adminCode,
@@ -119,11 +120,13 @@ describe("employee reset password flow", { skip: process.env.SKIP_DB_TESTS === "
     assert.equal(logged.rows[0]?.metadata?.temporaryPassword, undefined);
   });
 
-  it("clears must_change_password after the employee sets a new password", async () => {
+  it("keeps first_login_completed after the employee changes password voluntarily", async () => {
     const next = `NewSecure${String(stamp).slice(-3)}1`;
-    await updateEmployeePassword(employeeId, await bcrypt.hash(next, 12), false);
+    await updateEmployeePassword(employeeId, await bcrypt.hash(next, 12), {
+      markFirstLoginComplete: true,
+    });
     const updated = await findEmployeeById(employeeId);
-    assert.equal(updated?.must_change_password, false);
+    assert.equal(updated?.first_login_completed, true);
     assert.equal(await bcrypt.compare(next, updated!.password_hash), true);
     assert.equal(await bcrypt.compare(tempPassword, updated!.password_hash), false);
   });

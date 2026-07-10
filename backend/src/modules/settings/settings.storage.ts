@@ -22,8 +22,7 @@ export interface StorageCategory {
   recordCount: number;
   sizeBytes: number;
   sizeLabel: string;
-  percentOfApplicationData: number;
-  percentOfPlanCapacity: number | null;
+  percentOfTotalCapacity: number | null;
   storageKind: StorageKind;
   description: string;
 }
@@ -49,8 +48,7 @@ export interface StorageBreakdown {
     recordCount: number;
     sizeBytes: number;
     sizeLabel: string;
-    percentOfApplicationData: number;
-    percentOfPlanCapacity: number | null;
+    percentOfTotalCapacity: number | null;
     storageKind: StorageKind;
     moduleId: string;
   }>;
@@ -87,8 +85,8 @@ export async function getStorageBreakdown(): Promise<StorageBreakdown> {
   });
   const planCapacityBytes = capacity.maxBytes;
 
-  const categories = finalizeCategories(modules, applicationDataBytes, planCapacityBytes);
-  const tableRows = finalizeTables(tables, applicationDataBytes, planCapacityBytes);
+  const categories = finalizeCategories(modules, planCapacityBytes);
+  const tableRows = finalizeTables(tables, planCapacityBytes);
 
   return {
     databaseSizeBytes,

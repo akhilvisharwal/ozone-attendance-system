@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { MapPin } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
-import { SecureImage } from "@/components/SecureImage";
+import { AttendancePhotoThumbnail } from "@/components/AttendancePhotoThumbnail";
 import { GoogleMapPreview } from "@/components/GoogleMapPreview";
 import { Badge, WorkStatusBadge, AttendanceStatusBadge, AttendanceDayBadge } from "@/components/ui/Badge";
 import type { AttendanceRecord, ManualAttendanceStatus } from "@/types";
+import { splitAttendancePhotos } from "@/utils/attendancePhotos";
 import { formatDate, formatDateTime, formatMinutesAsHours, formatTime } from "@/utils/format";
 
 interface DetailAttendance extends AttendanceRecord {
@@ -23,6 +24,9 @@ function manualStatusLabel(status: ManualAttendanceStatus): string {
     leave: "Leave",
     holiday: "Holiday",
     weekly_off: "Weekly Off",
+    holiday_worked: "Worked on Holiday",
+    weekly_off_worked: "Worked on Weekly Off",
+    not_applicable: "Not Applicable",
   };
   return labels[status];
 }
@@ -96,12 +100,18 @@ export function AttendanceDetailModal({
   onClose: () => void;
   showLocationDetails?: boolean;
 }) {
-  const hasSelfie = Boolean(attendance?.check_in_selfie_path);
+  const photos = attendance
+    ? splitAttendancePhotos({
+        check_in_selfie_path: attendance.check_in_selfie_path,
+        site_photo_paths: attendance.site_photo_paths,
+      })
+    : { checkInPhoto: null, checkOutPhoto: null, sitePhotos: [] };
   const hasCheckIn = Boolean(
-    attendance?.check_in_time || hasSelfie || attendance?.check_in_device_info
+    attendance?.check_in_time || photos.checkInPhoto || attendance?.check_in_device_info
   );
   const hasCheckOut = Boolean(
     attendance?.check_out_time ||
+      photos.checkOutPhoto ||
       (attendance?.total_minutes != null && attendance.total_minutes > 0)
   );
   const hasWorkReport = Boolean(
@@ -205,12 +215,10 @@ export function AttendanceDetailModal({
                 <InfoCard>
                   <section className="flex flex-col gap-2">
                     <h4 className="text-sm font-semibold text-slate-800">Check-in</h4>
-                    {hasSelfie && (
-                      <SecureImage
-                        path={attendance.check_in_selfie_path}
-                        alt="Check-in selfie"
-                        className="h-28 w-28 rounded-lg object-cover"
-                        fallback="hide"
+                    {photos.checkInPhoto && (
+                      <AttendancePhotoThumbnail
+                        path={photos.checkInPhoto}
+                        alt="Check-in photo"
                       />
                     )}
                     {attendance.check_in_time && (
@@ -232,6 +240,12 @@ export function AttendanceDetailModal({
                 <InfoCard>
                   <section className="flex flex-col gap-2">
                     <h4 className="text-sm font-semibold text-slate-800">Check-out</h4>
+                    {photos.checkOutPhoto && (
+                      <AttendancePhotoThumbnail
+                        path={photos.checkOutPhoto}
+                        alt="Check-out photo"
+                      />
+                    )}
                     {attendance.check_out_time && (
                       <p className="text-sm text-slate-600">
                         Time: {formatTime(attendance.check_out_time)}
@@ -312,17 +326,16 @@ export function AttendanceDetailModal({
             </InfoCard>
           )}
 
-          {attendance.site_photo_paths?.length > 0 && (
+          {photos.sitePhotos.length > 0 && (
             <section>
               <h4 className="mb-2 text-sm font-semibold text-slate-800">Site photos</h4>
               <div className="flex flex-wrap gap-2.5">
-                {attendance.site_photo_paths.map((path) => (
-                  <SecureImage
+                {photos.sitePhotos.map((path) => (
+                  <AttendancePhotoThumbnail
                     key={path}
                     path={path}
                     alt="Site photo"
-                    className="h-20 w-20 rounded-lg object-cover"
-                    fallback="hide"
+                    sizeClassName="h-20 w-20"
                   />
                 ))}
               </div>

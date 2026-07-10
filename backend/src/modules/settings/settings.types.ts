@@ -1,5 +1,8 @@
 import { env } from "../../config/env";
 import { buildDefaultLeaveCategories } from "../../utils/leaveSettings";
+import { buildDefaultExpenseSettings, type ExpenseSettings } from "../expenses/expenseSettings";
+
+export type { ExpenseSettings };
 
 export interface CompanySettings {
   name: string;
@@ -134,7 +137,8 @@ export type SettingsCategory =
   | "notifications"
   | "appearance"
   | "backup"
-  | "audit";
+  | "audit"
+  | "expenses";
 
 export interface AppSettings {
   company: CompanySettings;
@@ -149,6 +153,7 @@ export interface AppSettings {
   appearance: AppearanceSettings;
   backup: BackupSettings;
   audit: AuditSettings;
+  expenses: ExpenseSettings;
 }
 
 export function buildDefaultSettings(): AppSettings {
@@ -242,6 +247,7 @@ export function buildDefaultSettings(): AppSettings {
     audit: {
       retentionDays: 90,
     },
+    expenses: buildDefaultExpenseSettings(),
   };
 }
 
@@ -258,4 +264,5 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   "appearance",
   "backup",
   "audit",
+  "expenses",
 ];

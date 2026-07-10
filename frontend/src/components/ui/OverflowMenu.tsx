@@ -6,8 +6,10 @@ import {
   type ReactNode,
 } from "react";
 import ReactDOM from "react-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { MoreVertical } from "lucide-react";
 import clsx from "clsx";
+import { panelVariants } from "@/lib/motion";
 
 export interface OverflowMenuItem {
   label: string;
@@ -131,9 +133,10 @@ export function OverflowMenu({ items, align = "right" }: Props) {
     };
   }, [open, calcPos]);
 
-  const dropdown = open
-    ? ReactDOM.createPortal(
-        <div
+  const dropdown = ReactDOM.createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div
           ref={menuRef}
           role="menu"
           style={{
@@ -142,7 +145,11 @@ export function OverflowMenu({ items, align = "right" }: Props) {
             minWidth: MENU_WIDTH,
             ...pos,
           }}
-          className="rounded-xl bg-white py-1 shadow-xl ring-1 ring-slate-900/10"
+          variants={panelVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="rounded-2xl bg-white py-1 shadow-soft-lg ring-1 ring-slate-900/10"
         >
           {items.map((item, idx) => (
             <div key={idx}>
@@ -192,10 +199,11 @@ export function OverflowMenu({ items, align = "right" }: Props) {
               </button>
             </div>
           ))}
-        </div>,
-        document.body
-      )
-    : null;
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body
+  );
 
   return (
     <>

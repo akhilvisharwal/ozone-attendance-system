@@ -1,19 +1,18 @@
 import { Router } from "express";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth, requireRole, requireMasterAdmin } from "../../middleware/auth";
 import * as controller from "./leaves.controller";
 
 const router = Router();
 router.use(requireAuth);
 
-// Employee: submit, view own, cancel (pending only)
-router.post("/",       requireRole("employee"), controller.submitLeave);
-router.get("/mine",    requireRole("employee"), controller.myLeaves);
-router.delete("/:id",  requireRole("employee"), controller.cancelLeave);
+router.post("/", requireRole("employee"), controller.submitLeave);
+router.get("/mine", requireRole("employee"), controller.myLeaves);
+router.delete("/:id", requireRole("employee"), controller.cancelLeave);
 
-// Admin: list all, get single, approve/reject, delete any status
-router.get("/",         requireRole("admin"), controller.adminListLeaves);
-router.get("/:id",      requireRole("admin"), controller.adminGetLeave);
-router.patch("/:id/review", requireRole("admin"), controller.adminReviewLeave);
-router.delete("/:id/admin", requireRole("admin"), controller.adminDeleteLeave);
+// Leave management stays Master Admin only (not in Junior Admin permission set)
+router.get("/", requireMasterAdmin(), controller.adminListLeaves);
+router.get("/:id", requireMasterAdmin(), controller.adminGetLeave);
+router.patch("/:id/review", requireMasterAdmin(), controller.adminReviewLeave);
+router.delete("/:id/admin", requireMasterAdmin(), controller.adminDeleteLeave);
 
 export default router;

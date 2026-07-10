@@ -136,8 +136,9 @@ function buildDayCell(input: {
   } = input;
   const day = Number(dateStr.slice(-2));
 
-  // Days before the employee joined are not part of their attendance record.
-  if (dateStr < joinDate) {
+  // Pre-join days default to not_applicable, but any saved attendance (including
+  // admin manual edits) must still resolve so calendar edits are visible.
+  if (dateStr < joinDate && !record) {
     return {
       day,
       date: dateStr,

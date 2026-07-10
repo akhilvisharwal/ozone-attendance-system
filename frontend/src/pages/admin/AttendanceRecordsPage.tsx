@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
 import { AttendanceRecordList } from "@/components/AttendanceRecordList";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
@@ -13,6 +14,7 @@ import * as attendanceApi from "@/api/attendance";
 import type { AdminAttendanceFilterStatus } from "@/api/attendance";
 import { extractErrorMessage } from "@/api/client";
 import type { AdminAttendanceRow } from "@/types";
+import { usePermissions } from "@/auth/usePermissions";
 
 interface FilterState {
   employeeId: string;
@@ -60,6 +62,7 @@ function toQueryFilters(filters: FilterState): attendanceApi.AdminListParams {
 }
 
 export function AttendanceRecordsPage() {
+  const { can } = usePermissions();
   const [items, setItems] = useState<AdminAttendanceRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -171,7 +174,11 @@ export function AttendanceRecordsPage() {
         title="Employee Attendance"
         subtitle="Browse and filter all attendance records"
         action={
-          <Button onClick={() => setManualOpen(true)}>Add Manual Entry</Button>
+          can("manualAttendance") ? (
+            <Button onClick={() => setManualOpen(true)}>Add Manual Entry</Button>
+          ) : can("editAttendance") ? (
+            <Button onClick={() => setManualOpen(true)}>Edit Attendance</Button>
+          ) : undefined
         }
       />
 
@@ -264,6 +271,7 @@ export function AttendanceRecordsPage() {
       </Card>
 
       <Card>
+        <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
           <Spinner />
         ) : items.length === 0 ? (
@@ -301,6 +309,7 @@ export function AttendanceRecordsPage() {
             </div>
           </>
         )}
+        </CrossfadeSwitch>
       </Card>
 
       <AttendanceDetailModal attendance={selected} onClose={() => setSelected(null)} />

@@ -58,6 +58,9 @@ export const TABLE_CATEGORY: Record<string, string> = {
   task_extension_requests: "tasks",
   task_reminder_log: "tasks",
   app_notifications: "notifications",
+  expenses: "expenses",
+  expense_week_payments: "expenses",
+  expense_reimbursement_requests: "expenses",
 };
 
 /** Tables excluded from the application breakdown (auth, migrations, legacy). */
@@ -116,6 +119,16 @@ const CATEGORY_META: Record<
     label: "Notifications",
     storageKind: "postgresql",
     description: "PostgreSQL storage for in-app notifications.",
+  },
+  expenses: {
+    label: "Expenses",
+    storageKind: "postgresql",
+    description: "PostgreSQL storage for expense claims, reimbursement requests, and week payments.",
+  },
+  expense_receipts: {
+    label: "Expense Receipts",
+    storageKind: "files",
+    description: "Receipt image and PDF files referenced by expense records.",
   },
   selfies: {
     label: "Selfies",
@@ -211,6 +224,13 @@ export const APPLICATION_MODULES: ApplicationModuleDefinition[] = [
     fileCategoryIds: [],
     description: "In-app notification records.",
   },
+  {
+    id: "expenses",
+    label: "Expenses",
+    postgresCategoryIds: ["expenses"],
+    fileCategoryIds: ["expense_receipts"],
+    description: "Expense claims, reimbursement requests, and receipt files.",
+  },
 ];
 
 export function percentOf(part: number, total: number): number {
@@ -290,9 +310,10 @@ export async function collectReferencedFilePaths(): Promise<{
   profilePhotos: string[];
   siteImages: string[];
   taskDocuments: string[];
+  expenseReceipts: string[];
   allReferenced: Set<string>;
 }> {
-  const [attendanceRes, employeesRes, sitesRes, taskRes] = await Promise.all([
+  const [attendanceRes, employeesRes, sitesRes, taskRes, expenseRes] = await Promise.all([
     pool.query<{ check_in_selfie_path: string | null; site_photo_paths: unknown }>(
       `SELECT check_in_selfie_path, site_photo_paths FROM attendance`
     ),
@@ -303,6 +324,9 @@ export async function collectReferencedFilePaths(): Promise<{
       `SELECT image_path FROM sites WHERE image_path IS NOT NULL`
     ),
     pool.query<{ file_path: string }>(`SELECT file_path FROM task_attachments`),
+    pool.query<{ receipt_path: string }>(
+      `SELECT receipt_path FROM expenses WHERE receipt_path IS NOT NULL`
+    ),
   ]);
 
   const selfies: string[] = [];
@@ -329,15 +353,20 @@ export async function collectReferencedFilePaths(): Promise<{
     .map((r) => normalizeRelativePath(r.file_path))
     .filter((p): p is string => Boolean(p));
 
+  const expenseReceipts = expenseRes.rows
+    .map((r) => normalizeRelativePath(r.receipt_path))
+    .filter((p): p is string => Boolean(p));
+
   const allReferenced = new Set<string>([
     ...selfies,
     ...sitePhotos,
     ...profilePhotos,
     ...siteImages,
     ...taskDocuments,
+    ...expenseReceipts,
   ]);
 
-  return { selfies, sitePhotos, profilePhotos, siteImages, taskDocuments, allReferenced };
+  return { selfies, sitePhotos, profilePhotos, siteImages, taskDocuments, expenseReceipts, allReferenced };
 }
 
 async function walkUploadFiles(dir: string, files: string[] = []): Promise<string[]> {
@@ -405,6 +434,7 @@ export function buildPostgresCategories(tables: TableStat[]): StorageCategoryDra
     "leave",
     "holidays",
     "tasks",
+    "expenses",
     "audit",
     "settings",
     "notifications",
@@ -431,11 +461,13 @@ export function buildPostgresCategories(tables: TableStat[]): StorageCategoryDra
 export async function buildFileCategories(
   referenced: Awaited<ReturnType<typeof collectReferencedFilePaths>>
 ): Promise<StorageCategoryDraft[]> {
-  const [selfieStats, profilePhotos, siteImages, taskDocuments] = await Promise.all([
+  const [selfieStats, profilePhotos, siteImages, taskDocuments, expenseReceipts] =
+    await Promise.all([
       sumReferencedFileSizes([...referenced.selfies, ...referenced.sitePhotos]),
       sumReferencedFileSizes(referenced.profilePhotos),
       sumReferencedFileSizes(referenced.siteImages),
       sumReferencedFileSizes(referenced.taskDocuments),
+      sumReferencedFileSizes(referenced.expenseReceipts),
     ]);
 
   const drafts: Array<{ id: string; stat: FileGroupStat }> = [
@@ -443,6 +475,7 @@ export async function buildFileCategories(
     { id: "profile_photos", stat: profilePhotos },
     { id: "site_images", stat: siteImages },
     { id: "task_documents", stat: taskDocuments },
+    { id: "expense_receipts", stat: expenseReceipts },
   ];
 
   return drafts
@@ -526,37 +559,33 @@ export function computeInternalDatabaseBytes(
 
 export interface FinalizedCategory extends StorageCategoryDraft {
   sizeLabel: string;
-  percentOfApplicationData: number;
-  percentOfPlanCapacity: number | null;
+  /** Share of the detected database plan capacity (PostgreSQL + module files). */
+  percentOfTotalCapacity: number | null;
 }
 
 export function finalizeCategories(
   drafts: StorageCategoryDraft[],
-  applicationDataBytes: number,
   planCapacityBytes: number | null
 ): FinalizedCategory[] {
   return drafts.map((draft) => ({
     ...draft,
     sizeLabel: formatDatabaseSize(draft.sizeBytes),
-    percentOfApplicationData: percentOf(draft.sizeBytes, applicationDataBytes),
-    percentOfPlanCapacity:
-      draft.postgresBytes > 0 && planCapacityBytes != null && planCapacityBytes > 0
-        ? percentOf(draft.postgresBytes, planCapacityBytes)
+    percentOfTotalCapacity:
+      planCapacityBytes != null && planCapacityBytes > 0
+        ? percentOf(draft.sizeBytes, planCapacityBytes)
         : null,
   }));
 }
 
 export interface FinalizedTableStat extends TableStat {
   sizeLabel: string;
-  percentOfApplicationData: number;
-  percentOfPlanCapacity: number | null;
+  percentOfTotalCapacity: number | null;
   storageKind: StorageKind;
   moduleId: string;
 }
 
 export function finalizeTables(
   tables: TableStat[],
-  applicationDataBytes: number,
   planCapacityBytes: number | null
 ): FinalizedTableStat[] {
   return tables
@@ -564,8 +593,7 @@ export function finalizeTables(
     .map((table) => ({
       ...table,
       sizeLabel: formatDatabaseSize(table.sizeBytes),
-      percentOfApplicationData: percentOf(table.sizeBytes, applicationDataBytes),
-      percentOfPlanCapacity:
+      percentOfTotalCapacity:
         planCapacityBytes != null && planCapacityBytes > 0
           ? percentOf(table.sizeBytes, planCapacityBytes)
           : null,

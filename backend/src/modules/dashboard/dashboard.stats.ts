@@ -12,6 +12,7 @@ import {
   dashboardBucketFromStatus,
   resolveDayStatus,
 } from "../attendance/attendanceCalculation.service";
+import { getPendingReimbursementTotal } from "../expenses/expenses.requests.repository";
 
 export interface DashboardSummaryResult {
   totalEmployees: number;
@@ -23,6 +24,8 @@ export interface DashboardSummaryResult {
   checkedOutToday: number;
   holidayWorkedToday: number;
   weeklyOffWorkedToday: number;
+  pendingReimbursementRequests: number;
+  pendingReimbursementAmount: number;
 }
 
 /**
@@ -135,6 +138,8 @@ export async function getDashboardSummary(today: string): Promise<DashboardSumma
     if (isLateArrival(record)) lateArrivals += 1;
   }
 
+  const reimbursement = await getPendingReimbursementTotal();
+
   return {
     totalEmployees: employees.length,
     presentToday,
@@ -145,6 +150,8 @@ export async function getDashboardSummary(today: string): Promise<DashboardSumma
     checkedOutToday,
     holidayWorkedToday,
     weeklyOffWorkedToday,
+    pendingReimbursementRequests: reimbursement.requestCount,
+    pendingReimbursementAmount: reimbursement.totalAmount,
   };
 }
 

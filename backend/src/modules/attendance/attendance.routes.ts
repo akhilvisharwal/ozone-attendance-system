@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth, requireRole, requirePermission, requireAnyPermission, requireMasterAdmin, requireAdminPanel } from "../../middleware/auth";
 import { upload } from "../../middleware/upload";
 import * as controller from "./attendance.controller";
 import * as overridesController from "./attendanceOverrides.controller";
@@ -11,14 +11,14 @@ router.use(requireAuth);
 // Timing rules — available to both roles so the check-in screen can show live status.
 router.get("/timing-rules", controller.timingRules);
 
-// Daily attendance rule overrides (admin-managed temporary exceptions).
+// Daily attendance rule overrides (Master Admin only — settings-level).
 router.get("/overrides/active", overridesController.getActiveOverride);
-router.get("/overrides/:id", requireRole("admin"), overridesController.getOverrideById);
-router.get("/overrides", requireRole("admin"), overridesController.listOverrides);
-router.post("/overrides", requireRole("admin"), overridesController.createOverride);
-router.patch("/overrides/:id/enabled", requireRole("admin"), overridesController.setOverrideEnabled);
-router.patch("/overrides/:id", requireRole("admin"), overridesController.updateOverride);
-router.delete("/overrides/:id", requireRole("admin"), overridesController.deleteOverride);
+router.get("/overrides/:id", requireMasterAdmin(), overridesController.getOverrideById);
+router.get("/overrides", requireMasterAdmin(), overridesController.listOverrides);
+router.post("/overrides", requireMasterAdmin(), overridesController.createOverride);
+router.patch("/overrides/:id/enabled", requireMasterAdmin(), overridesController.setOverrideEnabled);
+router.patch("/overrides/:id", requireMasterAdmin(), overridesController.updateOverride);
+router.delete("/overrides/:id", requireMasterAdmin(), overridesController.deleteOverride);
 
 // Employee-only actions — identity always comes from the authenticated JWT.
 router.post("/check-in", requireRole("employee"), upload.single("selfie"), controller.checkIn);
@@ -32,17 +32,64 @@ router.get("/me/monthly", requireRole("employee"), controller.myMonthly);
 router.get("/me/history", requireRole("employee"), controller.myHistory);
 router.get("/me/:id", requireRole("employee"), controller.myAttendanceById);
 
-// Admin-only visibility and manual marking.
-router.get("/",                                requireRole("admin"), controller.adminList);
-router.get("/admin/monthly",                   requireRole("admin"), controller.adminMonthly);
-router.get("/admin/monthly/export",            requireRole("admin"), controller.adminMonthlyExport);
-router.post("/admin/mark-present",             requireRole("admin"), controller.adminMarkPresent);
-router.post("/admin/mark-half-day",            requireRole("admin"), controller.adminMarkHalfDay);
-router.post("/admin/mark-absent",              requireRole("admin"), controller.adminMarkAbsent);
-router.post("/admin/manual-attendance",        requireRole("admin"), controller.saveManualAttendance);
-router.delete("/admin/manual-attendance",      requireRole("admin"), controller.deleteManualAttendance);
-router.get("/admin/for-date",                  requireRole("admin"), controller.adminGetForDate);
-router.get("/admin/check/:employeeId",         requireRole("admin"), controller.adminCheckToday);
-router.get("/:id",                             requireRole("admin"), controller.adminGetById);
+// Admin panel attendance — permission gated for Junior Admins.
+router.get("/", requireAdminPanel(), requirePermission("viewAttendance"), controller.adminList);
+router.get("/admin/monthly", requireAdminPanel(), requirePermission("viewAttendance"), controller.adminMonthly);
+router.get(
+  "/admin/monthly/export",
+  requireAdminPanel(),
+  // Same gate as the monthly calendar — Junior Admins export only what they can view.
+  requirePermission("viewAttendance"),
+  controller.adminMonthlyExport
+);
+router.post(
+  "/admin/mark-present",
+  requireAdminPanel(),
+  requirePermission("editAttendance"),
+  controller.adminMarkPresent
+);
+router.post(
+  "/admin/mark-half-day",
+  requireAdminPanel(),
+  requirePermission("editAttendance"),
+  controller.adminMarkHalfDay
+);
+router.post(
+  "/admin/mark-absent",
+  requireAdminPanel(),
+  requirePermission("editAttendance"),
+  controller.adminMarkAbsent
+);
+router.post(
+  "/admin/manual-attendance",
+  requireAdminPanel(),
+  requireAnyPermission("manualAttendance", "editAttendance"),
+  controller.saveManualAttendance
+);
+router.delete(
+  "/admin/manual-attendance",
+  requireAdminPanel(),
+  requireAnyPermission("manualAttendance", "editAttendance"),
+  controller.deleteManualAttendance
+);
+router.get(
+  "/admin/for-date",
+  requireAdminPanel(),
+  requirePermission("viewAttendance"),
+  controller.adminGetForDate
+);
+router.get(
+  "/admin/check/:employeeId",
+  requireAdminPanel(),
+  requirePermission("viewAttendance"),
+  controller.adminCheckToday
+);
+router.post(
+  "/admin/remind",
+  requireAdminPanel(),
+  requirePermission("sendAttendanceReminders"),
+  controller.sendAttendanceReminders
+);
+router.get("/:id", requireAdminPanel(), requirePermission("viewAttendance"), controller.adminGetById);
 
 export default router;

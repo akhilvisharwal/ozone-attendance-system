@@ -9,6 +9,7 @@ import { CompanySaveConfirmModal } from "@/components/settings/CompanySaveConfir
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useToast } from "@/components/ui/Toast";
 import type { CompanySettings } from "@/types/settings";
 import {
   DEFAULT_PHONE_DIAL_CODE,
@@ -100,6 +101,7 @@ function validateForm(form: CompanyFormState): FieldErrors {
 
 export function CompanySettingsSection() {
   const { refresh } = useSettings();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -187,6 +189,7 @@ export function CompanySettingsSection() {
       await refresh();
       setConfirmOpen(false);
       setMessage({ type: "success", text: "Company information updated successfully." });
+      showToast("Settings saved successfully.");
     } catch (err) {
       setConfirmOpen(false);
       setMessage({

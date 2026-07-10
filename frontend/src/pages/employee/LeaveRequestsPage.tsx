@@ -13,6 +13,7 @@ import { Spinner } from "../../components/ui/Spinner";
 import { Input, FieldWrapper, Textarea, Select } from "../../components/ui/Input";
 import { ResponsiveTable, type Column } from "../../components/ui/ResponsiveTable";
 import { TaskDeleteConfirmModal } from "@/components/tasks/TaskDeleteConfirmModal";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 
 const STATUS_COLORS: Record<string, "amber" | "green" | "red"> = {
   pending:  "amber",
@@ -160,6 +161,7 @@ export default function LeaveRequestsPage() {
 
       <Card>
         <CardBody>
+          <CrossfadeSwitch state={loading ? "loading" : "content"}>
           {loading ? (
             <div className="flex justify-center py-10"><Spinner /></div>
           ) : items.length === 0 ? (
@@ -182,6 +184,7 @@ export default function LeaveRequestsPage() {
               }
             />
           )}
+          </CrossfadeSwitch>
 
           {totalPages > 1 && (
             <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-gray-100 pt-4 sm:flex-row">

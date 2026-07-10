@@ -10,6 +10,7 @@ import { Input, Select, Textarea } from "@/components/ui/Input";
 import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { Alert } from "@/components/ui/Alert";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
 import { TaskAnalyticsCards } from "@/components/tasks/TaskAnalyticsCards";
 import { TaskCalendar } from "@/components/tasks/TaskCalendar";
@@ -22,6 +23,7 @@ import * as sitesApi from "@/api/sites";
 import type { Employee, Site, TaskAnalytics, TaskGroupSummary, TaskPriority, TaskStatus } from "@/types";
 import { extractErrorMessage } from "@/api/client";
 import { formatDate, todayIso } from "@/utils/format";
+import { usePermissions } from "@/auth/usePermissions";
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   not_started: "Not Started",
@@ -54,6 +56,7 @@ function groupStatusLabel(group: TaskGroupSummary): string {
 }
 
 export function TaskManagementPage() {
+  const { can } = usePermissions();
   const [groups, setGroups] = useState<TaskGroupSummary[]>([]);
   const [analytics, setAnalytics] = useState<TaskAnalytics | null>(null);
   const [calendarGroups, setCalendarGroups] = useState<TaskGroupSummary[]>([]);
@@ -253,12 +256,16 @@ export function TaskManagementPage() {
         subtitle="Create, assign, and track employee tasks across projects"
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => setClearAllOpen(true)} icon={<Trash2 className="h-4 w-4" />}>
-              Clear All Tasks
-            </Button>
-            <Button onClick={() => setCreateOpen(true)} icon={<Plus className="h-4 w-4" />}>
-              Assign Task
-            </Button>
+            {can("deleteTasks") && (
+              <Button variant="outline" onClick={() => setClearAllOpen(true)} icon={<Trash2 className="h-4 w-4" />}>
+                Clear All Tasks
+              </Button>
+            )}
+            {can("assignTasks") && (
+              <Button onClick={() => setCreateOpen(true)} icon={<Plus className="h-4 w-4" />}>
+                Assign Task
+              </Button>
+            )}
           </div>
         }
       />
@@ -309,6 +316,7 @@ export function TaskManagementPage() {
       </Card>
 
       <Card>
+        <CrossfadeSwitch state={loading ? "loading" : view}>
         {loading ? (
           <Spinner />
         ) : view === "calendar" ? (
@@ -333,30 +341,35 @@ export function TaskManagementPage() {
             onRowClick={(group) => setSelectedGroupId(group.group_id)}
             actions={(group) => (
               <div className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<Pencil className="h-4 w-4 text-slate-500" />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditTarget(group);
-                  }}
-                  aria-label={`Edit ${group.title}`}
-                />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<Trash2 className="h-4 w-4 text-red-500" />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteTarget(group);
-                  }}
-                  aria-label={`Delete ${group.title}`}
-                />
+                {can("editTasks") && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<Pencil className="h-4 w-4 text-slate-500" />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditTarget(group);
+                    }}
+                    aria-label={`Edit ${group.title}`}
+                  />
+                )}
+                {can("deleteTasks") && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<Trash2 className="h-4 w-4 text-red-500" />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteTarget(group);
+                    }}
+                    aria-label={`Delete ${group.title}`}
+                  />
+                )}
               </div>
             )}
           />
         )}
+        </CrossfadeSwitch>
       </Card>
 
       <TaskFormModal

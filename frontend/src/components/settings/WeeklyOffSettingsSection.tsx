@@ -10,6 +10,7 @@ import { WeeklyOffSaveConfirmModal } from "@/components/settings/WeeklyOffSaveCo
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useToast } from "@/components/ui/Toast";
 import type { WeeklyOffSettings } from "@/types/settings";
 import { formatWeeklyOffSummary, normalizeWeeklyOffDays, weeklyOffDaysEqual } from "@/utils/weeklyOffDays";
 
@@ -30,6 +31,7 @@ const RELATED_LINKS = [
 
 export function WeeklyOffSettingsSection() {
   const { refresh } = useSettings();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -83,6 +85,7 @@ export function WeeklyOffSettingsSection() {
       await refresh();
       setConfirmOpen(false);
       setMessage({ type: "success", text: "Default weekly off updated successfully." });
+      showToast("Settings saved successfully.");
     } catch (err) {
       setConfirmOpen(false);
       setMessage({

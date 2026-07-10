@@ -623,25 +623,41 @@ function buildManualAttendanceFields(input: ManualAttendanceInput): {
   checkInStatus: CheckInStatus | null;
   isHalfDay: boolean;
   checkOutStatus: CheckOutStatus | null;
+  specialDayStatus: "holiday_worked" | "weekly_off_worked" | null;
 } {
   const { status, date, checkInTime, checkOutTime, totalMinutes } = input;
 
-  if (status === "present" || status === "half_day") {
+  if (
+    status === "present" ||
+    status === "half_day" ||
+    status === "holiday_worked" ||
+    status === "weekly_off_worked"
+  ) {
     const checkIn = checkInTime ? combineDateAndTime(date, checkInTime) : null;
     const checkOut = checkOutTime ? combineDateAndTime(date, checkOutTime) : null;
     const mins =
       totalMinutes ??
       (checkInTime && checkOutTime ? minutesBetweenTimes(date, checkInTime, checkOutTime) : null);
 
+    const dayStatus: DayStatus =
+      status === "half_day" ? "half_day" : "present";
+    const specialDayStatus =
+      status === "holiday_worked"
+        ? "holiday_worked"
+        : status === "weekly_off_worked"
+          ? "weekly_off_worked"
+          : null;
+
     return {
       checkInTime: checkIn,
       checkOutTime: checkOut,
       totalMinutes: mins,
       status: "checked_out",
-      dayStatus: status,
+      dayStatus,
       checkInStatus: status === "half_day" ? "half_day" : "on_time",
       isHalfDay: status === "half_day",
       checkOutStatus: null,
+      specialDayStatus,
     };
   }
 
@@ -655,9 +671,11 @@ function buildManualAttendanceFields(input: ManualAttendanceInput): {
       checkInStatus: null,
       isHalfDay: false,
       checkOutStatus: null,
+      specialDayStatus: null,
     };
   }
 
+  // leave | holiday | weekly_off | not_applicable
   return {
     checkInTime: null,
     checkOutTime: null,
@@ -667,6 +685,7 @@ function buildManualAttendanceFields(input: ManualAttendanceInput): {
     checkInStatus: null,
     isHalfDay: false,
     checkOutStatus: null,
+    specialDayStatus: null,
   };
 }
 
@@ -693,7 +712,7 @@ export async function upsertManualAttendance(input: ManualAttendanceInput): Prom
        $8, $9, $10,
        true, $11, $12,
        $13, $14,
-       NULL,
+       $15,
        NULL, NULL, NULL, NULL, NULL,
        NULL, NULL, NULL, NULL,
        NULL, NULL, NULL, NULL, '[]'
@@ -712,7 +731,7 @@ export async function upsertManualAttendance(input: ManualAttendanceInput): Prom
        admin_mark_reason    = EXCLUDED.admin_mark_reason,
        admin_mark_status    = EXCLUDED.admin_mark_status,
        admin_approved_by    = EXCLUDED.admin_approved_by,
-       special_day_status   = NULL,
+       special_day_status   = EXCLUDED.special_day_status,
        check_in_latitude    = NULL,
        check_in_longitude   = NULL,
        check_in_address     = NULL,
@@ -744,6 +763,7 @@ export async function upsertManualAttendance(input: ManualAttendanceInput): Prom
       input.reason,
       input.status,
       input.approvedById,
+      fields.specialDayStatus,
     ]
   );
   return result.rows[0];

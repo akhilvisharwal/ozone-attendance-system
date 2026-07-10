@@ -161,6 +161,23 @@ export interface AuditSettings {
   retentionDays: AuditRetentionDays;
 }
 
+export interface ExpenseOptionDef {
+  key: string;
+  label: string;
+  enabled: boolean;
+}
+
+export interface ExpenseSettings {
+  cycles: { weekly: boolean; monthly: boolean; custom: boolean };
+  categories: ExpenseOptionDef[];
+  paymentMethods: ExpenseOptionDef[];
+  maxAmountPerExpense: number;
+  maxAmountPerRequest: number;
+  requireReceiptAbove: number;
+  autoArchivePaidDays: number;
+  approvalRequired: boolean;
+}
+
 export type AuditModule =
   | "Auth"
   | "Employees"
@@ -173,6 +190,7 @@ export type AuditModule =
   | "Security"
   | "Tasks"
   | "Reports"
+  | "Expenses"
   | "Other";
 
 export type AuditActionType =
@@ -208,6 +226,7 @@ export interface AppSettings {
   appearance: AppearanceSettings;
   backup: BackupSettings;
   audit: AuditSettings;
+  expenses: ExpenseSettings;
 }
 
 export type SettingsCategory = keyof AppSettings;
@@ -224,7 +243,8 @@ export type CleanupCategory =
   | "attendance_records"
   | "selfies"
   | "location_history"
-  | "audit_logs";
+  | "audit_logs"
+  | "archived_expenses";
 
 export interface CleanupCategorySummary {
   id: CleanupCategory;
@@ -270,8 +290,7 @@ export interface StorageCategory {
   recordCount: number;
   sizeBytes: number;
   sizeLabel: string;
-  percentOfApplicationData: number;
-  percentOfPlanCapacity: number | null;
+  percentOfTotalCapacity: number | null;
   storageKind: StorageKind;
   description: string;
 }
@@ -281,8 +300,7 @@ export interface StorageTableStat {
   recordCount: number;
   sizeBytes: number;
   sizeLabel: string;
-  percentOfApplicationData: number;
-  percentOfPlanCapacity: number | null;
+  percentOfTotalCapacity: number | null;
   storageKind: StorageKind;
   moduleId: string;
 }
@@ -456,9 +474,11 @@ export type SettingsTabId =
   | "mobile"
   | "notifications"
   | "security"
+  | "juniorAdmins"
   | "backup"
   | "database"
-  | "audit";
+  | "audit"
+  | "expenses";
 
 export const SETTINGS_NAV: {
   id: SettingsTabId;
@@ -473,7 +493,19 @@ export const SETTINGS_NAV: {
   { id: "mobile", label: "Attendance Capture", description: "GPS, selfie, and capture rules for mobile and web", group: "Operations" },
   { id: "notifications", label: "Notifications", description: "Email and in-app notification toggles", group: "Communications" },
   { id: "security", label: "Security", description: "Password policy and session controls", group: "Administration" },
+  {
+    id: "juniorAdmins",
+    label: "Junior Admins",
+    description: "Create junior admin accounts and manage their permissions",
+    group: "Administration",
+  },
   { id: "backup", label: "Backup & Data", description: "Backup, restore, and data export", group: "Administration" },
+  {
+    id: "expenses",
+    label: "Expense Tracker",
+    description: "Reimbursement cycles, categories, limits, and approval rules",
+    group: "Administration",
+  },
   { id: "database", label: "Database", description: "Storage monitoring, cleanup, and maintenance", group: "Administration" },
   {
     id: "audit",

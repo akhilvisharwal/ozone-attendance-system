@@ -1,4 +1,19 @@
-export type Role = "admin" | "employee";
+export type Role = "admin" | "junior_admin" | "employee";
+
+export type AdminPermission =
+  | "viewDashboard"
+  | "viewAttendance"
+  | "editAttendance"
+  | "manualAttendance"
+  | "viewEmployees"
+  | "sendAttendanceReminders"
+  | "assignTasks"
+  | "editTasks"
+  | "deleteTasks"
+  | "viewReports"
+  | "manageExpenses";
+
+export type AdminPermissions = Record<AdminPermission, boolean>;
 
 export interface Employee {
   id: string;
@@ -13,12 +28,14 @@ export interface Employee {
   role: Role;
   is_active: boolean;
   must_change_password: boolean;
+  first_login_completed: boolean;
   password_changed_at?: string | null;
   profile_photo_path: string | null;
   created_by: string | null;
   deleted_at: string | null;
   weekly_off_days: number[];
   uses_default_weekly_off: boolean;
+  admin_permissions: AdminPermissions;
   created_at: string;
   updated_at: string;
 }
@@ -162,6 +179,7 @@ declare global {
         id: string;
         employeeCode: string;
         role: Role;
+        permissions?: AdminPermissions;
       };
     }
   }

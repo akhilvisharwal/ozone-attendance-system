@@ -90,3 +90,11 @@ export async function markAllRead(employeeId: string): Promise<number> {
   );
   return result.rowCount ?? 0;
 }
+
+export async function deleteNotification(id: string, employeeId: string): Promise<boolean> {
+  const result = await pool.query(
+    `DELETE FROM app_notifications WHERE id = $1 AND employee_id = $2`,
+    [id, employeeId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}

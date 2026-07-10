@@ -4,7 +4,10 @@ export type ManualAttendanceStatus =
   | "absent"
   | "leave"
   | "holiday"
-  | "weekly_off";
+  | "weekly_off"
+  | "holiday_worked"
+  | "weekly_off_worked"
+  | "not_applicable";
 
 export interface ManualAttendanceInput {
   employeeId: string;

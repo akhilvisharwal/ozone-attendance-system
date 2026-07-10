@@ -8,7 +8,6 @@ import { Input, Select, Textarea, FieldWrapper } from "@/components/ui/Input";
 import { TimeSlotCombobox } from "@/components/ui/TimeSlotCombobox";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
 import * as attendanceApi from "@/api/attendance";
-import * as employeesApi from "@/api/employees";
 import { extractErrorMessage } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import type { AdminAttendanceRow, Employee, ManualAttendanceStatus } from "@/types";
@@ -20,10 +19,26 @@ const STATUS_OPTIONS: { value: ManualAttendanceStatus; label: string }[] = [
   { value: "leave", label: "Leave" },
   { value: "holiday", label: "Holiday" },
   { value: "weekly_off", label: "Weekly Off" },
+  { value: "holiday_worked", label: "Worked on Holiday" },
+  { value: "weekly_off_worked", label: "Worked on Weekly Off" },
+  { value: "not_applicable", label: "Not Applicable" },
 ];
 
 function requiresTimes(status: ManualAttendanceStatus): boolean {
-  return status === "present" || status === "half_day";
+  return (
+    status === "present" ||
+    status === "half_day" ||
+    status === "holiday_worked" ||
+    status === "weekly_off_worked"
+  );
+}
+
+function statusFromCellHint(hint?: string | null): ManualAttendanceStatus {
+  const allowed = new Set(STATUS_OPTIONS.map((option) => option.value));
+  if (hint && allowed.has(hint as ManualAttendanceStatus)) {
+    return hint as ManualAttendanceStatus;
+  }
+  return "present";
 }
 
 export function ManualAttendanceModal({
@@ -32,12 +47,14 @@ export function ManualAttendanceModal({
   onSaved,
   initialEmployeeId,
   initialDate,
+  initialStatus,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   initialEmployeeId?: string;
   initialDate?: string;
+  initialStatus?: string;
 }) {
   const { employee: currentAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -75,6 +92,10 @@ export function ManualAttendanceModal({
       if (record) {
         if (record.admin_mark_status) {
           setStatus(record.admin_mark_status as ManualAttendanceStatus);
+        } else if (record.special_day_status === "holiday_worked") {
+          setStatus("holiday_worked");
+        } else if (record.special_day_status === "weekly_off_worked") {
+          setStatus("weekly_off_worked");
         } else if (record.day_status === "half_day") {
           setStatus("half_day");
         } else if (record.day_status === "absent" || record.status === "absent") {
@@ -95,19 +116,20 @@ export function ManualAttendanceModal({
       } else {
         setNeedsOverride(false);
         setApprovedById(currentAdmin?.id ?? "");
+        setStatus(statusFromCellHint(initialStatus));
       }
     } catch (err) {
       setError(extractErrorMessage(err, "Could not load attendance for this date."));
     } finally {
       setLoading(false);
     }
-  }, [employeeId, date, currentAdmin?.id]);
+  }, [employeeId, date, currentAdmin?.id, initialStatus]);
 
   useEffect(() => {
     if (!open) return;
     setEmployeeId(initialEmployeeId ?? "");
     setDate(initialDate ?? "");
-    setStatus("present");
+    setStatus(statusFromCellHint(initialStatus));
     setCheckInTime("09:00");
     setCheckOutTime("18:00");
     setTotalMinutes("");
@@ -117,7 +139,7 @@ export function ManualAttendanceModal({
     setNeedsOverride(false);
     setConfirmOpen(false);
     setError(null);
-  }, [open, initialEmployeeId, initialDate, currentAdmin?.id]);
+  }, [open, initialEmployeeId, initialDate, initialStatus, currentAdmin?.id]);
 
   useEffect(() => {
     if (!open || !employeeId || !date) return;
@@ -126,11 +148,12 @@ export function ManualAttendanceModal({
 
   useEffect(() => {
     if (!open) return;
-    employeesApi
-      .listEmployees({ limit: 100, isActive: true })
-      .then((res) => setAdmins(res.items.filter((item) => item.role === "admin")))
-      .catch(() => setAdmins([]));
-  }, [open]);
+    if (currentAdmin && (currentAdmin.role === "admin" || currentAdmin.role === "junior_admin")) {
+      setAdmins([currentAdmin]);
+      return;
+    }
+    setAdmins([]);
+  }, [open, currentAdmin]);
 
   const workingHoursPreview = useMemo(() => {
     if (!showTimeFields || !checkInTime || !checkOutTime) return null;
@@ -144,8 +167,8 @@ export function ManualAttendanceModal({
     if (!employeeId) return "Select an employee.";
     if (!date) return "Select a date.";
     if (!reason.trim()) return "Reason is required.";
-    if (showTimeFields && (!checkInTime || !checkOutTime)) {
-      return "Check-in and check-out times are required for Present and Half Day.";
+              if (showTimeFields && (!checkInTime || !checkOutTime)) {
+      return "Check-in and check-out times are required for Present, Half Day, and worked special days.";
     }
     return null;
   }
@@ -207,7 +230,8 @@ export function ManualAttendanceModal({
       <Modal
         open={open}
         onClose={onClose}
-        title={isEditingManual ? "Edit Manual Attendance" : "Add Manual Attendance"}
+        title="Edit Attendance"
+        description="Set or update attendance for any date, including blank days, weekends, holidays, and dates before joining."
         widthClassName="max-w-2xl"
         footer={
           <ModalFooterActions>

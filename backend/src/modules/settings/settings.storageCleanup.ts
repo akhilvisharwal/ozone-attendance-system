@@ -1,4 +1,8 @@
 import { pool } from "../../config/db";
+import {
+  countArchivedExpenseRecords,
+  deleteArchivedExpenseData,
+} from "../expenses/expenses.requests.repository";
 import { storage } from "../../services/storage";
 import { formatDatabaseSize } from "../../utils/backupHelpers";
 import {
@@ -12,7 +16,8 @@ export type CleanupCategory =
   | "attendance_records"
   | "selfies"
   | "location_history"
-  | "audit_logs";
+  | "audit_logs"
+  | "archived_expenses";
 
 export interface CleanupCategorySummary {
   id: CleanupCategory;
@@ -55,6 +60,7 @@ export const CLEANUP_CATEGORIES: CleanupCategory[] = [
   "selfies",
   "location_history",
   "audit_logs",
+  "archived_expenses",
 ];
 
 const CATEGORY_META: Record<
@@ -79,6 +85,11 @@ const CATEGORY_META: Record<
   audit_logs: {
     label: "Audit Logs",
     description: "Permanently delete all administrative audit log entries.",
+  },
+  archived_expenses: {
+    label: "Archived Expenses",
+    description:
+      "Permanently delete archived expense line items and reimbursement requests (paid/archived only). Linked receipt images and PDFs are removed from storage.",
   },
 };
 
@@ -245,6 +256,28 @@ async function summarizeAuditLogs(): Promise<CleanupCategorySummary> {
   return toSummary("audit_logs", recordCount, 0, databaseBytes, 0);
 }
 
+async function summarizeArchivedExpenses(): Promise<CleanupCategorySummary> {
+  const archived = await countArchivedExpenseRecords();
+  // Primary count = archived expense line items (plus request headers for transparency).
+  const recordCount = archived.expenseCount + archived.requestCount;
+  const uniquePaths = [
+    ...new Set(
+      archived.receiptPaths
+        .map((p) => normalizeRelativePath(p))
+        .filter((p): p is string => Boolean(p))
+    ),
+  ];
+  const files = await sumFileSizes(uniquePaths);
+
+  const [reqDbBytes, expDbBytes] = await Promise.all([
+    proportionalTableBytes("expense_reimbursement_requests", archived.requestCount),
+    proportionalTableBytes("expenses", archived.expenseCount),
+  ]);
+  const databaseBytes = reqDbBytes + expDbBytes;
+
+  return toSummary("archived_expenses", recordCount, files.fileCount, databaseBytes, files.bytes);
+}
+
 async function summarizeOrThrow(
   id: CleanupCategory,
   fn: () => Promise<CleanupCategorySummary>
@@ -267,17 +300,20 @@ export async function getCleanupCenterSummary(): Promise<CleanupCenterSummary> {
     summarizeOrThrow("selfies", summarizeSelfies),
     summarizeOrThrow("location_history", summarizeLocationHistory),
     summarizeOrThrow("audit_logs", summarizeAuditLogs),
+    summarizeOrThrow("archived_expenses", summarizeArchivedExpenses),
   ]);
 
   const attendance = categories.find((c) => c.id === "attendance_records");
   const selfies = categories.find((c) => c.id === "selfies");
   const location = categories.find((c) => c.id === "location_history");
   const audit = categories.find((c) => c.id === "audit_logs");
+  const archivedExpenses = categories.find((c) => c.id === "archived_expenses");
 
   // Attendance rows include selfie files and location columns. Count that table once.
   // If attendance is already empty, fall back to remaining selfie/location totals.
   const totalRecoverableBytes =
     (audit?.totalBytes ?? 0) +
+    (archivedExpenses?.totalBytes ?? 0) +
     (attendance && attendance.recordCount > 0
       ? attendance.totalBytes
       : (selfies?.totalBytes ?? 0) + (location?.totalBytes ?? 0));
@@ -287,7 +323,9 @@ export async function getCleanupCenterSummary(): Promise<CleanupCenterSummary> {
     totalRecoverableBytes,
     totalRecoverableLabel: formatDatabaseSize(totalRecoverableBytes),
     totalRecords: categories.reduce((sum, c) => sum + c.recordCount, 0),
-    totalFiles: Math.max(attendance?.fileCount ?? 0, selfies?.fileCount ?? 0),
+    totalFiles:
+      Math.max(attendance?.fileCount ?? 0, selfies?.fileCount ?? 0) +
+      (archivedExpenses?.fileCount ?? 0),
   };
 }
 
@@ -359,6 +397,24 @@ export async function executeStorageCleanup(category: CleanupCategory): Promise<
       deletedRecords = del.rowCount ?? 0;
       tablesToVacuum.add("audit_logs");
       details.audit_logs_deleted = deletedRecords;
+      break;
+    }
+    case "archived_expenses": {
+      const result = await deleteArchivedExpenseData();
+      const paths = [
+        ...new Set(
+          result.receiptPaths
+            .map((p) => normalizeRelativePath(p))
+            .filter((p): p is string => Boolean(p))
+        ),
+      ];
+      deletedRecords = result.deletedRequests + result.deletedExpenses;
+      deletedFiles = await removeFiles(paths);
+      tablesToVacuum.add("expenses");
+      tablesToVacuum.add("expense_reimbursement_requests");
+      details.requests_deleted = result.deletedRequests;
+      details.expenses_deleted = result.deletedExpenses;
+      details.receipt_files_removed = deletedFiles;
       break;
     }
   }

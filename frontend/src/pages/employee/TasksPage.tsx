@@ -10,6 +10,7 @@ import { Alert } from "@/components/ui/Alert";
 import { TaskAnalyticsCards } from "@/components/tasks/TaskAnalyticsCards";
 import { TaskCalendar } from "@/components/tasks/TaskCalendar";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import * as tasksApi from "@/api/tasks";
 import type { TaskSortOrder } from "@/api/tasks";
 import type { Task, TaskAnalytics, TaskStatus } from "@/types";
@@ -122,6 +123,7 @@ export function TasksPage() {
           </div>
         </div>
 
+        <CrossfadeSwitch state={loading ? "loading" : view}>
         {loading ? (
           <Spinner />
         ) : view === "calendar" ? (
@@ -177,6 +179,7 @@ export function TasksPage() {
             ))}
           </div>
         )}
+        </CrossfadeSwitch>
       </Card>
 
       <TaskDetailModal

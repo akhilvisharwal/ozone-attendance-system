@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth, requireRole, requireMasterAdmin, requireAdminPanel, requirePermission } from "../../middleware/auth";
 import { upload } from "../../middleware/upload";
 import * as controller from "./employees.controller";
 import * as designationsController from "./designations.controller";
@@ -11,26 +11,31 @@ router.use(requireAuth);
 // Employee self-service: update own avatar
 router.patch("/me/avatar", requireRole("employee"), upload.single("avatar"), controller.updateMyAvatar);
 
-// Designation / job-role catalog (admin)
-router.get("/designations", requireRole("admin"), designationsController.listDesignations);
-router.post("/designations", requireRole("admin"), designationsController.createDesignation);
-router.patch("/designations/:id", requireRole("admin"), designationsController.updateDesignation);
-router.delete("/designations/:id", requireRole("admin"), designationsController.deleteDesignation);
+// Designation / job-role catalog (read for Junior Admins with viewEmployees)
+router.get(
+  "/designations",
+  requireAdminPanel(),
+  requirePermission("viewEmployees"),
+  designationsController.listDesignations
+);
+router.post("/designations", requireMasterAdmin(), designationsController.createDesignation);
+router.patch("/designations/:id", requireMasterAdmin(), designationsController.updateDesignation);
+router.delete("/designations/:id", requireMasterAdmin(), designationsController.deleteDesignation);
 
-// Admin-only management routes
-router.post("/", requireRole("admin"), controller.createEmployee);
-router.get("/active", requireRole("admin"), controller.listActiveEmployees);
-router.get("/", requireRole("admin"), controller.listEmployees);
-router.get("/:id", requireRole("admin"), controller.getEmployee);
-router.patch("/:id", requireRole("admin"), controller.updateEmployee);
-router.patch("/:id/status", requireRole("admin"), controller.setEmployeeActive);
-router.post("/:id/reset-password", requireRole("admin"), controller.resetEmployeePassword);
-router.patch("/:id/weekly-off", requireRole("admin"), controller.updateWeeklyOff);
-router.get("/:id/dependencies", requireRole("admin"), controller.getEmployeeDependencies);
-router.delete("/:id", requireRole("admin"), controller.deleteEmployee);
+// View employees (Junior Admin with viewEmployees; Master Admin always)
+router.get("/active", requireAdminPanel(), requirePermission("viewEmployees"), controller.listActiveEmployees);
+router.get("/", requireAdminPanel(), requirePermission("viewEmployees"), controller.listEmployees);
+router.get("/:id", requireAdminPanel(), requirePermission("viewEmployees"), controller.getEmployee);
 
-// Admin management of an employee's profile photo
-router.patch("/:id/avatar", requireRole("admin"), upload.single("avatar"), controller.adminUpdateEmployeeAvatar);
-router.delete("/:id/avatar", requireRole("admin"), controller.adminDeleteEmployeeAvatar);
+// Mutating employee management — Master Admin only
+router.post("/", requireMasterAdmin(), controller.createEmployee);
+router.patch("/:id", requireMasterAdmin(), controller.updateEmployee);
+router.patch("/:id/status", requireMasterAdmin(), controller.setEmployeeActive);
+router.post("/:id/reset-password", requireMasterAdmin(), controller.resetEmployeePassword);
+router.patch("/:id/weekly-off", requireMasterAdmin(), controller.updateWeeklyOff);
+router.get("/:id/dependencies", requireMasterAdmin(), controller.getEmployeeDependencies);
+router.delete("/:id", requireMasterAdmin(), controller.deleteEmployee);
+router.patch("/:id/avatar", requireMasterAdmin(), upload.single("avatar"), controller.adminUpdateEmployeeAvatar);
+router.delete("/:id/avatar", requireMasterAdmin(), controller.adminDeleteEmployeeAvatar);
 
 export default router;

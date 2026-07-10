@@ -30,6 +30,9 @@ export const FULL_BACKUP_TABLES = [
   "attendance_daily_override_employees",
   "app_notifications",
   "task_reminder_log",
+  "expense_reimbursement_requests",
+  "expenses",
+  "expense_week_payments",
   "app_settings",
   "audit_logs",
 ] as const;
@@ -38,6 +41,9 @@ export const FULL_BACKUP_TABLES = [
 export const RESTORE_TRUNCATE_TABLES = [
   "task_reminder_log",
   "app_notifications",
+  "expense_week_payments",
+  "expense_reimbursement_requests",
+  "expenses",
   "task_extension_requests",
   "task_comments",
   "task_attachments",

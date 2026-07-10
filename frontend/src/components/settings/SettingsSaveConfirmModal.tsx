@@ -4,7 +4,7 @@ import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 
 const DEFAULT_MESSAGE =
-  "Are you sure you want to save these changes? They will take effect immediately.";
+  "Are you sure you want to save these changes?";
 
 export function SettingsSaveConfirmModal({
   open,

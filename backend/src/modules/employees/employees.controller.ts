@@ -60,7 +60,7 @@ export const createEmployee = asyncHandler(async (req: Request, res: Response) =
         department: input.department ?? null,
         weeklyOffDays: weeklyOff,
         usesDefaultWeeklyOff: true,
-        mustChangePassword: empSettings.requirePasswordChange,
+        firstLoginCompleted: !empSettings.requirePasswordChange,
         isActive: empSettings.activeByDefault,
       });
       lastError = null;
@@ -179,12 +179,11 @@ export const resetEmployeePassword = asyncHandler(async (req: Request, res: Resp
   const employee = await repo.findEmployeeById(req.params.id);
   if (!employee || employee.role !== "employee") throw ApiError.notFound("Employee not found");
 
-  const { newPassword, requireChange } = resetPasswordSchema.parse(req.body ?? {});
+  const { newPassword } = resetPasswordSchema.parse(req.body ?? {});
 
   // Admin either sets an explicit password or lets the system generate one.
   const isDirect = Boolean(newPassword);
   const password = newPassword ?? generateTemporaryPassword();
-  const mustChangePassword = isDirect ? requireChange ?? false : getSettings().employee.requirePasswordChange;
 
   if (isDirect) {
     const policyError = validatePasswordPolicy(password);
@@ -192,12 +191,11 @@ export const resetEmployeePassword = asyncHandler(async (req: Request, res: Resp
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  await repo.updateEmployeePassword(employee.id, passwordHash, mustChangePassword);
+  await repo.updateEmployeePassword(employee.id, passwordHash, { markFirstLoginComplete: true });
 
   const admin = await repo.findEmployeeById(req.user!.id);
   await logAudit(req, "employee.reset_password", "employee", employee.id, {
     direct: isDirect,
-    requireChange: mustChangePassword,
     employeeName: employee.name,
     employeeCode: employee.employee_code,
     adminName: admin?.name ?? null,

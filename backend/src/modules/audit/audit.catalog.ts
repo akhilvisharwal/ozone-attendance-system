@@ -12,6 +12,7 @@ export type AuditModule =
   | "Security"
   | "Tasks"
   | "Reports"
+  | "Expenses"
   | "Other";
 
 export type AuditActionType =
@@ -98,6 +99,78 @@ const CATALOG: Record<string, AuditActionMeta> = {
     actionType: "Delete",
   },
 
+  "junior_admin.create": {
+    label: "Junior Admin created",
+    module: "Security",
+    actionType: "Create",
+  },
+  "junior_admin.update": {
+    label: "Junior Admin updated",
+    module: "Security",
+    actionType: "Update",
+  },
+  "junior_admin.activate": {
+    label: "Junior Admin activated",
+    module: "Security",
+    actionType: "Update",
+  },
+  "junior_admin.deactivate": {
+    label: "Junior Admin deactivated",
+    module: "Security",
+    actionType: "Update",
+  },
+  "junior_admin.reset_password": {
+    label: "Junior Admin password reset",
+    module: "Security",
+    actionType: "Password Change",
+  },
+  "junior_admin.delete": {
+    label: "Junior Admin deleted",
+    module: "Security",
+    actionType: "Delete",
+  },
+
+  "expense.create": { label: "Expense created", module: "Expenses", actionType: "Create" },
+  "expense.update": { label: "Expense updated", module: "Expenses", actionType: "Update" },
+  "expense.delete": { label: "Expense deleted", module: "Expenses", actionType: "Delete" },
+  "expense.approve": { label: "Expense approved", module: "Expenses", actionType: "Update" },
+  "expense.reject": { label: "Expense rejected", module: "Expenses", actionType: "Update" },
+  "expense.week_paid": {
+    label: "Expense week marked paid",
+    module: "Expenses",
+    actionType: "Update",
+  },
+  "expense.request_submit": {
+    label: "Reimbursement request submitted",
+    module: "Expenses",
+    actionType: "Create",
+  },
+  "expense.request_approve": {
+    label: "Reimbursement request approved",
+    module: "Expenses",
+    actionType: "Update",
+  },
+  "expense.request_reject": {
+    label: "Reimbursement request rejected",
+    module: "Expenses",
+    actionType: "Update",
+  },
+  "expense.request_paid": {
+    label: "Reimbursement marked paid",
+    module: "Expenses",
+    actionType: "Update",
+  },
+  "expense.request_archive": {
+    label: "Reimbursement archived",
+    module: "Expenses",
+    actionType: "Update",
+  },
+  "expense.export": {
+    label: "Expense report exported",
+    module: "Expenses",
+    actionType: "Export",
+  },
+
   "attendance.check_in": {
     label: "Check-in",
     module: "Attendance",
@@ -132,6 +205,11 @@ const CATALOG: Record<string, AuditActionMeta> = {
     label: "Manual attendance deleted",
     module: "Attendance",
     actionType: "Delete",
+  },
+  "attendance.remind": {
+    label: "Attendance reminders sent",
+    module: "Attendance",
+    actionType: "Other",
   },
   "attendance.override.create": {
     label: "Attendance override created",
@@ -242,6 +320,7 @@ const MODULE_BY_TARGET: Record<string, AuditModule> = {
   settings: "Settings",
   task: "Tasks",
   report: "Reports",
+  expense: "Expenses",
   audit: "Database",
 };
 
@@ -257,6 +336,7 @@ export const AUDIT_MODULES: AuditModule[] = [
   "Security",
   "Tasks",
   "Reports",
+  "Expenses",
   "Other",
 ];
 

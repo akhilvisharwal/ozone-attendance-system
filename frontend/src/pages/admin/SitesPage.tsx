@@ -13,6 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Alert } from "@/components/ui/Alert";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { SecureImage } from "@/components/SecureImage";
 import * as sitesApi from "@/api/sites";
 import type { Site, SiteType } from "@/types";
@@ -128,6 +129,7 @@ export function SitesPage() {
       />
 
       <Card>
+        <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
           <Spinner />
         ) : sites.length === 0 ? (
@@ -140,6 +142,7 @@ export function SitesPage() {
             actions={(site) => <OverflowMenu items={buildMenu(site)} align="right" />}
           />
         )}
+        </CrossfadeSwitch>
       </Card>
 
       <CreateSiteModal

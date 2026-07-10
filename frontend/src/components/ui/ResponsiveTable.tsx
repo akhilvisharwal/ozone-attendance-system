@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { motion } from "motion/react";
 import clsx from "clsx";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 
 export interface Column<T> {
   /** Column header text */
@@ -44,7 +46,7 @@ export function ResponsiveTable<T>({
       {/* Desktop / tablet: real table with horizontal scroll fallback */}
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+          <thead className="border-b border-slate-100 text-xs font-medium uppercase tracking-wide text-slate-500">
             <tr>
               {columns.map((col, i) => (
                 <th key={i} className={clsx("px-4 py-3 lg:px-5", col.align && alignClass[col.align])}>
@@ -54,12 +56,18 @@ export function ResponsiveTable<T>({
               {actions && <th className="px-4 py-3 text-right lg:px-5">Actions</th>}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <motion.tbody
+            variants={staggerContainer}
+            initial="initial"
+            animate="animate"
+            className="divide-y divide-slate-100"
+          >
             {data.map((row, index) => (
-              <tr
+              <motion.tr
                 key={rowKey(row, index)}
+                variants={staggerItem}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={clsx(clickable && "cursor-pointer hover:bg-slate-50")}
+                className={clsx("transition-colors", clickable && "cursor-pointer hover:bg-slate-50/80")}
               >
                 {columns.map((col, i) => (
                   <td
@@ -78,23 +86,29 @@ export function ResponsiveTable<T>({
                     <div className="flex justify-end">{actions(row)}</div>
                   </td>
                 )}
-              </tr>
+              </motion.tr>
             ))}
-          </tbody>
+          </motion.tbody>
         </table>
       </div>
 
       {/* Mobile: stacked cards */}
-      <div className="divide-y divide-slate-100 md:hidden">
+      <motion.div
+        variants={staggerContainer}
+        initial="initial"
+        animate="animate"
+        className="divide-y divide-slate-100 md:hidden"
+      >
         {data.map((row, index) => {
           const primary = columns.find((c) => c.primary);
           const rest = columns.filter((c) => !c.primary && !c.mobileHidden);
           return (
-            <div
+            <motion.div
               key={rowKey(row, index)}
+              variants={staggerItem}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               className={clsx(
-                "flex flex-col gap-2 px-4 py-4",
+                "flex flex-col gap-2 px-4 py-4 transition-colors",
                 clickable && "cursor-pointer active:bg-slate-50"
               )}
             >
@@ -125,10 +139,10 @@ export function ResponsiveTable<T>({
                   </div>
                 ))}
               </dl>
-            </div>
+            </motion.div>
           );
         })}
-      </div>
+      </motion.div>
     </>
   );
 }

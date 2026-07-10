@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Medal, Star, Trophy, User } from "lucide-react";
+import { motion } from "motion/react";
+import { staggerContainer, staggerItem } from "@/lib/motion";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
@@ -126,11 +128,16 @@ export function ScoreboardPage() {
         ) : (
           <>
             {entries.length >= 1 && (
-              <div className="flex flex-wrap justify-center gap-4 border-b border-slate-100 px-5 py-6">
+              <motion.div
+                variants={staggerContainer}
+                initial="initial"
+                animate="animate"
+                className="flex flex-wrap justify-center gap-4 border-b border-slate-100 px-5 py-6"
+              >
                 {entries.slice(0, 3).map((entry, idx) => (
                   <PodiumCard key={entry.employee_id} entry={entry} rank={idx + 1} />
                 ))}
-              </div>
+              </motion.div>
             )}
 
             <ResponsiveTable columns={rankColumns} data={rankedEntries} rowKey={(e) => e.employee_id} />
@@ -152,7 +159,7 @@ function PodiumCard({ entry, rank }: { entry: ScoreboardEntry; rank: number }) {
   const avatarSizes: Record<number, string> = { 1: "h-16 w-16", 2: "h-12 w-12", 3: "h-12 w-12" };
 
   return (
-    <div className={`flex flex-col items-center text-center ${sizes[rank] ?? "w-28"}`}>
+    <motion.div variants={staggerItem} className={`flex flex-col items-center text-center ${sizes[rank] ?? "w-28"}`}>
       <div className={`overflow-hidden rounded-full bg-slate-100 ${avatarSizes[rank]}`}>
         {entry.profile_photo_path ? (
           <SecureImage path={entry.profile_photo_path} alt={entry.name} className="h-full w-full object-cover" />
@@ -169,6 +176,6 @@ function PodiumCard({ entry, rank }: { entry: ScoreboardEntry; rank: number }) {
       <span className="mt-1 inline-flex items-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-bold text-brand-700">
         {entry.score} pts
       </span>
-    </div>
+    </motion.div>
   );
 }

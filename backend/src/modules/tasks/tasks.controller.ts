@@ -19,6 +19,15 @@ import {
   reviewExtensionSchema,
   updateMyTaskSchema,
 } from "./tasks.validators";
+import { getEmployeePermissions } from "../employees/employees.repository";
+import { hasAnyPermission } from "../auth/permissions";
+
+async function hasTaskPanelAccess(req: Request): Promise<boolean> {
+  if (req.user!.role === "admin") return true;
+  if (req.user!.role !== "junior_admin") return false;
+  const perms = await getEmployeePermissions(req.user!.id);
+  return hasAnyPermission(perms, "assignTasks", "editTasks", "deleteTasks");
+}
 
 async function enrichTaskForEmployee(task: repo.TaskRow, employeeId: string) {
   const groupId = task.group_id ?? task.id;
@@ -485,8 +494,8 @@ export const addTaskGroupComment = asyncHandler(async (req: Request, res: Respon
 
 export const addTaskComment = asyncHandler(async (req: Request, res: Response) => {
   const input = addCommentSchema.parse(req.body);
-  const isAdmin = req.user!.role === "admin";
-  const task = isAdmin
+  const taskPanelAccess = await hasTaskPanelAccess(req);
+  const task = taskPanelAccess
     ? await repo.findTaskById(req.params.id)
     : await repo.findTaskForEmployee(req.params.id, req.user!.id);
   if (!task) throw ApiError.notFound("Task not found");
@@ -499,12 +508,11 @@ export const addTaskComment = asyncHandler(async (req: Request, res: Response) =
   });
   await repo.touchTaskActivity(task.id);
 
-  const notifyIds =
-    req.user!.role === "admin"
-      ? (await repo.listGroupAssignees(groupId)).map((a) => a.employee_id)
-      : task.assigned_by
-        ? [task.assigned_by]
-        : [];
+  const notifyIds = taskPanelAccess
+    ? (await repo.listGroupAssignees(groupId)).map((a) => a.employee_id)
+    : task.assigned_by
+      ? [task.assigned_by]
+      : [];
 
   await notificationsRepo.createNotificationsForEmployees(
     notifyIds.filter((id) => id !== req.user!.id),
@@ -512,7 +520,7 @@ export const addTaskComment = asyncHandler(async (req: Request, res: Response) =
       type: "task_comment",
       title: "New task comment",
       body: task.title,
-      linkPath: req.user!.role === "admin" ? "/tasks" : "/admin/tasks",
+      linkPath: taskPanelAccess ? "/admin/tasks" : "/tasks",
       entityId: task.id,
     }
   );
@@ -554,10 +562,11 @@ export const downloadAttachment = asyncHandler(async (req: Request, res: Respons
   const attachment = await repo.findAttachment(req.params.attachmentId);
   if (!attachment) throw ApiError.notFound("Attachment not found");
 
+  const taskPanelAccess = await hasTaskPanelAccess(req);
   const allowed = await repo.canAccessTaskGroup(
     attachment.task_group_id,
     req.user!.id,
-    req.user!.role === "admin"
+    taskPanelAccess
   );
   if (!allowed) throw ApiError.forbidden("You do not have permission to view this file");
 

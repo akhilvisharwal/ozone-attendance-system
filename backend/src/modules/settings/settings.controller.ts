@@ -460,6 +460,7 @@ export const changeAdminPassword = asyncHandler(async (req: Request, res: Respon
     `UPDATE employees
         SET password_hash = $1,
             must_change_password = false,
+            first_login_completed = true,
             password_changed_at = now(),
             updated_at = now()
       WHERE id = $2`,

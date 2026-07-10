@@ -10,6 +10,7 @@ import { AttendanceDailyOverridesSection } from "@/components/settings/Attendanc
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useToast } from "@/components/ui/Toast";
 import type { AttendanceSettings } from "@/types/settings";
 
 type AttendanceFormState = Pick<
@@ -77,6 +78,7 @@ function buildPayload(base: AttendanceSettings, form: AttendanceFormState): Atte
 
 export function AttendanceSettingsSection() {
   const { refresh } = useSettings();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -133,6 +135,7 @@ export function AttendanceSettingsSection() {
       await refresh();
       setConfirmOpen(false);
       setMessage({ type: "success", text: "Attendance settings updated successfully." });
+      showToast("Settings saved successfully.");
     } catch (err) {
       setConfirmOpen(false);
       setMessage({

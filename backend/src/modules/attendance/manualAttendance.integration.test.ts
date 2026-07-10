@@ -99,6 +99,36 @@ describe("manual attendance integration", { skip: process.env.SKIP_DB_TESTS === 
     assert.equal(cell.status, "leave");
   });
 
+  it("creates holiday_worked and not_applicable manual statuses", async () => {
+    const worked = await upsertManualAttendance({
+      employeeId,
+      date: testDate,
+      status: "holiday_worked",
+      adminId,
+      approvedById: adminId,
+      reason: "Worked on declared holiday",
+      checkInTime: "09:00",
+      checkOutTime: "17:00",
+      totalMinutes: 480,
+    });
+    assert.equal(worked.admin_mark_status, "holiday_worked");
+    assert.equal(worked.special_day_status, "holiday_worked");
+
+    let grid = await buildMonthlyGrid({ year, month, employeeId });
+    assert.equal(cellForEmployee(grid).status, "holiday_worked");
+
+    await upsertManualAttendance({
+      employeeId,
+      date: testDate,
+      status: "not_applicable",
+      adminId,
+      approvedById: adminId,
+      reason: "Mark day as not applicable",
+    });
+    grid = await buildMonthlyGrid({ year, month, employeeId });
+    assert.equal(cellForEmployee(grid).status, "not_applicable");
+  });
+
   it("deletes manual record so the day reverts to calendar rules", async () => {
     const deleted = await deleteManualAttendance(employeeId, testDate);
     assert.equal(deleted, true);

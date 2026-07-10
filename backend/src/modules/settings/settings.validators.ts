@@ -8,6 +8,7 @@ import {
 } from "../../utils/settingsHelpers";
 import { normalizeMobileSettings } from "../../utils/attendanceCapture";
 import { normalizeBackupSettings } from "../../utils/backupHelpers";
+import { normalizeExpenseSettings } from "../expenses/expenseSettings";
 
 import type { AttendanceSettings } from "./settings.types";
 
@@ -324,6 +325,59 @@ export const auditSettingsSchema = z.object({
   ]),
 });
 
+const expenseOptionSchema = z.object({
+  key: z.string().min(1).max(40),
+  label: z.string().min(1).max(80),
+  enabled: z.boolean(),
+});
+
+export const expenseSettingsSchema = z
+  .object({
+    cycles: z.object({
+      weekly: z.boolean(),
+      monthly: z.boolean(),
+      custom: z.boolean(),
+    }),
+    categories: z.array(expenseOptionSchema).min(1),
+    paymentMethods: z.array(expenseOptionSchema).min(1),
+    maxAmountPerExpense: z.number().positive().max(10_000_000),
+    maxAmountPerRequest: z.number().positive().max(50_000_000),
+    requireReceiptAbove: z.number().min(0).max(10_000_000),
+    autoArchivePaidDays: z.number().int().min(0).max(3650),
+    approvalRequired: z.boolean(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.cycles.weekly && !value.cycles.monthly && !value.cycles.custom) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enable at least one reimbursement cycle",
+        path: ["cycles"],
+      });
+    }
+    if (!value.categories.some((item) => item.enabled)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enable at least one category",
+        path: ["categories"],
+      });
+    }
+    if (!value.paymentMethods.some((item) => item.enabled)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enable at least one payment method",
+        path: ["paymentMethods"],
+      });
+    }
+    if (value.maxAmountPerRequest < value.maxAmountPerExpense) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Per-request limit must be at least the per-expense limit",
+        path: ["maxAmountPerRequest"],
+      });
+    }
+  })
+  .transform((value) => normalizeExpenseSettings(value));
+
 export const categoryParamSchema = z.enum([
   "company",
   "attendance",
@@ -337,6 +391,7 @@ export const categoryParamSchema = z.enum([
   "appearance",
   "backup",
   "audit",
+  "expenses",
 ]);
 
 
@@ -416,6 +471,7 @@ const cleanupCategorySchema = z.enum([
   "selfies",
   "location_history",
   "audit_logs",
+  "archived_expenses",
 ]);
 
 export const cleanupConfirmSchema = z.object({
@@ -452,6 +508,8 @@ const schemaByCategory = {
   backup: backupSettingsSchema,
 
   audit: auditSettingsSchema,
+
+  expenses: expenseSettingsSchema,
 
 } as const;
 

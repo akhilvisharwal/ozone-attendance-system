@@ -1,5 +1,12 @@
 import { Router } from "express";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import {
+  requireAuth,
+  requireRole,
+  requireAdminPanel,
+  requirePermission,
+  requireAnyPermission,
+  requireMasterAdmin,
+} from "../../middleware/auth";
 import { taskUpload } from "../../middleware/taskUpload";
 import * as controller from "./tasks.controller";
 
@@ -16,29 +23,52 @@ router.post("/me/:id/extension", requireRole("employee"), controller.requestExte
 router.post("/me/:id/comments", requireRole("employee"), controller.addTaskComment);
 router.delete("/me/:id", requireRole("employee"), controller.deleteMyTask);
 
-router.get("/analytics", requireRole("admin"), controller.adminGetAnalytics);
-router.get("/calendar", requireRole("admin"), controller.adminGetCalendar);
-router.get("/extensions/pending", requireRole("admin"), controller.listPendingExtensions);
-router.patch("/extensions/:id/review", requireRole("admin"), controller.reviewExtension);
+const canViewTasks = [
+  requireAdminPanel(),
+  requireAnyPermission("assignTasks", "editTasks", "deleteTasks"),
+] as const;
+
+router.get("/analytics", ...canViewTasks, controller.adminGetAnalytics);
+router.get("/calendar", ...canViewTasks, controller.adminGetCalendar);
+router.get("/extensions/pending", requireMasterAdmin(), controller.listPendingExtensions);
+router.patch("/extensions/:id/review", requireMasterAdmin(), controller.reviewExtension);
 router.get("/attachments/:attachmentId/download", controller.downloadAttachment);
 
-router.get("/groups", requireRole("admin"), controller.adminListTaskGroups);
-router.get("/groups/:groupId", requireRole("admin"), controller.adminGetGroupDetail);
+router.get("/groups", ...canViewTasks, controller.adminListTaskGroups);
+router.get("/groups/:groupId", ...canViewTasks, controller.adminGetGroupDetail);
 router.patch(
   "/groups/:groupId",
-  requireRole("admin"),
+  requireAdminPanel(),
+  requirePermission("editTasks"),
   taskUpload.array("attachments", 10),
   controller.adminUpdateTaskGroup
 );
-router.delete("/groups/:groupId", requireRole("admin"), controller.adminDeleteTaskGroup);
-router.post("/groups/:groupId/comments", requireRole("admin"), controller.addTaskGroupComment);
+router.delete(
+  "/groups/:groupId",
+  requireAdminPanel(),
+  requirePermission("deleteTasks"),
+  controller.adminDeleteTaskGroup
+);
+router.post("/groups/:groupId/comments", ...canViewTasks, controller.addTaskGroupComment);
 
-router.get("/", requireRole("admin"), controller.adminListTaskGroups);
-router.post("/", requireRole("admin"), taskUpload.array("attachments", 10), controller.adminAssignTask);
-router.delete("/all", requireRole("admin"), controller.adminClearAllTasks);
-router.get("/:id", requireRole("admin"), controller.adminGetTaskDetail);
-router.delete("/:id", requireRole("admin"), controller.adminDeleteTask);
-router.post("/:id/attachments", taskUpload.array("attachments", 10), controller.addTaskAttachments);
-router.post("/:id/comments", controller.addTaskComment);
+router.get("/", ...canViewTasks, controller.adminListTaskGroups);
+router.post(
+  "/",
+  requireAdminPanel(),
+  requirePermission("assignTasks"),
+  taskUpload.array("attachments", 10),
+  controller.adminAssignTask
+);
+router.delete("/all", requireAdminPanel(), requirePermission("deleteTasks"), controller.adminClearAllTasks);
+router.get("/:id", ...canViewTasks, controller.adminGetTaskDetail);
+router.delete("/:id", requireAdminPanel(), requirePermission("deleteTasks"), controller.adminDeleteTask);
+router.post(
+  "/:id/attachments",
+  requireAdminPanel(),
+  requirePermission("editTasks"),
+  taskUpload.array("attachments", 10),
+  controller.addTaskAttachments
+);
+router.post("/:id/comments", ...canViewTasks, controller.addTaskComment);
 
 export default router;

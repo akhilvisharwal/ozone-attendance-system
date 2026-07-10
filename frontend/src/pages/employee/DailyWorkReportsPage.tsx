@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
 import { WorkStatusBadge } from "@/components/ui/Badge";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { AttendanceDetailModal } from "@/components/AttendanceDetailModal";
 import * as attendanceApi from "@/api/attendance";
 import type { AttendanceRecord } from "@/types";
@@ -25,6 +26,7 @@ export function DailyWorkReportsPage() {
       <PageHeader title="My Daily Work Reports" subtitle="Work summaries you submitted at check-out" />
 
       <Card>
+        <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
           <Spinner />
         ) : items.length === 0 ? (
@@ -47,6 +49,7 @@ export function DailyWorkReportsPage() {
             ))}
           </div>
         )}
+        </CrossfadeSwitch>
       </Card>
 
       <AttendanceDetailModal attendance={selected} onClose={() => setSelected(null)} showLocationDetails={false} />

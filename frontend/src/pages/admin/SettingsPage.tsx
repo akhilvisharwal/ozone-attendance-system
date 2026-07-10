@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import clsx from "clsx";
+import { motion } from "motion/react";
+import { quickTransition } from "@/lib/motion";
 import {
   Building2,
   Clock,
@@ -12,9 +14,12 @@ import {
   Database,
   Bell,
   ScrollText,
+  UserCog,
+  Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { CompanySettingsSection } from "@/components/settings/CompanySettingsSection";
 import { AttendanceSettingsSection } from "@/components/settings/AttendanceSettingsSection";
 import { WeeklyOffSettingsSection } from "@/components/settings/WeeklyOffSettingsSection";
@@ -22,9 +27,11 @@ import { EmployeeSettingsSection } from "@/components/settings/EmployeeSettingsS
 import { AttendanceCaptureSettingsSection } from "@/components/settings/AttendanceCaptureSettingsSection";
 import { NotificationSettingsSection } from "@/components/settings/NotificationSettingsSection";
 import { SecuritySettingsSection } from "@/components/settings/SecuritySettingsSection";
+import { JuniorAdminSettingsSection } from "@/components/settings/JuniorAdminSettingsSection";
 import { BackupDataSettingsSection } from "@/components/settings/BackupDataSettingsSection";
 import { DatabaseSettingsSection } from "@/components/settings/DatabaseSettingsSection";
 import { AuditSettingsSection } from "@/components/settings/AuditSettingsSection";
+import { ExpenseSettingsSection } from "@/components/settings/ExpenseSettingsSection";
 import { SETTINGS_NAV, type SettingsTabId } from "@/types/settings";
 
 const ICONS: Record<SettingsTabId, ReactNode> = {
@@ -35,7 +42,9 @@ const ICONS: Record<SettingsTabId, ReactNode> = {
   mobile: <ScanFace className="h-4 w-4" />,
   notifications: <Bell className="h-4 w-4" />,
   security: <Shield className="h-4 w-4" />,
+  juniorAdmins: <UserCog className="h-4 w-4" />,
   backup: <HardDrive className="h-4 w-4" />,
+  expenses: <Wallet className="h-4 w-4" />,
   database: <Database className="h-4 w-4" />,
   audit: <ScrollText className="h-4 w-4" />,
 };
@@ -105,15 +114,30 @@ export function SettingsPage() {
                     key={item.id}
                     type="button"
                     onClick={() => setActiveTab(item.id)}
+                    aria-current={activeTab === item.id ? "true" : undefined}
                     className={clsx(
-                      "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors lg:w-full",
+                      "relative flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-colors lg:w-full",
                       activeTab === item.id
-                        ? "bg-brand-50 text-brand-700"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                        ? "font-semibold text-brand-700"
+                        : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
                     )}
                   >
-                    {ICONS[item.id]}
-                    <span className="whitespace-nowrap">{item.label}</span>
+                    {activeTab === item.id && (
+                      <motion.span
+                        layoutId="settings-active-pill"
+                        className="absolute inset-0 rounded-xl bg-brand-50 shadow-soft-xs"
+                        transition={quickTransition}
+                      />
+                    )}
+                    <span
+                      className={clsx(
+                        "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center",
+                        activeTab === item.id ? "text-brand-600" : "text-slate-400"
+                      )}
+                    >
+                      {ICONS[item.id]}
+                    </span>
+                    <span className="relative z-10 whitespace-nowrap">{item.label}</span>
                   </button>
                 ))}
               </div>
@@ -126,12 +150,12 @@ export function SettingsPage() {
           className="min-h-0 min-w-0 flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pr-1"
         >
           <Card className="overflow-hidden">
-            <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
-              <h2 className="text-base font-semibold text-slate-900">{activeItem.label}</h2>
-              <p className="mt-0.5 text-sm text-slate-500">{activeItem.description}</p>
+            <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
+              <h2 className="text-base font-semibold tracking-tight text-slate-900">{activeItem.label}</h2>
+              <p className="mt-0.5 text-sm leading-relaxed text-slate-500">{activeItem.description}</p>
             </div>
 
-            <div className="px-5 py-8 sm:px-6">
+            <CrossfadeSwitch state={activeTab} className="px-5 py-7 sm:px-6">
               {activeTab === "company" ? (
                 <CompanySettingsSection />
               ) : activeTab === "attendance" ? (
@@ -146,8 +170,12 @@ export function SettingsPage() {
                 <NotificationSettingsSection />
               ) : activeTab === "security" ? (
                 <SecuritySettingsSection />
+              ) : activeTab === "juniorAdmins" ? (
+                <JuniorAdminSettingsSection />
               ) : activeTab === "backup" ? (
                 <BackupDataSettingsSection />
+              ) : activeTab === "expenses" ? (
+                <ExpenseSettingsSection />
               ) : activeTab === "database" ? (
                 <DatabaseSettingsSection />
               ) : activeTab === "audit" ? (
@@ -162,7 +190,7 @@ export function SettingsPage() {
                   </p>
                 </div>
               )}
-            </div>
+            </CrossfadeSwitch>
           </Card>
         </div>
       </div>

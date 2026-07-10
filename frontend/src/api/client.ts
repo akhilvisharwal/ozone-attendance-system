@@ -144,12 +144,48 @@ apiClient.interceptors.response.use(
 export function extractErrorMessage(error: unknown, fallback = "Something went wrong. Please try again."): string {
   if (axios.isAxiosError(error)) {
     if (!error.response) {
-      return "Cannot reach the server. Your session is still active — we'll reconnect automatically when you're back online.";
+      return "Cannot reach the server. Check your connection and try again.";
     }
-    const message = (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
+    if (error.response.status === 429) {
+      return (
+        (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message ??
+        "Too many login attempts. Please wait 15 minutes and try again."
+      );
+    }
+    const message = readApiErrorMessage(error.response.data);
     if (message) return message;
   }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
   return fallback;
+}
+
+async function parseBlobErrorMessage(data: unknown): Promise<string | null> {
+  if (!(data instanceof Blob)) return null;
+  if (data.type && !data.type.includes("json") && data.size > 0) return null;
+  try {
+    const text = await data.text();
+    if (!text.trim()) return null;
+    const parsed = JSON.parse(text) as { error?: { message?: string }; message?: string };
+    return parsed.error?.message ?? parsed.message ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function readApiErrorMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const payload = data as { error?: { message?: string }; message?: string };
+  return payload.error?.message ?? payload.message ?? null;
+}
+
+/** Parse API error bodies returned as blobs (file download endpoints). */
+export async function extractBlobErrorMessage(error: unknown): Promise<string | null> {
+  if (!axios.isAxiosError(error) || !error.response) return null;
+  const fromJson = readApiErrorMessage(error.response.data);
+  if (fromJson) return fromJson;
+  return parseBlobErrorMessage(error.response.data);
 }
 
 export async function fetchSecureFileUrl(relativePath: string): Promise<string> {

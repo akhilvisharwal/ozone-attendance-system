@@ -16,21 +16,25 @@ import {
 } from "./auth.repository";
 import { isInactiveSince } from "./sessionActivity";
 import { getSessionTimeoutMinutes } from "../../utils/settingsHelpers";
-import { findEmployeeByCode, findEmployeeById, markMustChangePassword, toPublicEmployee, updateEmployeePassword } from "../employees/employees.repository";
+import { findEmployeeByCode, findEmployeeById, toPublicEmployee, updateEmployeePassword } from "../employees/employees.repository";
 import { clearLoginAttempts, isLoginLocked, recordFailedLogin } from "../../utils/loginAttempts";
 import { logAudit } from "../audit/audit.repository";
-import { isPasswordExpired, validatePasswordPolicy } from "../../utils/settingsHelpers";
+import { validatePasswordPolicy } from "../../utils/settingsHelpers";
 import { employeeChangePasswordSchema } from "./auth.validators";
 
 const REFRESH_COOKIE = "refreshToken";
 
+/** Same-origin /api proxy (Vercel, Vite): Lax. Direct cross-origin API: None + Secure. */
+function usesCrossOriginCookies(): boolean {
+  return process.env.CROSS_ORIGIN_COOKIES === "true";
+}
+
 function refreshCookieOptions() {
-  // Cross-origin direct API calls need SameSite=None; Secure.
-  // Same-origin via Vercel /api proxy stores first-party cookies (required for mobile Safari).
+  const crossOrigin = env.isProduction && usesCrossOriginCookies();
   return {
     httpOnly: true,
     secure: env.isProduction,
-    sameSite: (env.isProduction ? "none" : "lax") as "none" | "lax",
+    sameSite: (crossOrigin ? "none" : "lax") as "none" | "lax",
     path: "/api",
     maxAge: parseDurationMs(env.jwtRefreshExpiresIn),
   };
@@ -94,12 +98,6 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
   clearLoginAttempts(code);
 
-  let mustChangePassword = employee.must_change_password;
-  if (isPasswordExpired(employee.password_changed_at)) {
-    await markMustChangePassword(employee.id);
-    mustChangePassword = true;
-  }
-
   const accessToken = signAccessToken({ id: employee.id, employeeCode: employee.employee_code, role: employee.role });
   const { token: refreshToken } = signRefreshToken(employee.id);
 
@@ -112,7 +110,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   const publicEmployee = toPublicEmployee(employee);
   res.json({
     accessToken,
-    employee: { ...publicEmployee, must_change_password: mustChangePassword },
+    employee: publicEmployee,
     session: {
       timeoutMinutes: getSessionTimeoutMinutes(),
       lastActivityAt: new Date().toISOString(),
@@ -223,13 +221,34 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
   }
 
   const passwordHash = await bcrypt.hash(newPassword.trim(), 12);
-  await updateEmployeePassword(employee.id, passwordHash, false);
+  await updateEmployeePassword(employee.id, passwordHash, { markFirstLoginComplete: true });
   await revokeAllRefreshTokens(employee.id);
 
   await logAudit(req, "auth.change_password", "employee", employee.id, {
     employeeName: employee.name,
     employeeCode: employee.employee_code,
   });
+
   const updated = await findEmployeeById(employee.id);
-  res.json({ employee: toPublicEmployee(updated!), message: "Password updated successfully" });
+  if (!updated) throw ApiError.notFound("Employee not found");
+
+  const accessToken = signAccessToken({
+    id: updated.id,
+    employeeCode: updated.employee_code,
+    role: updated.role,
+  });
+  const { token: refreshToken } = signRefreshToken(updated.id);
+  const expiresAt = new Date(Date.now() + parseDurationMs(env.jwtRefreshExpiresIn));
+  await storeRefreshToken(updated.id, refreshToken, expiresAt);
+  res.cookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions());
+
+  res.json({
+    accessToken,
+    employee: toPublicEmployee(updated),
+    session: {
+      timeoutMinutes: getSessionTimeoutMinutes(),
+      lastActivityAt: new Date().toISOString(),
+    },
+    message: "Password updated successfully",
+  });
 });

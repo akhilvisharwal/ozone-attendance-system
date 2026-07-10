@@ -143,6 +143,9 @@ const MANUAL_STATUS_LABEL: Record<ManualAttendanceStatus, string> = {
   leave: "Leave",
   holiday: "Holiday",
   weekly_off: "Weekly Off",
+  holiday_worked: "Worked on Holiday",
+  weekly_off_worked: "Worked on Weekly Off",
+  not_applicable: "Not Applicable",
 };
 
 const MANUAL_STATUS_TONE: Record<ManualAttendanceStatus, Tone> = {
@@ -152,6 +155,9 @@ const MANUAL_STATUS_TONE: Record<ManualAttendanceStatus, Tone> = {
   leave: "blue",
   holiday: "blue",
   weekly_off: "slate",
+  holiday_worked: "green",
+  weekly_off_worked: "blue",
+  not_applicable: "slate",
 };
 
 export function AttendanceDayBadge({

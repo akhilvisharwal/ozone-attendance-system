@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { DataCleanupConfirmModal } from "@/components/settings/DataCleanupConfirmModal";
+import { SettingsSaveConfirmModal } from "@/components/settings/SettingsSaveConfirmModal";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { EmptyState, Spinner } from "@/components/ui/Spinner";
+import { useToast } from "@/components/ui/Toast";
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { formatDateTime } from "@/utils/format";
@@ -67,7 +69,8 @@ const LIMIT = 25;
 
 function roleLabel(role: string | null | undefined): string {
   if (!role) return "—";
-  if (role === "admin") return "Admin";
+  if (role === "admin") return "Master Admin";
+  if (role === "junior_admin") return "Junior Admin";
   if (role === "manager") return "Manager";
   return "Employee";
 }
@@ -79,6 +82,7 @@ function shortenUserAgent(ua: string | null): string {
 }
 
 export function AuditSettingsSection() {
+  const { showToast } = useToast();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [totalAll, setTotalAll] = useState(0);
@@ -101,6 +105,7 @@ export function AuditSettingsSection() {
   const [retentionOptions, setRetentionOptions] =
     useState<AuditRetentionDays[]>(DEFAULT_RETENTION);
   const [retentionDays, setRetentionDays] = useState<AuditRetentionDays>(90);
+  const [pendingRetention, setPendingRetention] = useState<AuditRetentionDays | null>(null);
   const [savingRetention, setSavingRetention] = useState(false);
 
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -205,16 +210,20 @@ export function AuditSettingsSection() {
     setPage(1);
   }
 
-  async function handleSaveRetention(next: AuditRetentionDays) {
+  async function handleSaveRetention() {
+    if (pendingRetention == null) return;
+    const next = pendingRetention;
     setSavingRetention(true);
     setMessage(null);
     try {
       await settingsApi.updateAuditRetentionDays(next);
       setRetentionDays(next);
+      setPendingRetention(null);
       setMessage({
         type: "success",
         text: `Audit logs older than ${next} days will be deleted automatically.`,
       });
+      showToast("Settings saved successfully.");
     } catch (err) {
       setMessage({ type: "error", text: extractErrorMessage(err) });
     } finally {
@@ -268,7 +277,8 @@ export function AuditSettingsSection() {
               value={String(retentionDays)}
               onChange={(e) => {
                 const next = Number(e.target.value) as AuditRetentionDays;
-                void handleSaveRetention(next);
+                if (next === retentionDays) return;
+                setPendingRetention(next);
               }}
               disabled={savingRetention}
             >
@@ -544,6 +554,17 @@ export function AuditSettingsSection() {
           )}
         </div>
       </SettingsSection>
+
+      <SettingsSaveConfirmModal
+        open={pendingRetention != null}
+        onCancel={() => {
+          if (!savingRetention) setPendingRetention(null);
+        }}
+        onConfirm={() => void handleSaveRetention()}
+        title="Save changes?"
+        message="Are you sure you want to save these changes?"
+        confirmLabel="Save"
+      />
 
       <DataCleanupConfirmModal
         open={clearOpen}

@@ -11,23 +11,17 @@ async function seed() {
   const passwordHash = await bcrypt.hash(password, 12);
 
   if ((existing.rowCount ?? 0) > 0) {
-    await pool.query(
-      `UPDATE employees
-          SET password_hash = $1,
-              password_changed_at = now()
-        WHERE employee_code = $2`,
-      [passwordHash, env.adminEmployeeId]
-    );
-    console.log(`Updated administrator password for '${env.adminEmployeeId}'.`);
-  } else {
-    await pool.query(
-      `INSERT INTO employees (employee_code, name, email, password_hash, role, is_active, must_change_password)
-       VALUES ($1, $2, $3, $4, 'admin', true, false)`,
-      [env.adminEmployeeId, env.adminName, env.adminEmail, passwordHash]
-    );
-    console.log("Seeded administrator account:");
+    console.log(`Administrator '${env.adminEmployeeId}' already exists — password left unchanged.`);
+    console.log("  Use Settings → Security → Change Admin Password, or run reset-admin-password to sync from ADMIN_PASSWORD.");
+    return;
   }
 
+  await pool.query(
+    `INSERT INTO employees (employee_code, name, email, password_hash, role, is_active, must_change_password, first_login_completed)
+     VALUES ($1, $2, $3, $4, 'admin', true, false, true)`,
+    [env.adminEmployeeId, env.adminName, env.adminEmail, passwordHash]
+  );
+  console.log("Seeded administrator account:");
   console.log(`  Employee ID: ${env.adminEmployeeId}`);
   if (env.isProduction) {
     console.log("  Password:    (from ADMIN_PASSWORD — not printed in production logs)");

@@ -63,6 +63,7 @@ export function StorageManagementSection({
       onStorageUpdated({ status: result.status, storage: result.storage });
       setCleanup(result.cleanup);
       setConfirmTarget(null);
+      await loadCleanup();
       setMessage({
         type: "success",
         text: `${confirmTarget.label} cleaned up. ${result.result.deletedRecords.toLocaleString()} record(s) and ${result.result.deletedFiles.toLocaleString()} file(s) removed. Storage reclaimed: database ${formatBytes(result.result.databaseSizeRecoveredBytes)}, files ${formatBytes(result.result.uploadedFilesRecoveredBytes)}.`,

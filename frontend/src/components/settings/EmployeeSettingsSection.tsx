@@ -10,6 +10,7 @@ import { EmployeeRolesSettingsSection } from "@/components/settings/EmployeeRole
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useToast } from "@/components/ui/Toast";
 import type { EmployeeSettings, SecuritySettings } from "@/types/settings";
 import { buildIdFormat, parseIdFormat } from "@/utils/employeeIdFormat";
 import { notifyEmployeeCodesChanged } from "@/utils/employeeCodeEvents";
@@ -104,6 +105,7 @@ function formsEqual(a: EmployeeFormState, b: EmployeeFormState): boolean {
 
 export function EmployeeSettingsSection() {
   const { refresh } = useSettings();
+  const { showToast } = useToast();
   const { refreshMe } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -227,6 +229,8 @@ export function EmployeeSettingsSection() {
       } else {
         setMessage({ type: "success", text: "Employee settings saved successfully." });
       }
+
+      showToast("Settings saved successfully.");
 
       // Guard: if the DB somehow still has the old prefix, surface it clearly.
       if (wasPrefixChange && savedPrefix !== form.idPrefix.trim().toUpperCase()) {

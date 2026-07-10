@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Alert } from "@/components/ui/Alert";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { HolidayFormModal } from "@/components/HolidayFormModal";
 import * as holidaysApi from "@/api/holidays";
 import type { CompanyHoliday } from "@/api/holidays";
@@ -108,6 +109,7 @@ export function HolidayManagementPage() {
       </Card>
 
       <Card>
+        <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
           <Spinner />
         ) : items.length === 0 ? (
@@ -135,6 +137,7 @@ export function HolidayManagementPage() {
             )}
           />
         )}
+        </CrossfadeSwitch>
       </Card>
 
       <HolidayFormModal

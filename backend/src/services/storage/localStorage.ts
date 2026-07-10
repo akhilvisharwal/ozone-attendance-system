@@ -8,7 +8,7 @@ const ROOT = path.join(process.cwd(), env.uploadDir);
 
 function safeExt(originalName: string): string {
   const ext = path.extname(originalName).toLowerCase();
-  const allowed = [".jpg", ".jpeg", ".png", ".webp"];
+  const allowed = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
   return allowed.includes(ext) ? ext : ".jpg";
 }
 

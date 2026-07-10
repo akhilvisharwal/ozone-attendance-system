@@ -204,8 +204,8 @@ export function Combobox({
           onClick={() => (open ? closeDropdown() : openDropdown())}
           onKeyDown={handleKeyDown}
           className={clsx(
-            "flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-900",
-            "min-h-[42px] transition-colors sm:min-h-[38px]",
+            "flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-900 shadow-soft-xs",
+            "min-h-[42px] transition-all sm:min-h-[38px]",
             "focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100",
             disabled && "cursor-not-allowed bg-slate-50 text-slate-400",
             error && "border-red-400 focus:border-red-500 focus:ring-red-100",
@@ -227,7 +227,7 @@ export function Combobox({
         {open && (
           <div
             className={clsx(
-              "absolute top-full z-30 mt-1 w-full min-w-[240px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg",
+              "absolute top-full z-30 mt-1 w-full min-w-[240px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-soft-md",
               "combobox-panel-open"
             )}
           >

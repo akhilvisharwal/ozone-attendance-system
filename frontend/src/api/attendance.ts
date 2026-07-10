@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, extractBlobErrorMessage } from "./client";
 import {
   CHECK_IN_API_TIMEOUT_MS,
   CHECK_IN_TIMEOUT_MESSAGE,
@@ -182,25 +182,50 @@ export async function getMonthlyAttendance(params: MonthlyParams): Promise<Month
 export async function downloadMonthlyReport(
   params: MonthlyParams & { format: "excel" | "pdf" }
 ): Promise<void> {
-  const { data, headers } = await apiClient.get("/attendance/admin/monthly/export", {
-    params,
-    responseType: "blob",
-  });
+  try {
+    const { data, headers } = await apiClient.get("/attendance/admin/monthly/export", {
+      params,
+      responseType: "blob",
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
 
-  const ext = params.format === "excel" ? "xlsx" : params.format;
-  const month = params.month ?? "report";
-  const disposition = (headers["content-disposition"] as string | undefined) ?? "";
-  const match = /filename="?([^";]+)"?/.exec(disposition);
-  const filename = match?.[1] ?? `attendance-${month}.${ext}`;
+    const blob = data as Blob;
+    const contentType = String(headers["content-type"] ?? "");
+    if (contentType.includes("application/json")) {
+      const text = await blob.text();
+      let message = "Download failed.";
+      try {
+        const parsed = JSON.parse(text) as { error?: { message?: string }; message?: string };
+        message = parsed.error?.message ?? parsed.message ?? message;
+      } catch {
+        // keep default message
+      }
+      throw new Error(message);
+    }
 
-  const url = window.URL.createObjectURL(new Blob([data]));
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", filename);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
+    if (!blob || blob.size === 0) {
+      throw new Error("Server returned an empty report file.");
+    }
+
+    const ext = params.format === "excel" ? "xlsx" : params.format;
+    const month = params.month ?? "report";
+    const disposition = (headers["content-disposition"] as string | undefined) ?? "";
+    const match = /filename="?([^";]+)"?/.exec(disposition);
+    const filename = match?.[1] ?? `attendance-${month}.${ext}`;
+
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    const blobMessage = await extractBlobErrorMessage(error);
+    if (blobMessage) throw new Error(blobMessage);
+    throw error;
+  }
 }
 
 // ─── Admin manual marking ──────────────────────────────────────────────────
@@ -275,6 +300,19 @@ export async function deleteManualAttendance(payload: {
   date: string;
 }): Promise<void> {
   await apiClient.delete("/attendance/admin/manual-attendance", { data: payload });
+}
+
+export async function sendAttendanceReminders(): Promise<{
+  date: string;
+  sent: number;
+  recipients: { id: string; employeeCode: string; name: string }[];
+}> {
+  const res = await apiClient.post<{
+    date: string;
+    sent: number;
+    recipients: { id: string; employeeCode: string; name: string }[];
+  }>("/attendance/admin/remind");
+  return res.data;
 }
 
 // Backward-compatible aliases used by existing pages

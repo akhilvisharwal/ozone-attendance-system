@@ -72,7 +72,7 @@ describe("storage analytics helpers", () => {
     assert.equal(modules.find((m) => m.id === "selfies")?.sizeBytes, 300);
   });
 
-  it("finalizes category percentages that sum to approximately 100%", () => {
+  it("finalizes category percentages against total database capacity", () => {
     const categories = finalizeCategories(
       [
         {
@@ -96,14 +96,9 @@ describe("storage analytics helpers", () => {
           description: "files",
         },
       ],
-      1000,
       5000
     );
-    const percentSum = categories.reduce((sum, c) => sum + c.percentOfApplicationData, 0);
-    assert.equal(categories[0]?.percentOfApplicationData, 70);
-    assert.equal(categories[1]?.percentOfApplicationData, 30);
-    assert.equal(categories[0]?.percentOfPlanCapacity, 14);
-    assert.equal(categories[1]?.percentOfPlanCapacity, null);
-    assert.equal(percentSum, 100);
+    assert.equal(categories[0]?.percentOfTotalCapacity, 14);
+    assert.equal(categories[1]?.percentOfTotalCapacity, 6);
   });
 });

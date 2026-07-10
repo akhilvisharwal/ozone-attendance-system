@@ -14,6 +14,7 @@ import { SettingsSaveConfirmModal } from "@/components/settings/SettingsSaveConf
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useToast } from "@/components/ui/Toast";
 import { formatDateTime } from "@/utils/format";
 import type { BackupSettings } from "@/types/settings";
 
@@ -26,6 +27,7 @@ type PendingAction =
 
 export function BackupDataSettingsSection() {
   const { refresh } = useSettings();
+  const { showToast } = useToast();
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -103,6 +105,7 @@ export function BackupDataSettingsSection() {
             ? "Automatic daily backup enabled."
             : "Automatic daily backup disabled.",
         });
+        showToast("Settings saved successfully.");
       }
       setConfirmOpen(false);
       setPendingAction(null);

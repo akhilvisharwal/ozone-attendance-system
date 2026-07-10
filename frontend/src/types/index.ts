@@ -4,7 +4,10 @@ export type ManualAttendanceStatus =
   | "absent"
   | "leave"
   | "holiday"
-  | "weekly_off";
+  | "weekly_off"
+  | "holiday_worked"
+  | "weekly_off_worked"
+  | "not_applicable";
 
 export interface ManualAttendancePayload {
   employeeId: string;
@@ -18,7 +21,117 @@ export interface ManualAttendancePayload {
   override?: boolean;
 }
 
-export type Role = "admin" | "employee";
+export type Role = "admin" | "junior_admin" | "employee";
+
+export type AdminPermission =
+  | "viewDashboard"
+  | "viewAttendance"
+  | "editAttendance"
+  | "manualAttendance"
+  | "viewEmployees"
+  | "sendAttendanceReminders"
+  | "assignTasks"
+  | "editTasks"
+  | "deleteTasks"
+  | "viewReports"
+  | "manageExpenses";
+
+export type AdminPermissions = Record<AdminPermission, boolean>;
+
+export type ExpensePaymentMethod = "cash" | "upi" | "bank_transfer" | "card" | "other";
+export type ExpenseCategory =
+  | "travel"
+  | "food"
+  | "material"
+  | "fuel"
+  | "miscellaneous"
+  | "other";
+export type ExpenseStatus = "draft" | "pending" | "approved" | "rejected" | "paid" | "archived";
+
+export type ReimbursementPeriodType = "weekly" | "monthly" | "custom";
+export type ReimbursementRequestStatus =
+  | "pending_approval"
+  | "approved"
+  | "rejected"
+  | "paid"
+  | "archived";
+
+export interface Expense {
+  id: string;
+  employee_id: string;
+  expense_date: string;
+  amount: string;
+  payment_method: ExpensePaymentMethod | string;
+  category: ExpenseCategory | string;
+  description: string | null;
+  receipt_path: string | null;
+  status: ExpenseStatus;
+  request_id: string | null;
+  admin_remarks: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  week_start: string;
+  created_at: string;
+  updated_at: string;
+  employee_name?: string;
+  employee_code?: string;
+  reviewed_by_name?: string | null;
+  week_paid_at?: string | null;
+  week_paid_by_name?: string | null;
+}
+
+export interface ExpenseReimbursementRequest {
+  id: string;
+  employee_id: string;
+  period_type: ReimbursementPeriodType;
+  period_start: string;
+  period_end: string;
+  status: ReimbursementRequestStatus;
+  requested_amount: string;
+  approved_amount: string | null;
+  admin_remarks: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  paid_at: string | null;
+  paid_by: string | null;
+  payment_notes: string | null;
+  submitted_at: string;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+  employee_name?: string;
+  employee_code?: string;
+  reviewed_by_name?: string | null;
+  paid_by_name?: string | null;
+  expense_count?: number;
+}
+
+export interface RequestExpenseSummary {
+  totalSubmitted: number;
+  approvedAmount: number;
+  rejectedAmount: number;
+  pendingAmount: number;
+  payableAmount: number;
+  pendingCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  reviewedCount: number;
+}
+
+export interface ExpenseWeekGroup {
+  weekStart: string;
+  weekEnd: string;
+  employeeId: string;
+  employeeName: string;
+  employeeCode: string;
+  totalAmount: number;
+  pendingCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  paidAt: string | null;
+  paidByName: string | null;
+  expenses: Expense[];
+}
 
 export interface Employee {
   id: string;
@@ -29,6 +142,7 @@ export interface Employee {
   role: Role;
   is_active: boolean;
   must_change_password: boolean;
+  first_login_completed: boolean;
   profile_photo_path: string | null;
   created_by: string | null;
   deleted_at?: string | null;
@@ -38,6 +152,7 @@ export interface Employee {
   designation_id?: string | null;
   /** Job role / designation label (e.g. Draftsman). Separate from auth `role`. */
   designation?: string | null;
+  admin_permissions?: AdminPermissions;
   created_at: string;
   updated_at: string;
 }
@@ -360,6 +475,8 @@ export interface DashboardSummary {
   checkedOutToday: number;
   holidayWorkedToday: number;
   weeklyOffWorkedToday: number;
+  pendingReimbursementRequests?: number;
+  pendingReimbursementAmount?: number;
 }
 
 // ─── Monthly attendance grid ───────────────────────────────────────────────

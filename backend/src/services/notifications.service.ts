@@ -103,6 +103,21 @@ export async function notifyAttendanceReminder(payload: { employeeId: string; em
   });
 }
 
+/** Manual reminder from Admin / Junior Admin — always creates an in-app notification. */
+export async function sendManualAttendanceReminder(payload: {
+  employeeId: string;
+  employeeName: string;
+}) {
+  console.info("[notification] manual attendance reminder", payload);
+  await notificationsRepo.createNotification({
+    employeeId: payload.employeeId,
+    type: "attendance_reminder",
+    title: "Attendance reminder",
+    body: "You have not checked in yet today. Please mark your attendance.",
+    linkPath: "/",
+  });
+}
+
 export async function notifyHoliday(payload: { title: string; date: string }) {
   if (!isHolidayNotificationsEnabled()) return;
 

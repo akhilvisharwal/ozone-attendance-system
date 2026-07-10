@@ -9,6 +9,7 @@ import { normalizeLeaveSettings } from "../../utils/leaveSettings";
 import { normalizeAttendanceSettings, normalizeCompanySettings, normalizeEmployeeSettings, normalizeSecuritySettings } from "../../utils/settingsHelpers";
 import { normalizeMobileSettings } from "../../utils/attendanceCapture";
 import { normalizeBackupSettings } from "../../utils/backupHelpers";
+import { normalizeExpenseSettings } from "../expenses/expenseSettings";
 
 function deepMerge<T extends Record<string, unknown>>(base: T, patch: Partial<T>): T {
   const out = { ...base };
@@ -62,6 +63,7 @@ export async function getMergedSettings(): Promise<AppSettings> {
   out.mobile = normalizeMobileSettings(out.mobile as AppSettings["mobile"]);
   out.security = normalizeSecuritySettings(out.security as AppSettings["security"]);
   out.backup = normalizeBackupSettings(out.backup as AppSettings["backup"]);
+  out.expenses = normalizeExpenseSettings(out.expenses);
   return out as unknown as AppSettings;
 }
 

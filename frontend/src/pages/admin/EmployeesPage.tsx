@@ -14,6 +14,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Alert } from "@/components/ui/Alert";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { SecureImage } from "@/components/SecureImage";
 import * as employeesApi from "@/api/employees";
 import * as attendanceApi from "@/api/attendance";
@@ -21,6 +22,7 @@ import type { AttendanceRecord, DependencyCounts, Employee } from "@/types";
 import { extractErrorMessage } from "@/api/client";
 import { resolveWeeklyOffDays, employeeUsesDefaultWeeklyOff, normalizeWeeklyOffDays } from "@/utils/weeklyOffDays";
 import { usePublicSettings } from "@/contexts/SettingsContext";
+import { usePermissions } from "@/auth/usePermissions";
 import { formatDate } from "@/utils/format";
 import { DesignationSelect } from "@/components/DesignationSelect";
 import { EMPLOYEE_CODES_CHANGED_EVENT } from "@/utils/employeeCodeEvents";
@@ -110,6 +112,7 @@ function TodayStatusBadge({ record }: { record?: AttendanceRecord | null }) {
 
 export function EmployeesPage() {
   const { publicSettings } = usePublicSettings();
+  const { isMasterAdmin, can } = usePermissions();
   const manualOverride = publicSettings?.attendance.allowManualOverride ?? true;
 
   const [items, setItems]     = useState<Employee[]>([]);
@@ -171,73 +174,85 @@ export function EmployeesPage() {
 
   function buildMenu(employee: Employee) {
     const marked = todayMap[employee.id];
-    return [
-      {
-        label: "Reset Password",
-        icon: <KeyRound className="h-4 w-4" />,
-        onClick: () => setPwTarget(employee),
-      },
-      {
-        label: "Change Profile Photo",
-        icon: <ImageIcon className="h-4 w-4" />,
-        onClick: () => setPhotoTarget(employee),
-      },
-      {
-        label: "Edit Employee Details",
-        icon: <Pencil className="h-4 w-4" />,
-        onClick: () => setEditTarget(employee),
-      },
-      {
-        label: "Configure Weekly Off",
-        icon: <CalendarOff className="h-4 w-4" />,
-        onClick: () => setWeeklyOffTarget(employee),
-      },
-      ...(manualOverride
-        ? [
-            {
-              label: marked && dayStatusEquivalent(marked) === "present" ? "Marked Present" : "Mark as Present",
-              icon: <UserCheck className="h-4 w-4" />,
-              divider: true as const,
-              onClick: () => setMarkTarget({ employee, action: "present" }),
-              disabled: !employee.is_active,
-              disabledReason: !employee.is_active ? "Inactive" : undefined,
-            },
-            {
-              label: marked && dayStatusEquivalent(marked) === "half_day" ? "Marked Half Day" : "Mark as Half Day",
-              icon: <UserMinus className="h-4 w-4" />,
-              onClick: () => setMarkTarget({ employee, action: "half_day" }),
-              disabled: !employee.is_active,
-              disabledReason: !employee.is_active ? "Inactive" : undefined,
-            },
-            {
-              label: marked && dayStatusEquivalent(marked) === "absent" ? "Marked Absent" : "Mark as Absent",
-              icon: <UserX className="h-4 w-4" />,
-              onClick: () => setMarkTarget({ employee, action: "absent" }),
-              disabled: !employee.is_active,
-              disabledReason: !employee.is_active ? "Inactive" : undefined,
-            },
-          ]
-        : []),
-      {
-        label: employee.is_active ? "Deactivate Employee" : "Activate Employee",
-        icon: <Power className="h-4 w-4" />,
-        danger: employee.is_active,
-        divider: true,
-        onClick: () => {
-          if (employee.is_active) {
-            setDeactivateTarget(employee);
-          } else {
-            handleActivate(employee);
-          }
+    const items = [];
+
+    if (isMasterAdmin) {
+      items.push(
+        {
+          label: "Reset Password",
+          icon: <KeyRound className="h-4 w-4" />,
+          onClick: () => setPwTarget(employee),
         },
-      },
-      {
-        label: "Delete Employee",
-        icon: <Trash2 className="h-4 w-4" />,
-        danger: true,
-        onClick: () => setDeleteTarget(employee),
-      },
-    ];
+        {
+          label: "Change Profile Photo",
+          icon: <ImageIcon className="h-4 w-4" />,
+          onClick: () => setPhotoTarget(employee),
+        },
+        {
+          label: "Edit Employee Details",
+          icon: <Pencil className="h-4 w-4" />,
+          onClick: () => setEditTarget(employee),
+        },
+        {
+          label: "Configure Weekly Off",
+          icon: <CalendarOff className="h-4 w-4" />,
+          onClick: () => setWeeklyOffTarget(employee),
+        }
+      );
+    }
+
+    if (manualOverride && (isMasterAdmin || can("editAttendance"))) {
+      items.push(
+        {
+          label: marked && dayStatusEquivalent(marked) === "present" ? "Marked Present" : "Mark as Present",
+          icon: <UserCheck className="h-4 w-4" />,
+          divider: items.length > 0,
+          onClick: () => setMarkTarget({ employee, action: "present" as const }),
+          disabled: !employee.is_active,
+          disabledReason: !employee.is_active ? "Inactive" : undefined,
+        },
+        {
+          label: marked && dayStatusEquivalent(marked) === "half_day" ? "Marked Half Day" : "Mark as Half Day",
+          icon: <UserMinus className="h-4 w-4" />,
+          onClick: () => setMarkTarget({ employee, action: "half_day" as const }),
+          disabled: !employee.is_active,
+          disabledReason: !employee.is_active ? "Inactive" : undefined,
+        },
+        {
+          label: marked && dayStatusEquivalent(marked) === "absent" ? "Marked Absent" : "Mark as Absent",
+          icon: <UserX className="h-4 w-4" />,
+          onClick: () => setMarkTarget({ employee, action: "absent" as const }),
+          disabled: !employee.is_active,
+          disabledReason: !employee.is_active ? "Inactive" : undefined,
+        }
+      );
+    }
+
+    if (isMasterAdmin) {
+      items.push(
+        {
+          label: employee.is_active ? "Deactivate Employee" : "Activate Employee",
+          icon: <Power className="h-4 w-4" />,
+          danger: employee.is_active,
+          divider: true,
+          onClick: () => {
+            if (employee.is_active) {
+              setDeactivateTarget(employee);
+            } else {
+              handleActivate(employee);
+            }
+          },
+        },
+        {
+          label: "Delete Employee",
+          icon: <Trash2 className="h-4 w-4" />,
+          danger: true,
+          onClick: () => setDeleteTarget(employee),
+        }
+      );
+    }
+
+    return items;
   }
 
   async function handleActivate(employee: Employee) {
@@ -296,11 +311,17 @@ export function EmployeesPage() {
     <div>
       <PageHeader
         title="Employees"
-        subtitle="Create accounts, manage access, photos, passwords, and attendance"
+        subtitle={
+          isMasterAdmin
+            ? "Create accounts, manage access, photos, passwords, and attendance"
+            : "View employee directory and attendance status"
+        }
         action={
-          <Button onClick={() => setCreateOpen(true)} icon={<Plus className="h-4 w-4" />}>
-            Add Employee
-          </Button>
+          isMasterAdmin ? (
+            <Button onClick={() => setCreateOpen(true)} icon={<Plus className="h-4 w-4" />}>
+              Add Employee
+            </Button>
+          ) : undefined
         }
       />
 
@@ -334,6 +355,7 @@ export function EmployeesPage() {
       </Card>
 
       <Card>
+        <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
           <Spinner />
         ) : items.length === 0 ? (
@@ -343,9 +365,13 @@ export function EmployeesPage() {
             columns={columns}
             data={items}
             rowKey={(e) => e.id}
-            actions={(employee) => <OverflowMenu items={buildMenu(employee)} align="right" />}
+            actions={(employee) => {
+              const menu = buildMenu(employee);
+              return menu.length > 0 ? <OverflowMenu items={menu} align="right" /> : null;
+            }}
           />
         )}
+        </CrossfadeSwitch>
       </Card>
 
       {/* Create employee */}
@@ -645,7 +671,6 @@ function ResetPasswordModal({
   const [password, setPassword] = useState("");
   const [confirm, setConfirm]   = useState("");
   const [show, setShow]         = useState(false);
-  const [requireChange, setRequireChange] = useState(true);
   const [error, setError]       = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
 
@@ -665,7 +690,6 @@ function ResetPasswordModal({
     try {
       const { credentials } = await employeesApi.changeEmployeePassword(employee.id, {
         newPassword: password,
-        requireChange,
       });
       onDone(credentials);
     } catch (err) {
@@ -728,16 +752,6 @@ function ResetPasswordModal({
         >
           <RefreshCcw className="h-3.5 w-3.5" /> Generate a strong password
         </button>
-
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={requireChange}
-            onChange={(e) => setRequireChange(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300"
-          />
-          Require the employee to change it at next login
-        </label>
 
         <div className="mt-1 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>

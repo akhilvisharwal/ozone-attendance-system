@@ -8,13 +8,17 @@ import { MonthPicker } from "@/components/ui/MonthPicker";
 import { Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { FilterBar } from "@/components/ui/ResponsiveTable";
+import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { HolidayFormModal } from "@/components/HolidayFormModal";
 import { ManualAttendanceModal } from "@/components/ManualAttendanceModal";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
 import * as attendanceApi from "@/api/attendance";
 import * as sitesApi from "@/api/sites";
+import { extractErrorMessage } from "@/api/client";
+import { useToast } from "@/components/ui/Toast";
 import type { MonthlyCellStatus, MonthlyGrid, Site } from "@/types";
 import { formatMinutesAsHours } from "@/utils/format";
+import { usePermissions } from "@/auth/usePermissions";
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -27,8 +31,8 @@ const STATUS_META: Record<MonthlyCellStatus, { label: string; cell: string; dot:
   holiday: { label: "Holiday", cell: "bg-violet-500 text-white", dot: "bg-violet-500", code: "HO" },
   holiday_worked: { label: "Worked on Holiday", cell: "bg-teal-600 text-white", dot: "bg-teal-600", code: "HW" },
   weekly_off_worked: { label: "Worked on Weekly Off", cell: "bg-indigo-600 text-white", dot: "bg-indigo-600", code: "WW" },
-  none: { label: "—", cell: "bg-slate-50 text-slate-300", dot: "bg-slate-100 border border-slate-200", code: "" },
-  not_applicable: { label: "Not Applicable", cell: "bg-white text-slate-200 border border-slate-100", dot: "bg-white border border-slate-200", code: "" },
+  none: { label: "—", cell: "bg-slate-50 text-slate-400 hover:bg-slate-100", dot: "bg-slate-100 border border-slate-200", code: "·" },
+  not_applicable: { label: "Not Applicable", cell: "bg-white text-slate-300 border border-slate-200 hover:bg-slate-50", dot: "bg-white border border-slate-200", code: "NA" },
 };
 
 function currentMonthString(): string {
@@ -48,6 +52,9 @@ function weekdayOf(dateStr: string): number {
 }
 
 export function MonthlyAttendancePage() {
+  const { can, isMasterAdmin } = usePermissions();
+  const { showToast } = useToast();
+  const canEditCell = can("editAttendance") || can("manualAttendance");
   const [month, setMonth] = useState<string>(currentMonthString());
   const [employeeId, setEmployeeId] = useState("");
   const [siteId, setSiteId] = useState("");
@@ -58,7 +65,11 @@ export function MonthlyAttendancePage() {
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [holidayDate, setHolidayDate] = useState<string | null>(null);
-  const [manualTarget, setManualTarget] = useState<{ employeeId: string; date: string } | null>(null);
+  const [manualTarget, setManualTarget] = useState<{
+    employeeId: string;
+    date: string;
+    status?: MonthlyCellStatus;
+  } | null>(null);
 
   function loadGrid() {
     setLoading(true);
@@ -69,6 +80,10 @@ export function MonthlyAttendancePage() {
         siteId: siteId || undefined,
       })
       .then(setGrid)
+      .catch((err) => {
+        setGrid(null);
+        showToast(extractErrorMessage(err, "Could not load monthly attendance."), "error");
+      })
       .finally(() => setLoading(false));
   }
 
@@ -90,6 +105,8 @@ export function MonthlyAttendancePage() {
         siteId: siteId || undefined,
         format,
       });
+    } catch (err) {
+      showToast(extractErrorMessage(err, `Could not download ${format.toUpperCase()} report.`), "error");
     } finally {
       setDownloading(null);
     }
@@ -166,7 +183,9 @@ export function MonthlyAttendancePage() {
             </div>
           )}
 
-          <p className="text-xs text-slate-400">Tip: click any day number in the calendar header to mark it as a holiday.</p>
+          {isMasterAdmin && (
+            <p className="text-xs text-slate-400">Tip: click any day number in the calendar header to mark it as a holiday.</p>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-slate-500">Download {employeeId ? "employee" : "all"}:</span>
@@ -175,7 +194,7 @@ export function MonthlyAttendancePage() {
               size="sm"
               icon={<FileSpreadsheet className="h-4 w-4" />}
               isLoading={downloading === "excel"}
-              onClick={() => handleDownload("excel")}
+              onClick={() => void handleDownload("excel")}
             >
               Excel
             </Button>
@@ -184,7 +203,7 @@ export function MonthlyAttendancePage() {
               size="sm"
               icon={<FileText className="h-4 w-4" />}
               isLoading={downloading === "pdf"}
-              onClick={() => handleDownload("pdf")}
+              onClick={() => void handleDownload("pdf")}
             >
               PDF
             </Button>
@@ -197,6 +216,7 @@ export function MonthlyAttendancePage() {
       {/* Calendar grid */}
       <Card className="mb-4">
         <CardHeader title="Attendance Calendar" subtitle={grid?.label} />
+        <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
           <Spinner />
         ) : !grid || grid.employees.length === 0 ? (
@@ -229,9 +249,23 @@ export function MonthlyAttendancePage() {
                       >
                         <button
                           type="button"
-                          onClick={() => setHolidayDate(dateStr)}
-                          title={holiday ? `${holiday.name}${holiday.description ? ` — ${holiday.description}` : ""}` : `Mark ${dateStr} as holiday`}
-                          className="w-full rounded px-0.5 py-0.5 transition hover:bg-violet-200/60"
+                          onClick={() => {
+                            if (!isMasterAdmin) return;
+                            setHolidayDate(dateStr);
+                          }}
+                          disabled={!isMasterAdmin}
+                          title={
+                            holiday
+                              ? `${holiday.name}${holiday.description ? ` — ${holiday.description}` : ""}`
+                              : isMasterAdmin
+                                ? `Mark ${dateStr} as holiday`
+                                : dateStr
+                          }
+                          className={clsx(
+                            "w-full rounded px-0.5 py-0.5 transition",
+                            isMasterAdmin && "hover:bg-violet-200/60",
+                            !isMasterAdmin && "cursor-default"
+                          )}
                         >
                           <div>{day}</div>
                           <div className="truncate text-[8px] font-normal">
@@ -266,15 +300,29 @@ export function MonthlyAttendancePage() {
                         <td key={cell.day} className="border-b border-slate-100 p-0.5 text-center">
                           <button
                             type="button"
-                            title={`${title} — Click to edit manual attendance`}
-                            onClick={() => setManualTarget({ employeeId: emp.employeeId, date: cell.date })}
+                            title={
+                              canEditCell
+                                ? `${title} — Click to edit attendance`
+                                : title
+                            }
+                            disabled={!canEditCell}
+                            onClick={() => {
+                              if (!canEditCell) return;
+                              setManualTarget({
+                                employeeId: emp.employeeId,
+                                date: cell.date,
+                                status: cell.status,
+                              });
+                            }}
                             className={clsx(
-                              "relative mx-auto flex h-6 w-6 items-center justify-center rounded text-[10px] font-semibold transition hover:ring-2 hover:ring-brand-200",
+                              "relative mx-auto flex h-7 w-7 items-center justify-center rounded text-[10px] font-semibold transition",
+                              canEditCell && "cursor-pointer hover:ring-2 hover:ring-brand-300 hover:scale-105",
+                              !canEditCell && "cursor-default",
                               meta.cell,
                               dimmed && "opacity-20"
                             )}
                           >
-                            {meta.code || ""}
+                            {meta.code || "·"}
                             {cell.late && cell.status !== "none" && (
                               <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-orange-600 ring-1 ring-white" />
                             )}
@@ -288,11 +336,13 @@ export function MonthlyAttendancePage() {
             </table>
           </div>
         )}
+        </CrossfadeSwitch>
       </Card>
 
       {/* Monthly summary */}
       <Card>
         <CardHeader title="Monthly Summary" subtitle="Per-employee totals for the selected month" />
+        <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
           <Spinner />
         ) : !grid || grid.employees.length === 0 ? (
@@ -361,10 +411,11 @@ export function MonthlyAttendancePage() {
             </table>
           </div>
         )}
+        </CrossfadeSwitch>
       </Card>
 
       <HolidayFormModal
-        open={Boolean(holidayDate)}
+        open={isMasterAdmin && Boolean(holidayDate)}
         initialDate={holidayDate ?? undefined}
         onClose={() => setHolidayDate(null)}
         onSaved={loadGrid}
@@ -376,6 +427,7 @@ export function MonthlyAttendancePage() {
         onSaved={loadGrid}
         initialEmployeeId={manualTarget?.employeeId}
         initialDate={manualTarget?.date}
+        initialStatus={manualTarget?.status}
       />
     </div>
   );

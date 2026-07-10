@@ -31,6 +31,8 @@ import { buildMonthlyCalendarExcel } from "./attendance.monthlyExcel";
 import * as employeesRepo from "../employees/employees.repository";
 import { resolveOffDayContext } from "./attendance.offDay";
 import { logAudit } from "../audit/audit.repository";
+import { sendManualAttendanceReminder } from "../../services/notifications.service";
+import { listEmployeesEligibleForAttendanceReminder } from "./attendance.reminders";
 
 export const checkIn = asyncHandler(async (req: Request, res: Response) => {
   const input = checkInSchema.parse(req.body);
@@ -472,7 +474,12 @@ export const saveManualAttendance = asyncHandler(async (req: Request, res: Respo
   const existing = await ensureCanMark(input.employeeId, input.date, input.override ?? true);
 
   let totalMinutes = input.totalMinutes ?? null;
-  if ((input.status === "present" || input.status === "half_day") && totalMinutes == null) {
+  const needsTimes =
+    input.status === "present" ||
+    input.status === "half_day" ||
+    input.status === "holiday_worked" ||
+    input.status === "weekly_off_worked";
+  if (needsTimes && totalMinutes == null) {
     const { settings: effectiveRules } = await getEffectiveAttendanceRules(input.date, input.employeeId);
     totalMinutes =
       input.status === "half_day"
@@ -539,4 +546,36 @@ export const deleteManualAttendance = asyncHandler(async (req: Request, res: Res
   });
 
   res.json({ success: true });
+});
+
+/** Remind employees who have not checked in today (permission: sendAttendanceReminders). */
+export const sendAttendanceReminders = asyncHandler(async (req: Request, res: Response) => {
+  const date = todayDateString();
+  const recipients = await listEmployeesEligibleForAttendanceReminder(date);
+
+  let sent = 0;
+  for (const employee of recipients) {
+    await sendManualAttendanceReminder({ employeeId: employee.id, employeeName: employee.name });
+    sent += 1;
+  }
+
+  await logAudit(req, "attendance.remind", "attendance", undefined, {
+    date,
+    recipientCount: sent,
+    recipients: recipients.map((row) => ({
+      id: row.id,
+      employeeCode: row.employee_code,
+      name: row.name,
+    })),
+  });
+
+  res.json({
+    date,
+    sent,
+    recipients: recipients.map((row) => ({
+      id: row.id,
+      employeeCode: row.employee_code,
+      name: row.name,
+    })),
+  });
 });

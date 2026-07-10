@@ -220,7 +220,7 @@ export function DatePicker({
 
         <div
           className={clsx(
-            "flex w-full min-w-0 items-stretch overflow-hidden rounded-lg border border-slate-300 bg-white",
+            "flex w-full min-w-0 items-stretch overflow-hidden rounded-lg border border-slate-300 bg-white shadow-soft-xs transition-shadow",
             "focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-100",
             disabled && "cursor-not-allowed bg-slate-50",
             error && "border-red-400 focus-within:border-red-500 focus-within:ring-red-100"
@@ -268,7 +268,7 @@ export function DatePicker({
             role="dialog"
             aria-label="Choose date"
             className={clsx(
-              "date-picker-panel absolute left-0 top-full z-40 mt-1 w-full min-w-[280px] max-w-[320px] rounded-lg border border-slate-200 bg-white p-3 shadow-lg",
+              "date-picker-panel absolute left-0 top-full z-40 mt-1 w-full min-w-[280px] max-w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-soft-md",
               panelShown ? "date-picker-panel--open" : "date-picker-panel--closed"
             )}
           >

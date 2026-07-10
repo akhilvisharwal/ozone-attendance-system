@@ -11,6 +11,7 @@ import { useSettings } from "@/contexts/SettingsContext";
 import type {
   DatabaseStatus,
   StorageBreakdown,
+  StorageCategory,
   StorageWarningLevel,
 } from "@/types/settings";
 
@@ -43,21 +44,27 @@ function StatCard({
   );
 }
 
-function CapacityBar({
+function OverallStorageBar({
+  usedLabel,
+  remainingLabel,
+  maxLabel,
   percent,
   level,
 }: {
+  usedLabel: string;
+  remainingLabel: string;
+  maxLabel: string;
   percent: number | null;
   level: StorageWarningLevel;
 }) {
   if (percent == null) {
     return (
-      <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 text-xs text-slate-500">
-        Storage usage percentage is unavailable because the maximum capacity could not be
-        determined automatically.
+      <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 text-xs text-slate-500">
+        Usage bar unavailable — the database plan limit could not be detected automatically.
       </div>
     );
   }
+
   const width = Math.min(100, Math.max(0, percent));
   const barClass =
     level === "critical"
@@ -69,56 +76,40 @@ function CapacityBar({
           : "bg-brand-600";
 
   return (
-    <div className="mt-3">
-      <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
-        <span>Database storage used</span>
-        <span className="font-medium text-slate-700">{percent}%</span>
-      </div>
-      <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+    <div className="mt-4 space-y-2">
+      <div className="h-4 overflow-hidden rounded-full bg-slate-100">
         <div
           className={`h-full rounded-full transition-all ${barClass}`}
           style={{ width: `${width}%` }}
         />
       </div>
-      <div className="mt-2 flex justify-between text-[11px] text-slate-400">
-        <span>0%</span>
-        <span>70%</span>
-        <span>85%</span>
-        <span>95%</span>
-        <span>100%</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+        <span>
+          <span className="font-medium text-slate-800">Used:</span> {usedLabel}
+        </span>
+        <span>
+          <span className="font-medium text-slate-800">Remaining:</span> {remainingLabel}
+        </span>
+        <span>
+          <span className="font-medium text-slate-800">Limit:</span> {maxLabel}
+        </span>
       </div>
     </div>
   );
 }
 
-function ModuleBar({ percent }: { percent: number }) {
-  return (
-    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-      <div
-        className="h-full rounded-full bg-brand-600 transition-all"
-        style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
-      />
-    </div>
-  );
-}
-
-function formatPercentPair(
-  applicationPercent: number,
-  planPercent: number | null
-): string {
-  const app = `${applicationPercent}% of application data`;
-  if (planPercent == null) return app;
-  return `${app} · ${planPercent}% of plan`;
-}
-
-function storageKindLabel(
-  kind: StorageBreakdown["categories"][number]["storageKind"],
-  moduleId: string
-): string {
-  if (moduleId === "employees" || moduleId === "sites" || moduleId === "tasks") {
-    return "PostgreSQL + uploaded files";
+function recordCountLabel(category: StorageCategory): string {
+  const count = category.recordCount.toLocaleString();
+  if (category.storageKind === "files") {
+    return `${count} file${category.recordCount === 1 ? "" : "s"}`;
   }
-  return kind === "postgresql" ? "PostgreSQL" : "Uploaded files";
+  return `${count} record${category.recordCount === 1 ? "" : "s"}`;
+}
+
+function formatModuleSummary(category: StorageCategory, showCapacityPercent: boolean): string {
+  const base = `${category.sizeLabel} · ${recordCountLabel(category)}`;
+  if (!showCapacityPercent || category.percentOfTotalCapacity == null) return base;
+  return `${base} · ${category.percentOfTotalCapacity}% of capacity`;
 }
 
 function capacitySourceLabel(source: StorageBreakdown["capacity"]["limitSource"]): string {
@@ -126,9 +117,7 @@ function capacitySourceLabel(source: StorageBreakdown["capacity"]["limitSource"]
     case "provider":
       return "Detected from hosting provider";
     case "env":
-      return "Environment variable";
-    case "unavailable":
-      return "Not available";
+      return "From environment variable";
     default:
       return "Not available";
   }
@@ -203,8 +192,8 @@ export function DatabaseSettingsSection() {
       ))}
 
       <SettingsSection
-        title="Storage Capacity"
-        description="Live PostgreSQL database size measured against the plan capacity detected automatically from the hosting provider. Local disk space is never used."
+        title="Storage Analytics"
+        description="Live PostgreSQL database size measured with pg_database_size, plus real uploaded file sizes on disk."
       >
         <div className="mb-3 flex justify-end">
           <Button
@@ -221,9 +210,8 @@ export function DatabaseSettingsSection() {
 
         {!capacity.detected && (
           <Alert variant="info" className="mb-4">
-            Maximum storage capacity could not be determined automatically. The current database
-            size below is live and accurate, but the maximum, remaining, and percentage cannot be
-            shown without a real capacity value.
+            The database plan limit could not be detected automatically. Used storage below is
+            accurate, but remaining space and the usage bar require a known limit.
           </Alert>
         )}
 
@@ -233,164 +221,140 @@ export function DatabaseSettingsSection() {
               <HardDrive className="h-5 w-5" aria-hidden />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-900">Capacity overview</p>
+              <p className="text-sm font-semibold text-slate-900">Database storage</p>
               <p className="mt-0.5 text-xs text-slate-500">{capacity.limitDescription}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <StatCard
-              label="Current database size"
-              value={storage.databaseSizeLabel}
-              hint="From PostgreSQL pg_database_size (live)"
+              label="Used"
+              value={capacity.usedLabel}
+              tone={capacityTone}
+              hint="Live PostgreSQL database size"
             />
             <StatCard
-              label="Maximum storage"
-              value={capacity.maxLabel}
-              hint={capacitySourceLabel(capacity.limitSource)}
-            />
-            <StatCard
-              label="Remaining available"
+              label="Available"
               value={capacity.remainingLabel}
               tone={capacityTone}
               hint={
                 capacity.detected
-                  ? "Maximum storage minus current database size"
-                  : "Requires a known maximum storage"
+                  ? "Remaining before the plan limit"
+                  : "Requires a detected plan limit"
               }
             />
             <StatCard
-              label="Storage used"
-              value={capacity.percentUsed == null ? "Not available" : `${capacity.percentUsed}%`}
-              tone={capacityTone}
-              hint={
-                capacity.detected ? "Progress against maximum storage" : "Requires a known maximum storage"
-              }
+              label="Plan limit"
+              value={capacity.maxLabel}
+              hint={capacitySourceLabel(capacity.limitSource)}
             />
           </div>
 
-          <CapacityBar percent={capacity.percentUsed} level={capacity.warningLevel} />
+          <OverallStorageBar
+            usedLabel={capacity.usedLabel}
+            remainingLabel={capacity.remainingLabel}
+            maxLabel={capacity.maxLabel}
+            percent={capacity.percentUsed}
+            level={capacity.warningLevel}
+          />
+
+          <p className="mt-4 text-xs text-slate-500">
+            Uploaded files on disk:{" "}
+            <span className="font-medium text-slate-700">{storage.uploadedFilesLabel}</span>
+            {" · "}
+            Combined footprint (database + uploads):{" "}
+            <span className="font-medium text-slate-700">{storage.totalStorageUsedLabel}</span>
+          </p>
         </div>
       </SettingsSection>
 
       <SettingsSection
-        title="Database Status"
-        description="Live health and record counts from the connected PostgreSQL database."
+        title="Database Health"
+        description="Connection health and high-level record counts."
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="Health"
             value={status.health === "healthy" ? "Healthy" : "Unhealthy"}
             tone={status.health === "healthy" ? "success" : "danger"}
           />
-          <StatCard label="Database Size" value={status.databaseSizeLabel} />
-          <StatCard label="Total Employees" value={status.totalEmployees.toLocaleString()} />
+          <StatCard label="Database size" value={status.databaseSizeLabel} />
+          <StatCard label="Employees" value={status.totalEmployees.toLocaleString()} />
           <StatCard
-            label="Total Attendance Records"
+            label="Attendance records"
             value={status.totalAttendanceRecords.toLocaleString()}
           />
         </div>
       </SettingsSection>
 
       <SettingsSection
-        title="Storage Breakdown"
-        description="Application module storage measured from live PostgreSQL table sizes (pg_total_relation_size) and real uploaded file sizes on disk."
+        title="Storage by Module"
+        description="Each module shows its real storage size and record count. Percentages are relative to the database plan limit, not to other modules."
       >
-        <Alert variant="info" className="mb-4">
-          PostgreSQL reserves additional internal storage automatically for indexes, system
-          catalogs, transaction metadata, TOAST tables, and free space. That internal storage is
-          not user data and is excluded from the application breakdown below.
-          {storage.internalDatabaseBytes > 0 && (
-            <>
-              {" "}
-              Estimated internal PostgreSQL storage:{" "}
-              <span className="font-medium text-slate-800">
-                {storage.internalDatabaseLabel}
-              </span>{" "}
-              ({storage.internalDatabasePercent}% of current database size).
-            </>
-          )}
-        </Alert>
-
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            label="Application data"
-            value={storage.applicationDataLabel}
-            hint="Tracked module tables + referenced upload files"
-          />
-          <StatCard
-            label="PostgreSQL database"
-            value={storage.databaseSizeLabel}
-            hint="pg_database_size (live, includes internal storage)"
-          />
-          <StatCard
-            label="Uploaded files"
-            value={storage.uploadedFilesLabel}
-            hint="Sum of real file sizes in uploads/"
-          />
-          <StatCard
-            label="Total footprint"
-            value={storage.totalStorageUsedLabel}
-            hint="Database size + uploaded files on disk"
-          />
-        </div>
-
-        <div className="space-y-3">
-          {storage.categories.map((category) => (
-            <div
-              key={category.id}
-              className="rounded-lg border border-slate-200 bg-white px-4 py-3"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
+        {storage.categories.length === 0 ? (
+          <p className="text-sm text-slate-500">No module storage data available yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+            {storage.categories.map((category) => (
+              <li
+                key={category.id}
+                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+              >
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-slate-900">{category.label}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{category.description}</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-slate-900">{category.sizeLabel}</p>
-                  <p className="text-xs text-slate-500">
-                    {category.recordCount.toLocaleString()}{" "}
-                    {category.storageKind === "files" ? "file" : "record"}
-                    {category.recordCount === 1 ? "" : "s"} ·{" "}
-                    {formatPercentPair(
-                      category.percentOfApplicationData,
-                      category.percentOfPlanCapacity
-                    )}{" "}
-                    · {storageKindLabel(category.storageKind, category.id)}
-                  </p>
-                </div>
-              </div>
-              <ModuleBar percent={category.percentOfApplicationData} />
-            </div>
-          ))}
-        </div>
+                <p className="text-sm font-medium text-slate-800">
+                  {formatModuleSummary(category, capacity.detected)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
 
-        <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-3 py-2 font-semibold">Table</th>
-                <th className="px-3 py-2 font-semibold">Records</th>
-                <th className="px-3 py-2 font-semibold">Size</th>
-                <th className="px-3 py-2 font-semibold">% app data</th>
-                <th className="px-3 py-2 font-semibold">% plan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {storage.tables.map((table) => (
-                <tr key={table.name} className="border-t border-slate-100">
-                  <td className="px-3 py-2 font-medium text-slate-800">{table.name}</td>
-                  <td className="px-3 py-2 text-slate-600">{table.recordCount.toLocaleString()}</td>
-                  <td className="px-3 py-2 text-slate-600">{table.sizeLabel}</td>
-                  <td className="px-3 py-2 text-slate-600">{table.percentOfApplicationData}%</td>
-                  <td className="px-3 py-2 text-slate-600">
-                    {table.percentOfPlanCapacity == null ? "—" : `${table.percentOfPlanCapacity}%`}
-                  </td>
+        {storage.internalDatabaseBytes > 0 && (
+          <p className="mt-3 text-xs text-slate-500">
+            PostgreSQL also uses {storage.internalDatabaseLabel} ({storage.internalDatabasePercent}%
+            of database size) for indexes, system catalogs, and internal overhead. This is not
+            shown as a separate module.
+          </p>
+        )}
+
+        <details className="mt-4 rounded-lg border border-slate-200 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-800">
+            Table-level detail
+          </summary>
+          <div className="overflow-x-auto border-t border-slate-100">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Table</th>
+                  <th className="px-3 py-2 font-semibold">Records</th>
+                  <th className="px-3 py-2 font-semibold">Size</th>
+                  {capacity.detected && (
+                    <th className="px-3 py-2 font-semibold">% of capacity</th>
+                  )}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {storage.tables.map((table) => (
+                  <tr key={table.name} className="border-t border-slate-100">
+                    <td className="px-3 py-2 font-medium text-slate-800">{table.name}</td>
+                    <td className="px-3 py-2 text-slate-600">{table.recordCount.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-slate-600">{table.sizeLabel}</td>
+                    {capacity.detected && (
+                      <td className="px-3 py-2 text-slate-600">
+                        {table.percentOfTotalCapacity == null
+                          ? "—"
+                          : `${table.percentOfTotalCapacity}%`}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </SettingsSection>
 
       <StorageManagementSection

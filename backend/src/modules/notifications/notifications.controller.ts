@@ -23,3 +23,9 @@ export const markAllNotificationsRead = asyncHandler(async (req: Request, res: R
   const count = await repo.markAllRead(req.user!.id);
   res.json({ count });
 });
+
+export const deleteNotification = asyncHandler(async (req: Request, res: Response) => {
+  const deleted = await repo.deleteNotification(req.params.id, req.user!.id);
+  if (!deleted) throw ApiError.notFound("Notification not found");
+  res.json({ success: true });
+});

@@ -6,9 +6,20 @@ import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import { SettingsSection, ToggleRow } from "@/components/settings/SettingsSection";
 import { SettingsSaveConfirmModal } from "@/components/settings/SettingsSaveConfirmModal";
+import {
+  ADMIN_CONFIRM_PASSWORD_FIELD,
+  ADMIN_CURRENT_PASSWORD_FIELD,
+  ADMIN_NEW_PASSWORD_FIELD,
+  blankCurrentPassword,
+  clearPasswordFieldsAfterSuccess,
+  emptyPasswordForm,
+  validatePasswordForm,
+  type PasswordFormState,
+} from "@/components/settings/securityPasswordForm";
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useToast } from "@/components/ui/Toast";
 import type { SecuritySettings } from "@/types/settings";
 
 type SecurityFormState = SecuritySettings;
@@ -19,12 +30,6 @@ type FieldErrors = Partial<
     string
   >
 >;
-
-type PasswordFormState = {
-  currentPassword: string;
-  newPassword: string;
-  confirmPassword: string;
-};
 
 const SECURITY_CONFIRM_MESSAGE =
   "Are you sure you want to save these security settings? They will take effect immediately.";
@@ -60,12 +65,9 @@ function validateSecurityForm(form: SecurityFormState): FieldErrors {
   return errors;
 }
 
-function emptyPasswordForm(): PasswordFormState {
-  return { currentPassword: "", newPassword: "", confirmPassword: "" };
-}
-
 export function SecuritySettingsSection() {
   const { refresh } = useSettings();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -88,6 +90,7 @@ export function SecuritySettingsSection() {
       const settings = await settingsApi.fetchSettings();
       setForm(securityToForm(settings.security));
       setErrors({});
+      setPasswordForm((prev) => blankCurrentPassword(prev));
     } catch (err) {
       setMessage({
         type: "error",
@@ -127,6 +130,7 @@ export function SecuritySettingsSection() {
       await refresh();
       setConfirmOpen(false);
       setMessage({ type: "success", text: "Security settings saved successfully." });
+      showToast("Settings saved successfully.");
     } catch (err) {
       setConfirmOpen(false);
       setMessage({
@@ -138,24 +142,12 @@ export function SecuritySettingsSection() {
     }
   }
 
-  function validatePasswordForm(): Partial<Record<keyof PasswordFormState, string>> {
-    const nextErrors: Partial<Record<keyof PasswordFormState, string>> = {};
-    if (!passwordForm.currentPassword.trim()) {
-      nextErrors.currentPassword = "Current password is required.";
-    }
-    if (!passwordForm.newPassword.trim()) {
-      nextErrors.newPassword = "New password is required.";
-    }
-    if (!passwordForm.confirmPassword.trim()) {
-      nextErrors.confirmPassword = "Please confirm the new password.";
-    } else if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      nextErrors.confirmPassword = "New password and confirmation do not match.";
-    }
-    return nextErrors;
+  function handleValidatePasswordForm(): Partial<Record<keyof PasswordFormState, string>> {
+    return validatePasswordForm(passwordForm);
   }
 
   async function handleChangePassword() {
-    const nextErrors = validatePasswordForm();
+    const nextErrors = handleValidatePasswordForm();
     setPasswordErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -163,7 +155,9 @@ export function SecuritySettingsSection() {
     setPasswordMessage(null);
     try {
       await settingsApi.changeAdminPassword(passwordForm);
-      setPasswordForm(emptyPasswordForm());
+      setPasswordForm(clearPasswordFieldsAfterSuccess());
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
       setPasswordMessage({ type: "success", text: "Admin password updated successfully." });
     } catch (err) {
       setPasswordMessage({
@@ -316,7 +310,14 @@ export function SecuritySettingsSection() {
           </div>
         )}
 
-        <div className="max-w-md space-y-4">
+        <form
+          autoComplete="off"
+          className="max-w-md space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleChangePassword();
+          }}
+        >
           <div className="relative">
             <Input
               label="Current Password"
@@ -327,8 +328,12 @@ export function SecuritySettingsSection() {
                 setPasswordForm((prev) => ({ ...prev, currentPassword: e.target.value }));
                 setPasswordErrors((prev) => ({ ...prev, currentPassword: undefined }));
               }}
+              onFocus={(e) => {
+                e.currentTarget.readOnly = false;
+              }}
+              readOnly
               error={passwordErrors.currentPassword}
-              autoComplete="current-password"
+              {...ADMIN_CURRENT_PASSWORD_FIELD}
             />
             <button
               type="button"
@@ -351,7 +356,7 @@ export function SecuritySettingsSection() {
                 setPasswordErrors((prev) => ({ ...prev, newPassword: undefined }));
               }}
               error={passwordErrors.newPassword}
-              autoComplete="new-password"
+              {...ADMIN_NEW_PASSWORD_FIELD}
             />
             <button
               type="button"
@@ -373,18 +378,17 @@ export function SecuritySettingsSection() {
               setPasswordErrors((prev) => ({ ...prev, confirmPassword: undefined }));
             }}
             error={passwordErrors.confirmPassword}
-            autoComplete="new-password"
+            {...ADMIN_CONFIRM_PASSWORD_FIELD}
           />
 
           <Button
-            type="button"
-            onClick={() => void handleChangePassword()}
+            type="submit"
             isLoading={changingPassword}
             icon={<ShieldCheck className="h-4 w-4" />}
           >
             Update admin password
           </Button>
-        </div>
+        </form>
       </SettingsSection>
     </div>
   );
