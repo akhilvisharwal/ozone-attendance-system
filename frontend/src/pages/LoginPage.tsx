@@ -13,7 +13,7 @@ import { extractErrorMessage } from "@/api/client";
 import { firstAllowedAdminPath, normalizePermissions } from "@/auth/permissions";
 
 export function LoginPage() {
-  const { employee, isLoading, login } = useAuth();
+  const { employee, login } = useAuth();
   const { homePath } = usePermissions();
   const navigate = useNavigate();
   const [employeeId, setEmployeeId] = useState("");
@@ -21,7 +21,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (!isLoading && employee) {
+  if (employee) {
     return <Navigate to={homePath} replace />;
   }
 

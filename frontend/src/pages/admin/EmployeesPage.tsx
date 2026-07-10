@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState, Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input, FieldWrapper, Textarea } from "@/components/ui/Input";
@@ -351,7 +351,7 @@ export function EmployeesPage() {
       <Card>
         <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : items.length === 0 ? (
           <EmptyState title="No employees found" />
         ) : (

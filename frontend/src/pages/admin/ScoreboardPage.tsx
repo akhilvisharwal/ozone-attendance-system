@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { EmployeeAvatar } from "@/components/EmployeeAvatar";
@@ -114,7 +114,7 @@ export function ScoreboardPage() {
 
       <Card>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : entries.length === 0 ? (
           <EmptyState title="No employee data available yet" />
         ) : (

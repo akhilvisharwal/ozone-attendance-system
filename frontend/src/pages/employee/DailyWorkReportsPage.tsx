@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { WorkStatusBadge } from "@/components/ui/Badge";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { AttendanceDetailModal } from "@/components/AttendanceDetailModal";
@@ -28,7 +28,7 @@ export function DailyWorkReportsPage() {
       <Card>
         <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : items.length === 0 ? (
           <EmptyState title="No work reports yet" description="Reports appear here after you check out" />
         ) : (

@@ -132,75 +132,85 @@ function AdminShell() {
 }
 
 function RootRedirect() {
-  const { employee, isLoading } = useAuth();
+  const { employee } = useAuth();
   const { homePath } = usePermissions();
 
-  if (isLoading) return <LoadingScreen />;
   if (!employee) return <Navigate to="/login" replace />;
   return <Navigate to={homePath} replace />;
+}
+
+function AuthenticatedApp() {
+  const { isLoading } = useAuth();
+
+  // Full-page loader only while validating the session (initial load / F5).
+  if (isLoading) return <LoadingScreen />;
+
+  return (
+    <SettingsProvider>
+      <ToastProvider>
+        <SessionManager />
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+          <Route element={<ProtectedRoute allowedRoles={["employee"]} />}>
+            <Route element={<AppLayout navItems={employeeNavItems} roleLabel="Employee" variant="employee" />}>
+              <Route path="/" element={<EmployeeHomePage />} />
+              <Route path="/history" element={<AttendanceHistoryPage />} />
+              <Route path="/work-reports" element={<DailyWorkReportsPage />} />
+              <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/leaves" element={<LeaveRequestsPage />} />
+              <Route path="/profile" element={<EmployeeProfilePage />} />
+            </Route>
+          </Route>
+
+          <Route element={<ProtectedRoute allowedRoles={["admin", "junior_admin"]} />}>
+            <Route element={<AdminShell />}>
+              <Route path="/admin/profile" element={<ProfilePage />} />
+              <Route element={<PermissionRoute allOf={["viewDashboard"]} />}>
+                <Route path="/admin" element={<AdminDashboardPage />} />
+              </Route>
+              <Route element={<PermissionRoute allOf={["viewEmployees"]} />}>
+                <Route path="/admin/employees" element={<EmployeesPage />} />
+              </Route>
+              <Route element={<PermissionRoute allOf={["viewAttendance"]} />}>
+                <Route path="/admin/attendance" element={<AttendanceRecordsPage />} />
+                <Route path="/admin/monthly" element={<MonthlyAttendancePage />} />
+              </Route>
+              <Route element={<PermissionRoute anyOf={["assignTasks", "editTasks", "deleteTasks"]} />}>
+                <Route path="/admin/tasks" element={<TaskManagementPage />} />
+              </Route>
+              <Route element={<MasterAdminRoute />}>
+                <Route path="/admin/scoreboard" element={<ScoreboardPage />} />
+                <Route path="/admin/leaves" element={<LeaveManagementPage />} />
+                <Route path="/admin/holidays" element={<HolidayManagementPage />} />
+                <Route path="/admin/sites" element={<SitesPage />} />
+                <Route path="/admin/settings" element={<SettingsPage />} />
+                <Route path="/admin/expense-management" element={<ExpenseManagementPage />} />
+              </Route>
+              <Route element={<PermissionRoute allOf={["viewReports"]} />}>
+                <Route path="/admin/reports" element={<ReportsPage />} />
+              </Route>
+              <Route element={<PermissionRoute allOf={["manageExpenses"]} />}>
+                <Route path="/admin/expenses" element={<ExpenseTrackerPage />} />
+              </Route>
+              <Route path="/admin/no-access" element={<NoAccessPage />} />
+            </Route>
+          </Route>
+
+          <Route path="*" element={<RootRedirect />} />
+        </Routes>
+      </ToastProvider>
+    </SettingsProvider>
+  );
 }
 
 function App() {
   return (
     <MotionConfig reducedMotion="user">
       <AuthProvider>
-        <SettingsProvider>
-          <ToastProvider>
-            <SessionManager />
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-              <Route path="/reset-password" element={<ResetPasswordPage />} />
-
-              <Route element={<ProtectedRoute allowedRoles={["employee"]} />}>
-                <Route element={<AppLayout navItems={employeeNavItems} roleLabel="Employee" variant="employee" />}>
-                  <Route path="/" element={<EmployeeHomePage />} />
-                  <Route path="/history" element={<AttendanceHistoryPage />} />
-                  <Route path="/work-reports" element={<DailyWorkReportsPage />} />
-                  <Route path="/tasks" element={<TasksPage />} />
-                  <Route path="/leaves" element={<LeaveRequestsPage />} />
-                  <Route path="/profile" element={<EmployeeProfilePage />} />
-                </Route>
-              </Route>
-
-              <Route element={<ProtectedRoute allowedRoles={["admin", "junior_admin"]} />}>
-                <Route element={<AdminShell />}>
-                  <Route path="/admin/profile" element={<ProfilePage />} />
-                  <Route element={<PermissionRoute allOf={["viewDashboard"]} />}>
-                    <Route path="/admin" element={<AdminDashboardPage />} />
-                  </Route>
-                  <Route element={<PermissionRoute allOf={["viewEmployees"]} />}>
-                    <Route path="/admin/employees" element={<EmployeesPage />} />
-                  </Route>
-                  <Route element={<PermissionRoute allOf={["viewAttendance"]} />}>
-                    <Route path="/admin/attendance" element={<AttendanceRecordsPage />} />
-                    <Route path="/admin/monthly" element={<MonthlyAttendancePage />} />
-                  </Route>
-                  <Route element={<PermissionRoute anyOf={["assignTasks", "editTasks", "deleteTasks"]} />}>
-                    <Route path="/admin/tasks" element={<TaskManagementPage />} />
-                  </Route>
-                  <Route element={<MasterAdminRoute />}>
-                    <Route path="/admin/scoreboard" element={<ScoreboardPage />} />
-                    <Route path="/admin/leaves" element={<LeaveManagementPage />} />
-                    <Route path="/admin/holidays" element={<HolidayManagementPage />} />
-                    <Route path="/admin/sites" element={<SitesPage />} />
-                    <Route path="/admin/settings" element={<SettingsPage />} />
-                    <Route path="/admin/expense-management" element={<ExpenseManagementPage />} />
-                  </Route>
-                  <Route element={<PermissionRoute allOf={["viewReports"]} />}>
-                    <Route path="/admin/reports" element={<ReportsPage />} />
-                  </Route>
-                  <Route element={<PermissionRoute allOf={["manageExpenses"]} />}>
-                    <Route path="/admin/expenses" element={<ExpenseTrackerPage />} />
-                  </Route>
-                  <Route path="/admin/no-access" element={<NoAccessPage />} />
-                </Route>
-              </Route>
-
-              <Route path="*" element={<RootRedirect />} />
-            </Routes>
-          </ToastProvider>
-        </SettingsProvider>
+        <AuthenticatedApp />
       </AuthProvider>
     </MotionConfig>
   );

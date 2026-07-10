@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { ReceiptThumbnail } from "@/components/ReceiptThumbnail";
@@ -447,7 +447,7 @@ export function ExpenseManagementPage() {
 
       <CrossfadeSwitch state={loading ? "loading" : status}>
       {loading ? (
-        <Spinner />
+        <ContentSkeleton />
       ) : requests.length === 0 ? (
         <EmptyState
           title="No reimbursement requests"
@@ -587,7 +587,7 @@ export function ExpenseManagementPage() {
             </div>
 
             {detailLoading ? (
-              <Spinner label="Loading expenses…" />
+              <ContentSkeleton rows={4} />
             ) : (
               <>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">

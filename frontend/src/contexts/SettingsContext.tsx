@@ -50,8 +50,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const employeeId = employee?.id ?? null;
+
   const refresh = useCallback(async () => {
-    if (!employee) {
+    if (!employeeId) {
       setPublicSettings(null);
       setLoading(false);
       setError(null);
@@ -70,11 +72,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [employee?.id]);
+  }, [employeeId]);
 
   useEffect(() => {
-    refresh();
-  }, [employee, refresh]);
+    void refresh();
+  }, [refresh]);
 
   const value = useMemo(
     () => ({ publicSettings, loading, error, refresh }),

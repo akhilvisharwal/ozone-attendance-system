@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { AttendanceRecordList } from "@/components/AttendanceRecordList";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { Input, Select } from "@/components/ui/Input";
@@ -273,7 +273,7 @@ export function AttendanceRecordsPage() {
       <Card>
         <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : items.length === 0 ? (
           <EmptyState title="No attendance records found" />
         ) : (

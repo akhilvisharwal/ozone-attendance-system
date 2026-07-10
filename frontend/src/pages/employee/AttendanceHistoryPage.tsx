@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { AttendanceStatusBadge, AttendanceDayBadge } from "@/components/ui/Badge";
 import { AttendanceDetailModal } from "@/components/AttendanceDetailModal";
 import { EmployeeMonthlyCalendar } from "@/components/EmployeeMonthlyCalendar";
@@ -75,7 +75,7 @@ export function AttendanceHistoryPage() {
         </div>
         <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : records.length === 0 ? (
           <EmptyState
             title="No attendance records"

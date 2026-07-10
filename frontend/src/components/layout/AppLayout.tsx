@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { ChevronLeft, LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { usePermissions } from "@/auth/usePermissions";
@@ -12,7 +12,7 @@ import { Logo, LogoMark } from "@/components/Logo";
 import { NotificationBell } from "@/components/NotificationBell";
 import { MobileAvatarMenu } from "@/components/layout/MobileAvatarMenu";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { pageVariants, quickTransition } from "@/lib/motion";
+import { quickTransition } from "@/lib/motion";
 
 export interface NavItem {
   to: string;
@@ -295,20 +295,13 @@ export function AppLayout({
             <div className="mb-4 hidden shrink-0 justify-end lg:flex">
               <NotificationBell />
             </div>
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={location.pathname}
-                variants={pageVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className={clsx(
-                  isSettingsPage && "flex min-h-0 flex-1 flex-col lg:overflow-hidden"
-                )}
-              >
-                <Outlet />
-              </motion.div>
-            </AnimatePresence>
+            <div
+              className={clsx(
+                isSettingsPage && "flex min-h-0 flex-1 flex-col lg:overflow-hidden"
+              )}
+            >
+              <Outlet />
+            </div>
           </div>
         </main>
 

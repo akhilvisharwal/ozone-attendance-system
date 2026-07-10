@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select, Textarea } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { ReceiptThumbnail } from "@/components/ReceiptThumbnail";
@@ -446,7 +446,7 @@ export function ExpenseTrackerPage() {
 
       <CrossfadeSwitch state={loading ? "loading" : tab}>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : tab === "drafts" ? (
           weeks.length === 0 ? (
             <EmptyState

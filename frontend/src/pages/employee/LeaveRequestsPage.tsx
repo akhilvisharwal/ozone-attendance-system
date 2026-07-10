@@ -9,7 +9,7 @@ import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { Modal, ModalFooterActions } from "../../components/ui/Modal";
 import { Alert } from "../../components/ui/Alert";
-import { Spinner } from "../../components/ui/Spinner";
+import { ContentSkeleton } from "../../components/ui/Spinner";
 import { Input, FieldWrapper, Textarea, Select } from "../../components/ui/Input";
 import { ResponsiveTable, type Column } from "../../components/ui/ResponsiveTable";
 import { TaskDeleteConfirmModal } from "@/components/tasks/TaskDeleteConfirmModal";
@@ -163,7 +163,7 @@ export default function LeaveRequestsPage() {
         <CardBody>
           <CrossfadeSwitch state={loading ? "loading" : "content"}>
           {loading ? (
-            <div className="flex justify-center py-10"><Spinner /></div>
+            <ContentSkeleton />
           ) : items.length === 0 ? (
             <p className="text-center text-gray-500 py-10">No leave requests yet.</p>
           ) : (

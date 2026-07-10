@@ -2,16 +2,11 @@ import { Navigate, Outlet } from "react-router-dom";
 import type { Role } from "@/types";
 import { useAuth } from "./AuthContext";
 import { usePermissions } from "./usePermissions";
-import { LoadingScreen } from "@/components/LoadingScreen";
 import { ChangePasswordRequiredPage } from "@/pages/ChangePasswordRequiredPage";
 
 export function ProtectedRoute({ allowedRoles }: { allowedRoles: Role[] }) {
-  const { employee, isLoading } = useAuth();
+  const { employee } = useAuth();
   const { homePath } = usePermissions();
-
-  if (isLoading) {
-    return <LoadingScreen />;
-  }
 
   if (!employee) {
     return <Navigate to="/login" replace />;

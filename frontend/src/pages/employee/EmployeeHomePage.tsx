@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, LogOut } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Spinner } from "@/components/ui/Spinner";
+import { ContentSkeleton } from "@/components/ui/Spinner";
 import { WorkStatusBadge } from "@/components/ui/Badge";
 import * as attendanceApi from "@/api/attendance";
 import type { AttendanceRecord } from "@/types";
@@ -76,11 +76,7 @@ export function EmployeeHomePage() {
           Syncing pending attendance when your connection is available…
         </Alert>
       )}
-      {attendance === undefined && (
-        <div className="flex justify-center py-16">
-          <Spinner label="Loading attendance…" />
-        </div>
-      )}
+      {attendance === undefined && <ContentSkeleton rows={3} />}
 
       {attendance === null && peekPendingAttendance()?.type === "check-in" && (
         <Card>

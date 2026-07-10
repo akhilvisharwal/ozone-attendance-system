@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { AttendanceRecordList } from "@/components/AttendanceRecordList";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
@@ -173,7 +173,7 @@ export function AdminDashboardPage() {
       )}
 
       {loading ? (
-        <Spinner />
+        <ContentSkeleton />
       ) : (
         <CrossfadeSwitch state={dataVersion} variants={refreshCrossfadeVariants}>
           <div

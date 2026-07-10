@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, List, Users } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Input";
@@ -125,7 +125,7 @@ export function TasksPage() {
 
         <CrossfadeSwitch state={loading ? "loading" : view}>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : view === "calendar" ? (
           <div className="p-4 sm:p-5">
             <div className="mb-4 flex items-center justify-between">

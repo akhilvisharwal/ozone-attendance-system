@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CalendarHeart, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Input";
@@ -111,7 +111,7 @@ export function HolidayManagementPage() {
       <Card>
         <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : items.length === 0 ? (
           <EmptyState title="No holidays configured" description="Add one-time or recurring annual holidays" />
         ) : (

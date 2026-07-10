@@ -3,7 +3,7 @@ import clsx from "clsx";
 import { CalendarRange, ChevronLeft, ChevronRight, FileSpreadsheet, FileText } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
-import { Spinner, EmptyState } from "@/components/ui/Spinner";
+import { ContentSkeleton, EmptyState } from "@/components/ui/Spinner";
 import { MonthPicker } from "@/components/ui/MonthPicker";
 import { Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -218,7 +218,7 @@ export function MonthlyAttendancePage() {
         <CardHeader title="Attendance Calendar" subtitle={grid?.label} />
         <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : !grid || grid.employees.length === 0 ? (
           <EmptyState title="No active employees found for this month" />
         ) : (
@@ -344,7 +344,7 @@ export function MonthlyAttendancePage() {
         <CardHeader title="Monthly Summary" subtitle="Per-employee totals for the selected month" />
         <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
-          <Spinner />
+          <ContentSkeleton />
         ) : !grid || grid.employees.length === 0 ? (
           <EmptyState title="No summary available" />
         ) : (
