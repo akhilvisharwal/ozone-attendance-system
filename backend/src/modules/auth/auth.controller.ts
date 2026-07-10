@@ -25,13 +25,13 @@ import { employeeChangePasswordSchema } from "./auth.validators";
 const REFRESH_COOKIE = "refreshToken";
 
 function refreshCookieOptions() {
-  // Cross-origin (Vercel frontend → Render API) requires SameSite=None; Secure.
-  // Local same-site dev can use Lax over http.
+  // Cross-origin direct API calls need SameSite=None; Secure.
+  // Same-origin via Vercel /api proxy stores first-party cookies (required for mobile Safari).
   return {
     httpOnly: true,
     secure: env.isProduction,
     sameSite: (env.isProduction ? "none" : "lax") as "none" | "lax",
-    path: "/api/auth",
+    path: "/api",
     maxAge: parseDurationMs(env.jwtRefreshExpiresIn),
   };
 }

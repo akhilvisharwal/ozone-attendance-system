@@ -4,7 +4,7 @@ import type { AppSettings, PublicSettings } from "@/types/settings";
 import * as settingsApi from "@/api/settings";
 import { useAuth } from "@/auth/AuthContext";
 import { configureFormatting } from "@/utils/format";
-import { getApiOrigin } from "@/api/client";
+import { getStaticAssetUrl } from "@/api/client";
 
 export type { PublicSettings };
 
@@ -100,8 +100,7 @@ export function useCompanyLogoUrl(): string | null {
   const path = publicSettings?.company.logoPath?.trim();
   if (!path) return null;
   if (path.startsWith("http")) return path;
-  const apiBase = getApiOrigin();
-  return apiBase ? `${apiBase}/${path.replace(/^\/+/, "")}?v=${encodeURIComponent(path)}` : null;
+  return `${getStaticAssetUrl(path)}?v=${encodeURIComponent(path)}`;
 }
 
 export function useCompanyName(): string {

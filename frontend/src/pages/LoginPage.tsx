@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -11,6 +11,7 @@ import { extractErrorMessage } from "@/api/client";
 
 export function LoginPage() {
   const { employee, isLoading, login } = useAuth();
+  const navigate = useNavigate();
   const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +27,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       const loggedInEmployee = await login(employeeId.trim().toUpperCase(), password);
-      window.location.href = loggedInEmployee.role === "admin" ? "/admin" : "/";
+      navigate(loggedInEmployee.role === "admin" ? "/admin" : "/", { replace: true });
     } catch (err) {
       setError(extractErrorMessage(err, "Invalid employee ID or password"));
     } finally {

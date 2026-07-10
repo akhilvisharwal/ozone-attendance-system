@@ -1,4 +1,5 @@
 import express from "express";
+import path from "path";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
@@ -58,6 +59,9 @@ export function createApp() {
   }
 
   app.get("/api/health", (_req, res) => res.json({ status: "ok", time: new Date().toISOString() }));
+
+  // Company logos and other uploaded branding assets (also proxied via Vercel /assets).
+  app.use("/assets", express.static(path.join(process.cwd(), "assets")));
 
   app.use("/api/auth", authRoutes);
   app.use("/api/employees", employeesRoutes);

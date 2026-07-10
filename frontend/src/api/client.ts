@@ -7,15 +7,30 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 const TOKEN_REFRESH_LEAD_MS = 60_000;
 
-/** In production (Vercel), set VITE_API_URL to the backend origin. Dev uses Vite proxy. */
+/**
+ * API origin for static assets (logos). Leave VITE_API_URL empty in production so
+ * auth cookies stay first-party via the Vercel /api proxy (required for mobile Safari).
+ */
 export function getApiOrigin(): string {
   const configured = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, "");
   return configured || "";
 }
 
+/** True when API requests use same-origin /api (Vercel or Vite proxy). */
+export function usesApiProxy(): boolean {
+  return getApiOrigin() === "";
+}
+
 export function getApiBasePath(): string {
   const origin = getApiOrigin();
   return origin ? `${origin}/api` : "/api";
+}
+
+/** Build a URL for backend-hosted static assets (e.g. company logo). */
+export function getStaticAssetUrl(relativePath: string): string {
+  const normalized = relativePath.replace(/^\/+/, "");
+  const origin = getApiOrigin();
+  return origin ? `${origin}/${normalized}` : `/${normalized}`;
 }
 
 function clearRefreshTimer() {

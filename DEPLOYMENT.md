@@ -73,12 +73,13 @@ This runs migrations and seeds the admin account. Migrations also run automatica
 
 | Variable | Value |
 |----------|-------|
-| `VITE_API_URL` | Render API origin, **no trailing slash** (e.g. `https://ozone-attendance-api.onrender.com`) |
 | `VITE_GOOGLE_MAPS_API_KEY` | **Required for maps in production.** Same Google key, restricted by HTTP referrer for your Vercel domain |
+
+> **Do not set `VITE_API_URL` in production.** Leave it unset so the frontend uses same-origin `/api` and `/assets` proxies (`vercel.json`). Direct cross-origin calls to Render break login on mobile Safari and Chrome because they block third-party refresh cookies.
 
 5. Deploy
 
-`vercel.json` includes SPA routing. Optional `/api` rewrites are a fallback when `VITE_API_URL` is empty; **prefer setting `VITE_API_URL`** for production.
+`vercel.json` proxies `/api` and `/assets` to Render. SPA routing serves `index.html` for all other paths.
 
 ### Google Maps API key setup (Google Cloud Console)
 
@@ -119,12 +120,14 @@ Production URL: `https://frontend-zeta-gray-81.vercel.app`
 
 ## 4. CORS & cookies (cross-origin)
 
-The frontend (Vercel) and API (Render) are on different domains:
+The frontend (Vercel) and API (Render) are on different domains. **Production must use the Vercel `/api` proxy** (leave `VITE_API_URL` unset) so refresh cookies are **first-party** on your Vercel domain. Mobile Safari and Chrome block third-party cookies when the frontend calls Render directly.
 
+- `vercel.json` rewrites `/api/*` and `/assets/*` to Render
 - Backend `CLIENT_URL` = your Vercel origin(s)
-- Refresh cookies use `SameSite=None; Secure` in production (required for cross-site credentialed requests)
+- Refresh cookies use `SameSite=None; Secure` in production (for direct API access / credentialed requests)
 - Frontend axios uses `withCredentials: true`
 - Access tokens stay in memory; refresh tokens are httpOnly cookies
+- Login uses client-side navigation (no full page reload) so the access token is available immediately after sign-in
 
 ---
 
@@ -152,8 +155,7 @@ Leave `VITE_API_URL` empty locally — Vite proxies `/api` to `localhost:4000`.
 - [ ] `VITE_GOOGLE_MAPS_API_KEY` set on Vercel (Maps JavaScript API)
 - [ ] Google Cloud: Maps JavaScript API + Geocoding API enabled; HTTP referrer includes Vercel domain
 - [ ] Persistent disk mounted on `uploads` (Blueprint default)
-- [ ] Frontend `VITE_API_URL` points at the Render API
-- [ ] `vercel.json` rewrite destination matches the Render hostname (if using proxy fallback)
+- [ ] Frontend `VITE_API_URL` is **unset** (uses Vercel `/api` proxy for mobile cookie compatibility)
 
 ### After deploy
 
