@@ -25,6 +25,7 @@ export interface AuditLogRow {
   actor_name: string | null;
   actor_code: string | null;
   actor_role: string | null;
+  actor_profile_photo_path?: string | null;
 }
 
 export interface AuditLogView extends AuditLogRow {
@@ -186,7 +187,8 @@ function buildWhere(query: AuditListQuery): { where: string; params: unknown[] }
 const SELECT_COLS = `
   a.id, a.action, a.target_type, a.target_id, a.metadata, a.ip_address,
   a.user_agent, a.status, a.created_at, a.actor_id,
-  e.name AS actor_name, e.employee_code AS actor_code, e.role AS actor_role
+  e.name AS actor_name, e.employee_code AS actor_code, e.role AS actor_role,
+  e.profile_photo_path AS actor_profile_photo_path
 `;
 
 export async function listAuditLogs(

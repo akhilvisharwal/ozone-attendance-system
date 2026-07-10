@@ -419,6 +419,7 @@ export interface AuditLogEntry {
   actor_name: string | null;
   actor_code: string | null;
   actor_role: string | null;
+  actor_profile_photo_path?: string | null;
   module: AuditModule;
   action_type: AuditActionType;
   action_label: string;
@@ -467,6 +468,7 @@ export const WEEKDAY_OPTIONS = WEEKDAY_LABELS.map((label, value) => ({
 }));
 
 export type SettingsTabId =
+  | "myProfile"
   | "company"
   | "attendance"
   | "weeklyOff"
@@ -486,6 +488,7 @@ export const SETTINGS_NAV: {
   description: string;
   group: string;
 }[] = [
+  { id: "myProfile", label: "My Profile", description: "Your profile picture and account details", group: "General" },
   { id: "company", label: "Company", description: "Organization profile and branding", group: "General" },
   { id: "attendance", label: "Attendance", description: "Check-in rules and attendance policies", group: "Operations" },
   { id: "weeklyOff", label: "Weekly Off & Holidays", description: "Default weekly off and related links", group: "Operations" },

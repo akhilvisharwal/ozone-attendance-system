@@ -18,6 +18,7 @@ import { validatePasswordPolicy, resolveEmployeeRoleFromSettings } from "../../u
 import { logAudit } from "../audit/audit.repository";
 import { storage } from "../../services/storage";
 import { notifyAdminEvent } from "../../services/email/adminNotifications";
+import { processProfilePhoto } from "../../utils/profilePhoto";
 
 export const createEmployee = asyncHandler(async (req: Request, res: Response) => {
   const input = createEmployeeSchema.parse(req.body);
@@ -173,20 +174,59 @@ export const setEmployeeActive = asyncHandler(async (req: Request, res: Response
 export const updateMyAvatar = asyncHandler(async (req: Request, res: Response) => {
   const file = req.file;
   if (!file) {
-    if (getSettings().employee.profilePhotoRequired) {
+    if (req.user!.role === "employee" && getSettings().employee.profilePhotoRequired) {
       throw ApiError.badRequest("A profile picture is required");
     }
     throw ApiError.badRequest("Please upload a profile picture");
   }
 
+  const existing = await repo.findEmployeeById(req.user!.id);
+  if (!existing) throw ApiError.notFound("User not found");
+
+  const processed = await processProfilePhoto({
+    buffer: file.buffer,
+    mimetype: file.mimetype,
+    originalName: file.originalname,
+  });
+
   const { relativePath } = await storage.save(
-    file.buffer,
-    file.originalname,
+    processed.buffer,
+    processed.filename,
     `avatars/${req.user!.employeeCode}`
   );
 
+  if (existing.profile_photo_path) {
+    await storage.remove(existing.profile_photo_path);
+  }
+
   const employee = await repo.updateProfilePhoto(req.user!.id, relativePath);
-  if (!employee) throw ApiError.notFound("Employee not found");
+  if (!employee) throw ApiError.notFound("User not found");
+
+  await logAudit(req, "employee.update_photo", "employee", employee.id, {
+    self: true,
+    role: employee.role,
+  });
+
+  res.json({ employee });
+});
+
+export const deleteMyAvatar = asyncHandler(async (req: Request, res: Response) => {
+  const existing = await repo.findEmployeeById(req.user!.id);
+  if (!existing) throw ApiError.notFound("User not found");
+
+  if (req.user!.role === "employee" && getSettings().employee.profilePhotoRequired) {
+    throw ApiError.badRequest("A profile picture is required and cannot be removed.");
+  }
+
+  if (existing.profile_photo_path) {
+    await storage.remove(existing.profile_photo_path);
+  }
+
+  const employee = await repo.updateProfilePhoto(req.user!.id, null);
+  await logAudit(req, "employee.delete_photo", "employee", req.user!.id, {
+    self: true,
+    role: existing.role,
+  });
 
   res.json({ employee });
 });
@@ -234,13 +274,18 @@ export const adminUpdateEmployeeAvatar = asyncHandler(async (req: Request, res: 
   const file = req.file;
   if (!file) throw ApiError.badRequest("Please upload a profile picture");
 
+  const processed = await processProfilePhoto({
+    buffer: file.buffer,
+    mimetype: file.mimetype,
+    originalName: file.originalname,
+  });
+
   const { relativePath } = await storage.save(
-    file.buffer,
-    file.originalname,
+    processed.buffer,
+    processed.filename,
     `avatars/${employee.employee_code}`
   );
 
-  // Remove the previous photo file so storage does not accumulate orphans.
   if (employee.profile_photo_path) {
     await storage.remove(employee.profile_photo_path);
   }

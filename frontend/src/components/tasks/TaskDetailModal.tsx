@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Select, Textarea } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { TaskDeleteConfirmModal } from "@/components/tasks/TaskDeleteConfirmModal";
 import { TaskExtensionRequestModal } from "@/components/tasks/TaskExtensionRequestModal";
 import * as tasksApi from "@/api/tasks";
@@ -495,9 +496,16 @@ export function TaskDetailModal({
                   {assignees.map((assignee) => (
                     <div key={assignee.employee_id} className="rounded-lg border border-slate-200 p-3 text-sm">
                       <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <p className="font-medium text-slate-900">{assignee.employee_name}</p>
-                          <p className="text-xs text-slate-400">{assignee.employee_code}</p>
+                        <div className="flex items-center gap-3">
+                          <EmployeeAvatar
+                            name={assignee.employee_name}
+                            photoPath={assignee.employee_profile_photo_path}
+                            size="sm"
+                          />
+                          <div>
+                            <p className="font-medium text-slate-900">{assignee.employee_name}</p>
+                            <p className="text-xs text-slate-400">{assignee.employee_code}</p>
+                          </div>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Badge tone={assignee.status === "completed" ? "green" : assignee.status === "in_progress" ? "blue" : assignee.status === "on_hold" ? "amber" : "slate"}>

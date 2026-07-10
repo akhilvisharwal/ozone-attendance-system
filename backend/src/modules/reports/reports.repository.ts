@@ -16,7 +16,9 @@ export async function fetchReportRows(filters: {
 
   const result = await pool.query<ReportRow>(
     `SELECT
-       e.employee_code, e.name AS employee_name, d.name AS designation,
+       e.employee_code, e.name AS employee_name,
+       e.profile_photo_path AS employee_profile_photo_path,
+       d.name AS designation,
        a.attendance_date::text AS attendance_date,
        a.check_in_time, a.check_out_time, a.total_minutes, a.day_status, a.special_day_status,
        s.name AS site_name, a.work_status, a.work_summary,

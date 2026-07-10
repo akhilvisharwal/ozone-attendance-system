@@ -15,6 +15,7 @@ import {
   CalendarRange,
   CalendarHeart,
   Wallet,
+  UserCircle,
 } from "lucide-react";
 import { AuthProvider } from "@/auth/AuthContext";
 import { SessionManager } from "@/auth/SessionManager";
@@ -47,9 +48,11 @@ import { ScoreboardPage } from "@/pages/admin/ScoreboardPage";
 import LeaveManagementPage from "@/pages/admin/LeaveManagementPage";
 import { HolidayManagementPage } from "@/pages/admin/HolidayManagementPage";
 import { SettingsPage } from "@/pages/admin/SettingsPage";
+import { ProfilePage } from "@/pages/admin/ProfilePage";
 import { NoAccessPage } from "@/pages/admin/NoAccessPage";
 import { ExpenseTrackerPage } from "@/pages/admin/ExpenseTrackerPage";
 import { ExpenseManagementPage } from "@/pages/admin/ExpenseManagementPage";
+import { EmployeeProfilePage } from "@/pages/employee/EmployeeProfilePage";
 
 const employeeNavItems: NavItem[] = [
   { to: "/", label: "Check In / Out", icon: <Clock className="h-4 w-4" />, end: true },
@@ -57,6 +60,7 @@ const employeeNavItems: NavItem[] = [
   { to: "/work-reports", label: "Work Reports", icon: <FileText className="h-4 w-4" /> },
   { to: "/tasks", label: "My Tasks", icon: <CheckSquare className="h-4 w-4" /> },
   { to: "/leaves", label: "Leave Requests", icon: <CalendarDays className="h-4 w-4" /> },
+  { to: "/profile", label: "My Profile", icon: <UserCircle className="h-4 w-4" /> },
 ];
 
 function AdminShell() {
@@ -66,6 +70,7 @@ function AdminShell() {
     ...(can("viewDashboard")
       ? [{ to: "/admin", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" />, end: true }]
       : []),
+    { to: "/admin/profile", label: "My Profile", icon: <UserCircle className="h-4 w-4" /> },
     ...(can("viewEmployees")
       ? [{ to: "/admin/employees", label: "Employees", icon: <Users className="h-4 w-4" /> }]
       : []),
@@ -154,11 +159,13 @@ function App() {
                   <Route path="/work-reports" element={<DailyWorkReportsPage />} />
                   <Route path="/tasks" element={<TasksPage />} />
                   <Route path="/leaves" element={<LeaveRequestsPage />} />
+                  <Route path="/profile" element={<EmployeeProfilePage />} />
                 </Route>
               </Route>
 
               <Route element={<ProtectedRoute allowedRoles={["admin", "junior_admin"]} />}>
                 <Route element={<AdminShell />}>
+                  <Route path="/admin/profile" element={<ProfilePage />} />
                   <Route element={<PermissionRoute allOf={["viewDashboard"]} />}>
                     <Route path="/admin" element={<AdminDashboardPage />} />
                   </Route>

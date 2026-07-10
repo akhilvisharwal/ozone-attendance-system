@@ -19,6 +19,7 @@ export interface ComboboxOption {
   label: string;
   description?: string;
   disabled?: boolean;
+  leading?: ReactNode;
 }
 
 export interface ComboboxProps {
@@ -42,6 +43,8 @@ export interface ComboboxProps {
   name?: string;
   /** Override the trigger label (useful for async option lists). */
   selectedLabel?: string;
+  /** Optional leading content for the closed trigger (e.g. avatar). */
+  selectedLeading?: ReactNode;
   /** Accessible name when the combobox has no visible label. */
   triggerAriaLabel?: string;
   /** Called when the dropdown opens. */
@@ -72,6 +75,7 @@ export function Combobox({
   id,
   name,
   selectedLabel,
+  selectedLeading,
   triggerAriaLabel,
   onOpen,
   onSearch,
@@ -213,7 +217,7 @@ export function Combobox({
           )}
         >
           <span className={clsx("flex min-w-0 items-center gap-1.5 truncate", !hasValue && "text-slate-500")}>
-            {icon && <span className="flex-shrink-0 text-slate-400">{icon}</span>}
+            {selectedLeading ?? (icon && <span className="flex-shrink-0 text-slate-400">{icon}</span>)}
             <span className="truncate">{triggerLabel}</span>
           </span>
           <ChevronDown
@@ -303,11 +307,14 @@ function ComboboxOptionRow({
         !option.disabled && !highlighted && "text-slate-700 hover:bg-slate-50"
       )}
     >
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate">{option.label}</span>
-        {option.description && (
-          <span className="truncate text-xs text-slate-400">{option.description}</span>
-        )}
+      <span className="flex min-w-0 items-center gap-2">
+        {option.leading}
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate">{option.label}</span>
+          {option.description && (
+            <span className="truncate text-xs text-slate-400">{option.description}</span>
+          )}
+        </span>
       </span>
       {selected && !option.disabled && <Check className="h-4 w-4 flex-shrink-0 text-brand-600" />}
     </button>

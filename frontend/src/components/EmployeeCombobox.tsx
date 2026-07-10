@@ -3,6 +3,7 @@ import { Users } from "lucide-react";
 import * as employeesApi from "@/api/employees";
 import type { Employee } from "@/types";
 import { Combobox, type ComboboxOption } from "@/components/ui/Combobox";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { EMPLOYEE_CODES_CHANGED_EVENT } from "@/utils/employeeCodeEvents";
 
 const ALL_EMPLOYEES_VALUE = "";
@@ -106,6 +107,9 @@ export function EmployeeCombobox({
         value: employee.id,
         label: employee.name,
         description: [employee.employee_code, employee.designation].filter(Boolean).join(" · "),
+        leading: (
+          <EmployeeAvatar name={employee.name} photoPath={employee.profile_photo_path} size="xs" />
+        ),
       });
     }
     return rows;
@@ -134,6 +138,15 @@ export function EmployeeCombobox({
       onOpen={() => fetchEmployees("")}
       onSearch={handleSearch}
       selectedLabel={selectedEmployee ? formatEmployeeLabel(selectedEmployee) : undefined}
+      selectedLeading={
+        selectedEmployee ? (
+          <EmployeeAvatar
+            name={selectedEmployee.name}
+            photoPath={selectedEmployee.profile_photo_path}
+            size="xs"
+          />
+        ) : undefined
+      }
     />
   );
 }

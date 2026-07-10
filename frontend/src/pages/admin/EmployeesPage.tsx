@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
   KeyRound, Pencil, UserCheck, UserMinus, UserX, Power, Plus, Search, ShieldAlert,
-  Image as ImageIcon, Trash2, Upload, RefreshCcw, Eye, EyeOff, User, CalendarOff,
+  Image as ImageIcon, Trash2, RefreshCcw, Eye, EyeOff, CalendarOff,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -15,7 +15,9 @@ import { Alert } from "@/components/ui/Alert";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
-import { SecureImage } from "@/components/SecureImage";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
+import { ProfilePhotoCropModal } from "@/components/ProfilePhotoCropModal";
+import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from "@/utils/profilePhoto";
 import * as employeesApi from "@/api/employees";
 import * as attendanceApi from "@/api/attendance";
 import type { AttendanceRecord, DependencyCounts, Employee } from "@/types";
@@ -266,15 +268,7 @@ export function EmployeesPage() {
       primary: true,
       cell: (e) => (
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-full bg-slate-100">
-            {e.profile_photo_path ? (
-              <SecureImage path={e.profile_photo_path} alt={e.name} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-slate-400">
-                <User className="h-4 w-4" />
-              </div>
-            )}
-          </div>
+          <EmployeeAvatar name={e.name} photoPath={e.profile_photo_path} size="md" />
           <div className="min-w-0">
             <p className="truncate font-medium text-slate-900">{e.name}</p>
             <p className="text-xs text-slate-400">{e.employee_code}</p>
@@ -776,31 +770,34 @@ function ManagePhotoModal({
   onSaved: (updated: Employee) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile]       = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [error, setError]     = useState<string | null>(null);
-  const [saving, setSaving]   = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
 
   function onPick(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
+    e.target.value = "";
     if (!f) return;
-    setFile(f);
-    setPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(f); });
+    const validation = validateProfilePhotoFile(f);
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    setError(null);
+    setCropFile(f);
   }
 
-  async function handleUpload() {
-    if (!file) return;
-    setError(null);
+  async function handleCropped(blob: Blob) {
     setSaving(true);
+    setError(null);
     try {
-      const updated = await employeesApi.adminSetEmployeeAvatar(employee.id, file);
-      if (preview) URL.revokeObjectURL(preview);
-      setFile(null);
-      setPreview(null);
+      const updated = await employeesApi.adminSetEmployeeAvatar(employee.id, blob);
+      setCropFile(null);
       onSaved(updated);
     } catch (err) {
       setError(extractErrorMessage(err, "Could not update the photo"));
+      throw err;
     } finally {
       setSaving(false);
     }
@@ -820,67 +817,62 @@ function ManagePhotoModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={`Profile Photo — ${employee.name}`}>
-      <div className="flex flex-col gap-4">
-        {error && <Alert variant="error">{error}</Alert>}
+    <>
+      <Modal open onClose={onClose} title={`Profile Photo — ${employee.name}`}>
+        <div className="flex flex-col gap-4">
+          {error && <Alert variant="error">{error}</Alert>}
 
-        <div className="flex items-center gap-4">
-          <div className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-full bg-slate-100">
-            {preview ? (
-              <img src={preview} alt="New photo preview" className="h-full w-full object-cover" />
-            ) : employee.profile_photo_path ? (
-              <SecureImage path={employee.profile_photo_path} alt={employee.name} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-slate-400">
-                <User className="h-9 w-9" />
-              </div>
+          <div className="flex items-center gap-4">
+            <EmployeeAvatar name={employee.name} photoPath={employee.profile_photo_path} size="xl" />
+            <div className="min-w-0 text-sm text-slate-500">
+              <p className="font-medium text-slate-900">{employee.name}</p>
+              <p>{employee.employee_code}</p>
+              {employee.designation && <p className="text-slate-600">{employee.designation}</p>}
+              <p className="mt-1 text-xs">
+                JPG, PNG, or WebP · max 2 MB. Cropped and saved as WebP.
+              </p>
+            </div>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={PROFILE_PHOTO_ACCEPT}
+            className="hidden"
+            onChange={onPick}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" icon={<ImageIcon className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>
+              {employee.profile_photo_path ? "Replace Photo" : "Choose Photo"}
+            </Button>
+            {employee.profile_photo_path && (
+              <Button
+                variant="ghost"
+                icon={<Trash2 className="h-4 w-4" />}
+                isLoading={removing}
+                onClick={() => void handleRemove()}
+                className="text-red-600 hover:bg-red-50"
+              >
+                Remove Photo
+              </Button>
             )}
           </div>
-          <div className="min-w-0 text-sm text-slate-500">
-            <p className="font-medium text-slate-900">{employee.name}</p>
-            <p>{employee.employee_code}</p>
-            {employee.designation && <p className="text-slate-600">{employee.designation}</p>}
-            <p className="mt-1 text-xs">
-              {preview ? "New photo selected — click Upload to save." : employee.profile_photo_path ? "Current profile photo." : "No profile photo set."}
-            </p>
+
+          <div className="flex justify-end">
+            <Button variant="secondary" onClick={onClose}>Done</Button>
           </div>
         </div>
+      </Modal>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          onChange={onPick}
-        />
-
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" icon={<ImageIcon className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>
-            Choose Photo
-          </Button>
-          {file && (
-            <Button icon={<Upload className="h-4 w-4" />} isLoading={saving} onClick={handleUpload}>
-              Upload
-            </Button>
-          )}
-          {employee.profile_photo_path && !preview && (
-            <Button
-              variant="ghost"
-              icon={<Trash2 className="h-4 w-4" />}
-              isLoading={removing}
-              onClick={handleRemove}
-              className="text-red-600 hover:bg-red-50"
-            >
-              Remove Photo
-            </Button>
-          )}
-        </div>
-
-        <div className="flex justify-end">
-          <Button variant="secondary" onClick={onClose}>Done</Button>
-        </div>
-      </div>
-    </Modal>
+      <ProfilePhotoCropModal
+        open={Boolean(cropFile)}
+        file={cropFile}
+        saving={saving}
+        onClose={() => setCropFile(null)}
+        onConfirm={handleCropped}
+      />
+    </>
   );
 }
 

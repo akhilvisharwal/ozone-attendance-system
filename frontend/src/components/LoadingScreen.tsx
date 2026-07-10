@@ -1,22 +1,46 @@
-import { Loader2 } from "lucide-react";
 import { motion } from "motion/react";
-import { Logo } from "@/components/Logo";
-import { SYSTEM_NAME } from "@/config/branding";
 import { crossfadeVariants } from "@/lib/motion";
 
-export function LoadingScreen({ label = `Loading ${SYSTEM_NAME}…` }: { label?: string }) {
+export function LoadingScreen() {
   return (
     <motion.div
       variants={crossfadeVariants}
       initial="initial"
       animate="animate"
       exit="exit"
-      className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4"
+      className="flex h-screen items-center justify-center bg-slate-50"
     >
-      <Logo variant="hero" />
-      <div className="flex items-center gap-2 text-slate-400">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        <span className="text-sm">{label}</span>
+      <div className="relative h-10 w-10">
+        {/* Track ring */}
+        <svg className="h-10 w-10" viewBox="0 0 40 40" fill="none">
+          <circle
+            cx="20"
+            cy="20"
+            r="16"
+            stroke="currentColor"
+            strokeWidth="3"
+            className="text-slate-200"
+          />
+        </svg>
+        {/* Spinning arc */}
+        <svg
+          className="absolute inset-0 h-10 w-10 animate-spin"
+          viewBox="0 0 40 40"
+          fill="none"
+          style={{ animationDuration: "700ms", animationTimingFunction: "linear" }}
+        >
+          <circle
+            cx="20"
+            cy="20"
+            r="16"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray="28 72"
+            strokeDashoffset="0"
+            className="text-brand-600"
+          />
+        </svg>
       </div>
     </motion.div>
   );

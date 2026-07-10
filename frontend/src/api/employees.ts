@@ -112,8 +112,13 @@ export async function resetEmployeePassword(id: string) {
 
 export async function updateMyAvatar(file: Blob) {
   const form = new FormData();
-  form.append("avatar", file, "avatar.jpg");
+  form.append("avatar", file, "avatar.webp");
   const res = await apiClient.patch<{ employee: Employee }>("/employees/me/avatar", form);
+  return res.data.employee;
+}
+
+export async function deleteMyAvatar(): Promise<Employee> {
+  const res = await apiClient.delete<{ employee: Employee }>("/employees/me/avatar");
   return res.data.employee;
 }
 
@@ -131,7 +136,7 @@ export async function changeEmployeePassword(
 /** Admin: replace an employee's profile photo. */
 export async function adminSetEmployeeAvatar(id: string, file: Blob): Promise<Employee> {
   const form = new FormData();
-  form.append("avatar", file, "avatar.jpg");
+  form.append("avatar", file, "avatar.webp");
   const res = await apiClient.patch<{ employee: Employee }>(`/employees/${id}/avatar`, form);
   return res.data.employee;
 }

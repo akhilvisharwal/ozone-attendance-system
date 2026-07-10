@@ -12,6 +12,7 @@ import { Alert } from "@/components/ui/Alert";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { TaskAnalyticsCards } from "@/components/tasks/TaskAnalyticsCards";
 import { TaskCalendar } from "@/components/tasks/TaskCalendar";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
@@ -171,14 +172,21 @@ export function TaskManagementPage() {
       header: "Employees",
       primary: true,
       cell: (group) => (
-        <div>
+        <div className="flex items-center gap-3">
           {group.assignee_count === 1 ? (
             <>
-              <p className="font-medium text-slate-900">{group.assignees[0]?.employee_name}</p>
-              <p className="text-xs text-slate-400">{group.assignees[0]?.employee_code}</p>
+              <EmployeeAvatar
+                name={group.assignees[0]?.employee_name ?? "Employee"}
+                photoPath={group.assignees[0]?.employee_profile_photo_path}
+                size="md"
+              />
+              <div>
+                <p className="font-medium text-slate-900">{group.assignees[0]?.employee_name}</p>
+                <p className="text-xs text-slate-400">{group.assignees[0]?.employee_code}</p>
+              </div>
             </>
           ) : (
-            <>
+            <div>
               <p className="font-medium text-slate-900">{group.assignee_count} Employees</p>
               <button
                 type="button"
@@ -191,7 +199,7 @@ export function TaskManagementPage() {
                 <Users className="h-3 w-3" />
                 View Members
               </button>
-            </>
+            </div>
           )}
         </div>
       ),
@@ -449,9 +457,16 @@ function MembersModal({
       <div className="space-y-2">
         {group.assignees.map((assignee) => (
           <div key={assignee.employee_id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
-            <div>
-              <p className="font-medium text-slate-900">{assignee.employee_name}</p>
-              <p className="text-xs text-slate-400">{assignee.employee_code}</p>
+            <div className="flex items-center gap-3">
+              <EmployeeAvatar
+                name={assignee.employee_name}
+                photoPath={assignee.employee_profile_photo_path}
+                size="sm"
+              />
+              <div>
+                <p className="font-medium text-slate-900">{assignee.employee_name}</p>
+                <p className="text-xs text-slate-400">{assignee.employee_code}</p>
+              </div>
             </div>
             <Badge tone={assignee.status === "completed" ? "green" : assignee.status === "in_progress" ? "blue" : assignee.status === "on_hold" ? "amber" : "slate"}>
               {STATUS_LABELS[assignee.status]}
@@ -606,7 +621,10 @@ function TaskFormModal({
             {employees.map((emp) => (
               <label key={emp.id} className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={selectedIds.includes(emp.id)} onChange={() => toggleEmployee(emp.id)} />
-                {emp.name} ({emp.employee_code})
+                <EmployeeAvatar name={emp.name} photoPath={emp.profile_photo_path} size="xs" />
+                <span>
+                  {emp.name} ({emp.employee_code})
+                </span>
               </label>
             ))}
           </div>

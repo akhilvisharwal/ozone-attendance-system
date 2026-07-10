@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import clsx from "clsx";
 import { motion } from "motion/react";
@@ -16,6 +16,7 @@ import {
   CalendarDays,
   Bell,
   Wallet,
+  Loader2,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -25,6 +26,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { AttendanceDetailModal } from "@/components/AttendanceDetailModal";
+import { useToast } from "@/components/ui/Toast";
 import * as dashboardApi from "@/api/dashboard";
 import * as attendanceApi from "@/api/attendance";
 import { extractErrorMessage } from "@/api/client";
@@ -35,6 +37,7 @@ import { Link } from "react-router-dom";
 
 export function AdminDashboardPage() {
   const { can, isMasterAdmin } = usePermissions();
+  const { showToast } = useToast();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [today, setToday] = useState<AdminAttendanceRow[]>([]);
   const [reportDate, setReportDate] = useState<string>("");
@@ -42,8 +45,8 @@ export function AdminDashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
   const [reminding, setReminding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const remindingRef = useRef(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<AdminAttendanceRow | null>(null);
 
   const loadDashboard = useCallback(async (options?: { silent?: boolean; userRefresh?: boolean }) => {
@@ -55,7 +58,7 @@ export function AdminDashboardPage() {
     } else if (!silent) {
       setLoading(true);
     }
-    setError(null);
+    setLoadError(null);
 
     try {
       const [summaryRes, todayRes] = await Promise.all([
@@ -69,7 +72,7 @@ export function AdminDashboardPage() {
         setDataVersion((version) => version + 1);
       }
     } catch (err) {
-      setError(extractErrorMessage(err, "Could not load dashboard statistics."));
+      setLoadError(extractErrorMessage(err, "Could not load dashboard statistics."));
     } finally {
       if (userRefresh) {
         setRefreshing(false);
@@ -95,19 +98,22 @@ export function AdminDashboardPage() {
   }, [loadDashboard]);
 
   async function handleSendReminders() {
+    if (remindingRef.current) return;
+    remindingRef.current = true;
     setReminding(true);
-    setError(null);
-    setSuccess(null);
+
     try {
       const result = await attendanceApi.sendAttendanceReminders();
-      setSuccess(
+      showToast(
         result.sent === 0
           ? "No employees need an attendance reminder right now."
-          : `Sent attendance reminders to ${result.sent} employee${result.sent === 1 ? "" : "s"}.`
+          : `Sent attendance reminders to ${result.sent} employee${result.sent === 1 ? "" : "s"}.`,
+        result.sent === 0 ? "info" : "success"
       );
     } catch (err) {
-      setError(extractErrorMessage(err, "Could not send attendance reminders."));
+      showToast(extractErrorMessage(err, "Could not send attendance reminders."), "error");
     } finally {
+      remindingRef.current = false;
       setReminding(false);
     }
   }
@@ -125,17 +131,24 @@ export function AdminDashboardPage() {
           <div className="flex flex-wrap items-center gap-2">
             {can("sendAttendanceReminders") && (
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
-                icon={<Bell className="h-4 w-4" />}
                 onClick={() => void handleSendReminders()}
-                isLoading={reminding}
-                disabled={loading}
+                disabled={reminding || loading || refreshing}
+                aria-busy={reminding}
+                className={clsx(reminding && "pointer-events-none")}
               >
+                {reminding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Bell className="h-4 w-4" aria-hidden />
+                )}
                 Remind Absent
               </Button>
             )}
             <Button
+              type="button"
               variant="outline"
               size="sm"
               icon={<RefreshButtonIcon spinning={refreshing} />}
@@ -153,14 +166,9 @@ export function AdminDashboardPage() {
         }
       />
 
-      {error && (
+      {loadError && (
         <div className="mb-5">
-          <Alert variant="error">{error}</Alert>
-        </div>
-      )}
-      {success && (
-        <div className="mb-5">
-          <Alert variant="success">{success}</Alert>
+          <Alert variant="error">{loadError}</Alert>
         </div>
       )}
 

@@ -101,6 +101,7 @@ export interface ExpenseReimbursementRequest {
   updated_at: string;
   employee_name?: string;
   employee_code?: string;
+  employee_profile_photo_path?: string | null;
   reviewed_by_name?: string | null;
   paid_by_name?: string | null;
   expense_count?: number;
@@ -174,6 +175,7 @@ export interface TaskGroupAssignee {
   employee_id: string;
   employee_name: string;
   employee_code: string;
+  employee_profile_photo_path?: string | null;
   status: TaskStatus;
   progress_remarks: string | null;
   is_overdue: boolean;
@@ -213,6 +215,7 @@ export interface Task {
   employee_id: string;
   employee_name?: string;
   employee_code?: string;
+  employee_profile_photo_path?: string | null;
   assigned_by: string | null;
   assigned_by_name?: string | null;
   attendance_date: string | null;
@@ -346,6 +349,7 @@ export interface LeaveRequest {
   employee_id: string;
   employee_name?: string;
   employee_code?: string;
+  employee_profile_photo_path?: string | null;
   reviewed_by_name?: string | null;
   leave_date: string;
   leave_type: LeaveType;
@@ -455,6 +459,7 @@ export interface AdminAttendanceRow extends AttendanceRecord {
   employee_code: string;
   employee_name: string;
   employee_designation?: string | null;
+  employee_profile_photo_path?: string | null;
   site_name: string | null;
 }
 

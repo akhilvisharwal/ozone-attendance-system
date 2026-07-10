@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
 import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { SettingsSection, ToggleRow } from "@/components/settings/SettingsSection";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import * as juniorAdminsApi from "@/api/juniorAdmins";
 import { extractErrorMessage } from "@/api/client";
 import { useToast } from "@/components/ui/Toast";
@@ -275,7 +276,12 @@ export function JuniorAdminSettingsSection() {
                   const enabledCount = ADMIN_PERMISSION_KEYS.filter((key) => perms[key]).length;
                   return (
                     <tr key={item.id}>
-                      <td className="px-4 py-3 font-medium text-slate-900">{item.name}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <EmployeeAvatar name={item.name} photoPath={item.profile_photo_path} size="sm" />
+                          <span className="font-medium text-slate-900">{item.name}</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-slate-600">{item.employee_code}</td>
                       <td className="px-4 py-3">
                         <span

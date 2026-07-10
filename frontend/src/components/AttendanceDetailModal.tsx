@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { MapPin } from "lucide-react";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { Modal } from "@/components/ui/Modal";
 import { AttendancePhotoThumbnail } from "@/components/AttendancePhotoThumbnail";
 import { GoogleMapPreview } from "@/components/GoogleMapPreview";
@@ -12,6 +13,7 @@ interface DetailAttendance extends AttendanceRecord {
   employee_code?: string;
   employee_name?: string;
   employee_designation?: string | null;
+  employee_profile_photo_path?: string | null;
   admin_marked_by_name?: string | null;
   admin_approved_by_name?: string | null;
 }
@@ -145,7 +147,15 @@ export function AttendanceDetailModal({
       {attendance && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-start gap-3">
+              {attendance.employee_name && (
+                <EmployeeAvatar
+                  name={attendance.employee_name}
+                  photoPath={attendance.employee_profile_photo_path}
+                  size="lg"
+                />
+              )}
+              <div className="min-w-0">
               {attendance.employee_name && (
                 <p className="text-base font-semibold text-slate-900">
                   {attendance.employee_name}{" "}
@@ -156,6 +166,7 @@ export function AttendanceDetailModal({
                 <p className="text-sm text-slate-600">{attendance.employee_designation}</p>
               )}
               <p className="text-sm text-slate-500">{formatDate(attendance.attendance_date)}</p>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <AttendanceDayBadge

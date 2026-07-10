@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { Search, X } from "lucide-react";
 import { FieldWrapper } from "@/components/ui/Input";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import * as employeesApi from "@/api/employees";
 import type { Employee } from "@/types";
 
@@ -73,8 +74,9 @@ export function EmployeeMultiSelect({
             {selectedEmployees.map((emp) => (
               <span
                 key={emp.id}
-                className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800 ring-1 ring-brand-100"
+                className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 py-1 pl-1 pr-2.5 text-xs font-medium text-brand-800 ring-1 ring-brand-100"
               >
+                <EmployeeAvatar name={emp.name} photoPath={emp.profile_photo_path} size="xs" />
                 {emp.name}
                 <button
                   type="button"
@@ -125,6 +127,7 @@ export function EmployeeMultiSelect({
                     onChange={() => toggle(emp.id)}
                     className="h-4 w-4 rounded border-slate-300 text-brand-600"
                   />
+                  <EmployeeAvatar name={emp.name} photoPath={emp.profile_photo_path} size="sm" />
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium text-slate-900">{emp.name}</span>
                     <span className="block text-xs text-slate-500">

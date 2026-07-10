@@ -19,6 +19,7 @@ export interface ViewReportParams {
 export interface ReportRow {
   employee_code: string;
   employee_name: string;
+  employee_profile_photo_path?: string | null;
   designation?: string | null;
   attendance_date: string;
   check_in_time: string | null;

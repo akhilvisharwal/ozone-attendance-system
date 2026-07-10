@@ -1,6 +1,12 @@
 import { Router } from "express";
-import { requireAuth, requireRole, requireMasterAdmin, requireAdminPanel, requirePermission } from "../../middleware/auth";
-import { upload } from "../../middleware/upload";
+import {
+  requireAuth,
+  requireRole,
+  requireMasterAdmin,
+  requireAdminPanel,
+  requirePermission,
+} from "../../middleware/auth";
+import { profilePhotoUpload } from "../../middleware/profilePhotoUpload";
 import * as controller from "./employees.controller";
 import * as designationsController from "./designations.controller";
 
@@ -8,8 +14,18 @@ const router = Router();
 
 router.use(requireAuth);
 
-// Employee self-service: update own avatar
-router.patch("/me/avatar", requireRole("employee"), upload.single("avatar"), controller.updateMyAvatar);
+// Self-service profile photo — System Admin, Junior Admin, and Employees
+router.patch(
+  "/me/avatar",
+  requireRole("admin", "junior_admin", "employee"),
+  profilePhotoUpload.single("avatar"),
+  controller.updateMyAvatar
+);
+router.delete(
+  "/me/avatar",
+  requireRole("admin", "junior_admin", "employee"),
+  controller.deleteMyAvatar
+);
 
 // Designation / job-role catalog (read for Junior Admins with viewEmployees)
 router.get(
@@ -35,7 +51,7 @@ router.post("/:id/reset-password", requireMasterAdmin(), controller.resetEmploye
 router.patch("/:id/weekly-off", requireMasterAdmin(), controller.updateWeeklyOff);
 router.get("/:id/dependencies", requireMasterAdmin(), controller.getEmployeeDependencies);
 router.delete("/:id", requireMasterAdmin(), controller.deleteEmployee);
-router.patch("/:id/avatar", requireMasterAdmin(), upload.single("avatar"), controller.adminUpdateEmployeeAvatar);
+router.patch("/:id/avatar", requireMasterAdmin(), profilePhotoUpload.single("avatar"), controller.adminUpdateEmployeeAvatar);
 router.delete("/:id/avatar", requireMasterAdmin(), controller.adminDeleteEmployeeAvatar);
 
 export default router;

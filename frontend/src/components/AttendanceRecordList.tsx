@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import clsx from "clsx";
 import { motion } from "motion/react";
 import type { AdminAttendanceRow } from "@/types";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import {
   AttendanceDayBadge,
   AttendanceStatusBadge,
@@ -99,13 +100,18 @@ function AttendanceRecordRow({
           "cursor-pointer hover:border-slate-300 hover:bg-slate-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-100"
       )}
     >
-      <div className="flex min-w-0 shrink-0 gap-3 sm:w-48 md:w-52 lg:w-56">
+      <div className="flex min-w-0 shrink-0 gap-3 sm:w-52 md:w-56 lg:w-60">
         <span
           className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold tabular-nums text-slate-600 ring-1 ring-inset ring-slate-200/80"
           aria-label={`Record ${serialNumber}`}
         >
           #{serialNumber}
         </span>
+        <EmployeeAvatar
+          name={record.employee_name}
+          photoPath={record.employee_profile_photo_path}
+          size="md"
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-900">{record.employee_name}</p>
           <p className="mt-0.5 text-xs font-medium text-slate-400">{record.employee_code}</p>

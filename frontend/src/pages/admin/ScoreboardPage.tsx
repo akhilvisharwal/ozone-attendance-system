@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Medal, Star, Trophy, User } from "lucide-react";
+import { Medal, Star, Trophy } from "lucide-react";
 import { motion } from "motion/react";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Spinner, EmptyState } from "@/components/ui/Spinner";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { SecureImage } from "@/components/SecureImage";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { ResponsiveTable, FilterBar, type Column } from "@/components/ui/ResponsiveTable";
 import * as scoreboardApi from "@/api/scoreboard";
 import type { ScoreboardEntry } from "@/types";
@@ -59,15 +59,7 @@ export function ScoreboardPage() {
       primary: true,
       cell: (entry) => (
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full bg-slate-100">
-            {entry.profile_photo_path ? (
-              <SecureImage path={entry.profile_photo_path} alt={entry.name} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-slate-400">
-                <User className="h-4 w-4" />
-              </div>
-            )}
-          </div>
+          <EmployeeAvatar name={entry.name} photoPath={entry.profile_photo_path} size="sm" />
           <div>
             <p className="font-medium text-slate-900">{entry.name}</p>
             <p className="text-xs text-slate-400">
@@ -156,19 +148,14 @@ export function ScoreboardPage() {
 
 function PodiumCard({ entry, rank }: { entry: ScoreboardEntry; rank: number }) {
   const sizes: Record<number, string> = { 1: "w-36", 2: "w-28", 3: "w-28" };
-  const avatarSizes: Record<number, string> = { 1: "h-16 w-16", 2: "h-12 w-12", 3: "h-12 w-12" };
 
   return (
     <motion.div variants={staggerItem} className={`flex flex-col items-center text-center ${sizes[rank] ?? "w-28"}`}>
-      <div className={`overflow-hidden rounded-full bg-slate-100 ${avatarSizes[rank]}`}>
-        {entry.profile_photo_path ? (
-          <SecureImage path={entry.profile_photo_path} alt={entry.name} className="h-full w-full object-cover" />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-slate-400">
-            <User className={rank === 1 ? "h-7 w-7" : "h-5 w-5"} />
-          </div>
-        )}
-      </div>
+      <EmployeeAvatar
+        name={entry.name}
+        photoPath={entry.profile_photo_path}
+        size={rank === 1 ? "xl" : "lg"}
+      />
       <div className="mt-1">{RANK_ICONS[rank - 1]}</div>
       <p className="mt-1 text-xs font-semibold text-slate-900">{entry.name}</p>
       <p className="text-xs text-slate-400">{entry.employee_code}</p>

@@ -12,6 +12,7 @@ import { Spinner } from "../../components/ui/Spinner";
 import { Textarea, FieldWrapper, Select } from "../../components/ui/Input";
 import { TaskDeleteConfirmModal } from "@/components/tasks/TaskDeleteConfirmModal";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 
 const STATUS_COLORS: Record<string, "amber" | "green" | "red"> = {
   pending:  "amber",
@@ -164,9 +165,16 @@ export default function LeaveManagementPage() {
               {items.map(lr => (
                 <div key={lr.id} className="rounded-xl border border-slate-200 p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-900">{lr.employee_name ?? "—"}</p>
-                      <p className="text-xs text-slate-400">{lr.employee_code ?? ""}</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <EmployeeAvatar
+                        name={lr.employee_name ?? "Employee"}
+                        photoPath={lr.employee_profile_photo_path}
+                        size="md"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-900">{lr.employee_name ?? "—"}</p>
+                        <p className="text-xs text-slate-400">{lr.employee_code ?? ""}</p>
+                      </div>
                     </div>
                     <Badge tone={STATUS_COLORS[lr.status]}>{STATUS_LABELS[lr.status]}</Badge>
                   </div>
@@ -225,8 +233,17 @@ export default function LeaveManagementPage() {
                     <>
                       <tr key={lr.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
-                          <div className="font-medium">{lr.employee_name ?? "—"}</div>
-                          <div className="text-xs text-gray-400">{lr.employee_code ?? ""}</div>
+                          <div className="flex items-center gap-3">
+                            <EmployeeAvatar
+                              name={lr.employee_name ?? "Employee"}
+                              photoPath={lr.employee_profile_photo_path}
+                              size="sm"
+                            />
+                            <div>
+                              <div className="font-medium">{lr.employee_name ?? "—"}</div>
+                              <div className="text-xs text-gray-400">{lr.employee_code ?? ""}</div>
+                            </div>
+                          </div>
                         </td>
                         <td className="px-4 py-3 font-medium">{lr.leave_date}</td>
                         <td className="px-4 py-3">{TYPE_LABELS[lr.leave_type]}</td>
@@ -340,7 +357,14 @@ export default function LeaveManagementPage() {
             <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-500">Employee</span>
-                <span className="font-medium">{reviewModal.employee_name} ({reviewModal.employee_code})</span>
+                <span className="inline-flex items-center gap-2 font-medium">
+                  <EmployeeAvatar
+                    name={reviewModal.employee_name ?? "Employee"}
+                    photoPath={reviewModal.employee_profile_photo_path}
+                    size="sm"
+                  />
+                  {reviewModal.employee_name} ({reviewModal.employee_code})
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Leave Date</span>

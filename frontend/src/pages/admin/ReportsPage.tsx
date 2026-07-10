@@ -10,6 +10,7 @@ import { WorkStatusBadge, AttendanceDayBadge } from "@/components/ui/Badge";
 import type { DayStatus } from "@/types";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import * as reportsApi from "@/api/reports";
 import type { ExportReportParams, ReportRow, ViewReportParams } from "@/api/reports";
 import { extractErrorMessage } from "@/api/client";
@@ -65,9 +66,16 @@ export function ReportsPage() {
       header: "Employee",
       primary: true,
       cell: (row) => (
-        <div>
-          <p className="font-medium text-slate-900">{row.employee_name}</p>
-          <p className="text-xs text-slate-400">{row.employee_code}</p>
+        <div className="flex items-center gap-3">
+          <EmployeeAvatar
+            name={row.employee_name}
+            photoPath={row.employee_profile_photo_path}
+            size="sm"
+          />
+          <div>
+            <p className="font-medium text-slate-900">{row.employee_name}</p>
+            <p className="text-xs text-slate-400">{row.employee_code}</p>
+          </div>
         </div>
       ),
     },

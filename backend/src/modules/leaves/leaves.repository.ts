@@ -6,6 +6,7 @@ const LEAVE_COLS = `
   lr.*,
   e.name   AS employee_name,
   e.employee_code,
+  e.profile_photo_path AS employee_profile_photo_path,
   r.name   AS reviewed_by_name
 `;
 
@@ -18,6 +19,7 @@ const JOIN_CLAUSE = `
 export type LeaveRequestRow = LeaveRequest & {
   employee_name: string;
   employee_code: string;
+  employee_profile_photo_path?: string | null;
   reviewed_by_name: string | null;
 };
 

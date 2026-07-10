@@ -1,18 +1,17 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import type { ChangeEvent, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronLeft, LogOut, Menu, User, X } from "lucide-react";
+import { ChevronLeft, LogOut, Menu, X } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { usePermissions } from "@/auth/usePermissions";
 import { useLocalStorageBoolean } from "@/hooks/useLocalStorageBoolean";
-import { SecureImage } from "@/components/SecureImage";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { Logo, LogoMark } from "@/components/Logo";
 import { NotificationBell } from "@/components/NotificationBell";
 import { MobileAvatarMenu } from "@/components/layout/MobileAvatarMenu";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { updateMyAvatar } from "@/api/employees";
 import { pageVariants, quickTransition } from "@/lib/motion";
 
 export interface NavItem {
@@ -34,17 +33,21 @@ export function AppLayout({
   /** Controls the mobile (below `lg`) navigation pattern: admin keeps the hamburger drawer, employee gets a bottom tab bar. */
   variant?: "admin" | "employee";
 }) {
-  const { employee, logout, refreshMe } = useAuth();
+  const { employee, logout } = useAuth();
   const { isMasterAdmin } = usePermissions();
   const navigate = useNavigate();
-  const avatarInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useLocalStorageBoolean(SIDEBAR_COLLAPSE_KEY, false);
   const location = useLocation();
   /** Settings uses an internal split-pane scroll; lock the shell scroll on lg+. */
   const isSettingsPage = /\/settings\/?$/.test(location.pathname);
   const isEmployeeMobile = variant === "employee";
+  const profilePath =
+    employee?.role === "employee"
+      ? "/profile"
+      : employee?.role === "junior_admin"
+        ? "/admin/profile"
+        : "/admin/settings";
 
   const closeDrawer = () => setDrawerOpen(false);
 
@@ -60,19 +63,6 @@ export function AppLayout({
       };
     }
   }, [drawerOpen]);
-
-  async function handleAvatarChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      await updateMyAvatar(file);
-      await refreshMe();
-    } finally {
-      setUploading(false);
-      e.target.value = "";
-    }
-  }
 
   const brand = <Logo variant="sidebar" onNavigate={closeDrawer} />;
 
@@ -117,34 +107,16 @@ export function AppLayout({
 
   const profileContent = (
     <>
-      <div className="relative flex-shrink-0">
-        <div className="h-10 w-10 overflow-hidden rounded-full bg-slate-100">
-          {employee?.profile_photo_path ? (
-            <SecureImage path={employee.profile_photo_path} alt="Profile" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-slate-400">
-              <User className="h-5 w-5" />
-            </div>
-          )}
-        </div>
-        {employee?.role === "employee" && (
-          <button
-            disabled={uploading}
-            onClick={() => avatarInputRef.current?.click()}
-            title="Change profile picture"
-            className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-white shadow hover:bg-brand-700 disabled:opacity-50"
-          >
-            <span className="text-[8px] font-bold leading-none">✎</span>
-          </button>
-        )}
-        <input
-          ref={avatarInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          onChange={handleAvatarChange}
-        />
-      </div>
+      <EmployeeAvatar
+        name={employee?.name ?? "User"}
+        photoPath={employee?.profile_photo_path}
+        size="lg"
+        editable
+        onEditClick={() => {
+          closeDrawer();
+          navigate(profilePath);
+        }}
+      />
       <div className={clsx("min-w-0", collapsed && "lg:hidden")}>
         <p className="truncate text-sm font-semibold text-slate-900">{employee?.name}</p>
         <p className="text-xs text-slate-400">{employee?.employee_code}</p>
@@ -286,15 +258,18 @@ export function AppLayout({
             {isEmployeeMobile ? (
               <MobileAvatarMenu />
             ) : (
-              <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full bg-slate-100">
-                {employee?.profile_photo_path ? (
-                  <SecureImage path={employee.profile_photo_path} alt="Profile" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-slate-400">
-                    <User className="h-4 w-4" />
-                  </div>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => navigate(profilePath)}
+                className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                aria-label="My profile"
+              >
+                <EmployeeAvatar
+                  name={employee?.name ?? "User"}
+                  photoPath={employee?.profile_photo_path}
+                  size="sm"
+                />
+              </button>
             )}
           </div>
         </header>

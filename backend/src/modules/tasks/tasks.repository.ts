@@ -22,6 +22,7 @@ export interface TaskRow {
   updated_at: string;
   employee_name?: string;
   employee_code?: string;
+  employee_profile_photo_path?: string | null;
   assigned_by_name?: string | null;
   site_name?: string | null;
   effective_due_date?: string | null;
@@ -81,6 +82,7 @@ const TASK_SELECT = `
   t.*,
   e.name AS employee_name,
   e.employee_code,
+  e.profile_photo_path AS employee_profile_photo_path,
   a.name AS assigned_by_name,
   s.name AS site_name,
   COALESCE(t.extended_due_date, t.due_date) AS effective_due_date,
@@ -651,6 +653,7 @@ export interface TaskGroupAssignee {
   employee_id: string;
   employee_name: string;
   employee_code: string;
+  employee_profile_photo_path?: string | null;
   status: TaskStatus;
   progress_remarks: string | null;
   is_overdue: boolean;
@@ -686,6 +689,9 @@ function parseAssignees(raw: unknown): TaskGroupAssignee[] {
       employee_id: String(row.employee_id),
       employee_name: String(row.employee_name ?? ""),
       employee_code: String(row.employee_code ?? ""),
+      employee_profile_photo_path: row.employee_profile_photo_path
+        ? String(row.employee_profile_photo_path)
+        : null,
       status: row.status as TaskStatus,
       progress_remarks: row.progress_remarks ? String(row.progress_remarks) : null,
       is_overdue: Boolean(row.is_overdue),
@@ -799,6 +805,7 @@ export async function adminListTaskGroups(filters: {
            'employee_id', t.employee_id,
            'employee_name', e.name,
            'employee_code', e.employee_code,
+           'employee_profile_photo_path', e.profile_photo_path,
            'status', t.status,
            'progress_remarks', t.progress_remarks,
            'is_overdue', (
@@ -975,6 +982,7 @@ export async function listCalendarTaskGroups(filters: {
            'employee_id', t.employee_id,
            'employee_name', e.name,
            'employee_code', e.employee_code,
+           'employee_profile_photo_path', e.profile_photo_path,
            'status', t.status,
            'progress_remarks', t.progress_remarks,
            'is_overdue', (

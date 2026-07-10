@@ -27,13 +27,14 @@ async function canAccessFile(req: Request, relativePath: string): Promise<boolea
   if (req.user!.role !== "junior_admin") return false;
 
   const perms = await getEmployeePermissions(req.user!.id);
+  // Profile photos are safe for any junior admin to view in lists (tasks, leave, expenses).
+  if (category === "avatars") {
+    return true;
+  }
   if (
     (category === "selfies" || category === "site-photos") &&
     hasPermission(perms, "viewAttendance")
   ) {
-    return true;
-  }
-  if (category === "avatars" && hasPermission(perms, "viewEmployees")) {
     return true;
   }
   if (category === "expense-receipts" && hasPermission(perms, "manageExpenses")) {

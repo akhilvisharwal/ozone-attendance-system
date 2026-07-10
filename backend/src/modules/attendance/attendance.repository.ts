@@ -5,7 +5,8 @@ import { combineDateAndTime, minutesBetweenTimes } from "./manualAttendance.type
 
 const ADMIN_LIST_SELECT = `
   a.*,
-  e.employee_code, e.name AS employee_name, d.name AS employee_designation,
+  e.employee_code, e.name AS employee_name, e.profile_photo_path AS employee_profile_photo_path,
+  d.name AS employee_designation,
   s.name AS site_name,
   marker.name AS admin_marked_by_name,
   approver.name AS admin_approved_by_name

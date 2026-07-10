@@ -32,6 +32,7 @@ export interface ReimbursementRequestRow {
   updated_at: string;
   employee_name?: string;
   employee_code?: string;
+  employee_profile_photo_path?: string | null;
   reviewed_by_name?: string | null;
   paid_by_name?: string | null;
   expense_count?: number;
@@ -44,6 +45,7 @@ const SELECT_REQUEST = `
   r.paid_at, r.paid_by, r.payment_notes, r.submitted_at, r.archived_at,
   r.created_at, r.updated_at,
   emp.name AS employee_name, emp.employee_code,
+  emp.profile_photo_path AS employee_profile_photo_path,
   rev.name AS reviewed_by_name, payer.name AS paid_by_name
 `;
 

@@ -12,6 +12,8 @@ interface AuthContextValue {
   login: (employeeId: string, password: string) => Promise<Employee>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
+  /** Instantly update the signed-in employee in memory (e.g. after avatar upload). */
+  setEmployee: (employee: Employee | null) => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<Employee>;
 }
 
@@ -108,7 +110,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ employee, isLoading, session, login, logout, refreshMe, changePassword }),
+    () => ({
+      employee,
+      isLoading,
+      session,
+      login,
+      logout,
+      refreshMe,
+      setEmployee,
+      changePassword,
+    }),
     [employee, isLoading, session, login, logout, refreshMe, changePassword]
   );
 

@@ -11,6 +11,7 @@ import { Spinner, EmptyState } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { ReceiptThumbnail } from "@/components/ReceiptThumbnail";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import * as expensesApi from "@/api/expenses";
@@ -460,17 +461,24 @@ export function ExpenseManagementPage() {
               <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                 <button
                   type="button"
-                  className="min-w-0 flex-1 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
                   onClick={() => void openDetail(request)}
                 >
-                  <p className="font-semibold text-slate-900">
-                    {request.employee_name}{" "}
-                    <span className="font-normal text-slate-500">({request.employee_code})</span>
-                  </p>
-                  <p className="mt-0.5 text-sm text-slate-600">{periodLabel(request)}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    Submitted {formatDate(request.submitted_at)} · {request.expense_count ?? 0} expenses
-                  </p>
+                  <EmployeeAvatar
+                    name={request.employee_name ?? "User"}
+                    photoPath={request.employee_profile_photo_path}
+                    size="md"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900">
+                      {request.employee_name}{" "}
+                      <span className="font-normal text-slate-500">({request.employee_code})</span>
+                    </p>
+                    <p className="mt-0.5 text-sm text-slate-600">{periodLabel(request)}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Submitted {formatDate(request.submitted_at)} · {request.expense_count ?? 0} expenses
+                    </p>
+                  </div>
                 </button>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="text-right">
@@ -565,7 +573,12 @@ export function ExpenseManagementPage() {
         {detailRequest && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-              <span className="text-slate-600">
+              <span className="inline-flex items-center gap-2 text-slate-600">
+                <EmployeeAvatar
+                  name={detailRequest.employee_name ?? "User"}
+                  photoPath={detailRequest.employee_profile_photo_path}
+                  size="sm"
+                />
                 {detailRequest.employee_name} ({detailRequest.employee_code})
               </span>
               <Badge tone={statusTone(detailRequest.status)}>

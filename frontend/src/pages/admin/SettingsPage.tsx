@@ -16,10 +16,12 @@ import {
   ScrollText,
   UserCog,
   Wallet,
+  UserCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
+import { MyProfileSection } from "@/components/settings/MyProfileSection";
 import { CompanySettingsSection } from "@/components/settings/CompanySettingsSection";
 import { AttendanceSettingsSection } from "@/components/settings/AttendanceSettingsSection";
 import { WeeklyOffSettingsSection } from "@/components/settings/WeeklyOffSettingsSection";
@@ -35,6 +37,7 @@ import { ExpenseSettingsSection } from "@/components/settings/ExpenseSettingsSec
 import { SETTINGS_NAV, type SettingsTabId } from "@/types/settings";
 
 const ICONS: Record<SettingsTabId, ReactNode> = {
+  myProfile: <UserCircle className="h-4 w-4" />,
   company: <Building2 className="h-4 w-4" />,
   attendance: <Clock className="h-4 w-4" />,
   weeklyOff: <CalendarDays className="h-4 w-4" />,
@@ -50,7 +53,7 @@ const ICONS: Record<SettingsTabId, ReactNode> = {
 };
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTabId>("company");
+  const [activeTab, setActiveTab] = useState<SettingsTabId>("myProfile");
   const contentRef = useRef<HTMLDivElement>(null);
 
   const activeItem = useMemo(
@@ -156,7 +159,9 @@ export function SettingsPage() {
             </div>
 
             <CrossfadeSwitch state={activeTab} className="px-5 py-7 sm:px-6">
-              {activeTab === "company" ? (
+              {activeTab === "myProfile" ? (
+                <MyProfileSection />
+              ) : activeTab === "company" ? (
                 <CompanySettingsSection />
               ) : activeTab === "attendance" ? (
                 <AttendanceSettingsSection />

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Eye,
   FileSpreadsheet,
@@ -11,6 +12,7 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { DataCleanupConfirmModal } from "@/components/settings/DataCleanupConfirmModal";
 import { SettingsSaveConfirmModal } from "@/components/settings/SettingsSaveConfirmModal";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
+import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -492,8 +494,17 @@ export function AuditSettingsSection() {
                           {formatDateTime(log.created_at)}
                         </td>
                         <td className="px-3 py-3 sm:px-4">
-                          <div className="font-medium text-slate-900">{log.actor_name ?? "System"}</div>
-                          <div className="text-xs text-slate-500">{log.actor_code ?? "—"}</div>
+                          <div className="flex items-center gap-2.5">
+                            <EmployeeAvatar
+                              name={log.actor_name ?? "System"}
+                              photoPath={log.actor_profile_photo_path}
+                              size="sm"
+                            />
+                            <div>
+                              <div className="font-medium text-slate-900">{log.actor_name ?? "System"}</div>
+                              <div className="text-xs text-slate-500">{log.actor_code ?? "—"}</div>
+                            </div>
+                          </div>
                         </td>
                         <td className="hidden whitespace-nowrap px-3 py-3 text-slate-600 md:table-cell sm:px-4">
                           {roleLabel(log.actor_role)}
@@ -619,7 +630,16 @@ export function AuditSettingsSection() {
             <DetailRow label="Date & time" value={formatDateTime(detail.created_at)} />
             <DetailRow
               label="User"
-              value={`${detail.actor_name ?? "System"}${detail.actor_code ? ` (${detail.actor_code})` : ""}`}
+              value={
+                <span className="inline-flex items-center gap-2">
+                  <EmployeeAvatar
+                    name={detail.actor_name ?? "System"}
+                    photoPath={detail.actor_profile_photo_path}
+                    size="xs"
+                  />
+                  {`${detail.actor_name ?? "System"}${detail.actor_code ? ` (${detail.actor_code})` : ""}`}
+                </span>
+              }
             />
             <DetailRow label="Role" value={roleLabel(detail.actor_role)} />
             <DetailRow label="Action" value={detail.action_label} />
@@ -670,7 +690,7 @@ function DetailRow({
   hint,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   mono?: boolean;
   hint?: string;
 }) {
