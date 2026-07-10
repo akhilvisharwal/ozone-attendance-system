@@ -65,8 +65,25 @@ export const env = {
 
   adminEmployeeId: process.env.ADMIN_EMPLOYEE_ID ?? "OZNADMIN",
   adminName: process.env.ADMIN_NAME ?? "System Administrator",
-  adminEmail: process.env.ADMIN_EMAIL ?? "admin@ozoneaircon.com",
+  adminEmail: process.env.ADMIN_EMAIL ?? "info@ozoneairconhvac.com",
   adminPassword: process.env.ADMIN_PASSWORD ?? "ChangeMe@123",
+
+  /** Resend API key — never expose to the frontend. Empty disables outbound email. */
+  resendApiKey: process.env.RESEND_API_KEY ?? "",
+  /** From address for transactional email (verified domain in Resend). */
+  emailFrom: process.env.EMAIL_FROM ?? "noreply@app.ozoneairconhvac.com",
+  /**
+   * Administrator inbox for OTP codes, password-reset links, and security notifications.
+   * Falls back to ADMIN_EMAIL when unset.
+   */
+  notificationAdminEmail:
+    process.env.ADMIN_EMAIL?.trim() ||
+    process.env.NOTIFICATION_ADMIN_EMAIL?.trim() ||
+    "info@ozoneairconhvac.com",
+  /** Public app URL used in password-reset links (no trailing slash). */
+  appUrl: normalizeClientUrl(
+    process.env.APP_URL?.trim() || process.env.CLIENT_URL?.trim() || "http://localhost:5173"
+  ),
 
   companyName: process.env.COMPANY_NAME ?? "Ozone Aircon",
   companyLogoPath: process.env.COMPANY_LOGO_PATH ?? "assets/logo.png",

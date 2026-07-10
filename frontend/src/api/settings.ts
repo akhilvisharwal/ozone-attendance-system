@@ -56,6 +56,8 @@ export async function fetchCleanupCenter(): Promise<CleanupCenterSummary> {
 export async function runStorageCleanup(input: {
   category: CleanupCategory;
   confirmation: "DELETE";
+  otpChallengeId: string;
+  otpCode: string;
 }): Promise<CleanupResultResponse> {
   const res = await apiClient.post<CleanupResultResponse>("/settings/backup/cleanup", input);
   return res.data;
@@ -126,11 +128,12 @@ export interface EmployeeIdPrefixMigrationResult {
 
 export async function updateSettingsCategory<C extends SettingsCategory>(
   category: C,
-  value: AppSettings[C]
+  value: AppSettings[C],
+  otp?: { otpChallengeId: string; otpCode: string }
 ): Promise<AppSettings> {
   const res = await apiClient.patch<{ settings: AppSettings; category: AppSettings[C] }>(
     `/settings/${category}`,
-    value
+    otp ? { ...value, ...otp } : value
   );
   return res.data.settings;
 }
@@ -154,6 +157,8 @@ export async function changeAdminPassword(input: {
   currentPassword: string;
   newPassword: string;
   confirmPassword: string;
+  otpChallengeId: string;
+  otpCode: string;
 }): Promise<void> {
   await apiClient.post("/settings/security/change-password", input);
 }
@@ -185,10 +190,14 @@ export async function fetchAuditLogById(id: string): Promise<AuditLogEntry> {
   return res.data.log;
 }
 
-export async function clearAuditLogs(confirmation: "DELETE"): Promise<{ deletedRecords: number }> {
+export async function clearAuditLogs(input: {
+  confirmation: "DELETE";
+  otpChallengeId: string;
+  otpCode: string;
+}): Promise<{ deletedRecords: number }> {
   const res = await apiClient.post<{ success: boolean; deletedRecords: number }>(
     "/settings/audit-logs/clear",
-    { confirmation }
+    input
   );
   return { deletedRecords: res.data.deletedRecords };
 }

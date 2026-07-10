@@ -20,6 +20,7 @@ import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useToast } from "@/components/ui/Toast";
+import { EmailOtpModal } from "@/components/EmailOtpModal";
 import type { SecuritySettings } from "@/types/settings";
 
 type SecurityFormState = SecuritySettings;
@@ -82,6 +83,7 @@ export function SecuritySettingsSection() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [otpOpen, setOtpOpen] = useState(false);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -150,20 +152,22 @@ export function SecuritySettingsSection() {
     const nextErrors = handleValidatePasswordForm();
     setPasswordErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
+    setOtpOpen(true);
+  }
 
+  async function handlePasswordOtpVerified(otp: { otpChallengeId: string; otpCode: string }) {
     setChangingPassword(true);
     setPasswordMessage(null);
     try {
-      await settingsApi.changeAdminPassword(passwordForm);
+      await settingsApi.changeAdminPassword({ ...passwordForm, ...otp });
       setPasswordForm(clearPasswordFieldsAfterSuccess());
       setShowCurrentPassword(false);
       setShowNewPassword(false);
+      setOtpOpen(false);
       setPasswordMessage({ type: "success", text: "Admin password updated successfully." });
+      showToast("Admin password updated.");
     } catch (err) {
-      setPasswordMessage({
-        type: "error",
-        text: extractErrorMessage(err, "Failed to update admin password."),
-      });
+      throw err;
     } finally {
       setChangingPassword(false);
     }
@@ -390,6 +394,13 @@ export function SecuritySettingsSection() {
           </Button>
         </form>
       </SettingsSection>
+
+      <EmailOtpModal
+        open={otpOpen}
+        purpose="admin_password_change"
+        onClose={() => setOtpOpen(false)}
+        onVerified={handlePasswordOtpVerified}
+      />
     </div>
   );
 }

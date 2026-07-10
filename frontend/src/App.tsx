@@ -27,6 +27,8 @@ import { ToastProvider } from "@/components/ui/Toast";
 import { AppLayout, type NavItem } from "@/components/layout/AppLayout";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { LoginPage } from "@/pages/LoginPage";
+import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
 
 import { EmployeeHomePage } from "@/pages/employee/EmployeeHomePage";
 import { AttendanceHistoryPage } from "@/pages/employee/AttendanceHistoryPage";
@@ -142,6 +144,8 @@ function App() {
             <SessionManager />
             <Routes>
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
 
               <Route element={<ProtectedRoute allowedRoles={["employee"]} />}>
                 <Route element={<AppLayout navItems={employeeNavItems} roleLabel="Employee" variant="employee" />}>

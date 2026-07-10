@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { DataCleanupConfirmModal } from "@/components/settings/DataCleanupConfirmModal";
+import { EmailOtpModal } from "@/components/EmailOtpModal";
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import type {
@@ -30,6 +31,7 @@ export function StorageManagementSection({
   const [loading, setLoading] = useState(true);
   const [busyCategory, setBusyCategory] = useState<CleanupCategory | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<CleanupCategorySummary | null>(null);
+  const [otpOpen, setOtpOpen] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const loadCleanup = useCallback(async () => {
@@ -53,26 +55,30 @@ export function StorageManagementSection({
 
   async function handleConfirmCleanup() {
     if (!confirmTarget) return;
+    setOtpOpen(true);
+  }
+
+  async function handleCleanupOtpVerified(otp: { otpChallengeId: string; otpCode: string }) {
+    if (!confirmTarget) return;
     setBusyCategory(confirmTarget.id);
     setMessage(null);
     try {
       const result = await settingsApi.runStorageCleanup({
         category: confirmTarget.id,
         confirmation: "DELETE",
+        ...otp,
       });
       onStorageUpdated({ status: result.status, storage: result.storage });
       setCleanup(result.cleanup);
       setConfirmTarget(null);
+      setOtpOpen(false);
       await loadCleanup();
       setMessage({
         type: "success",
         text: `${confirmTarget.label} cleaned up. ${result.result.deletedRecords.toLocaleString()} record(s) and ${result.result.deletedFiles.toLocaleString()} file(s) removed. Storage reclaimed: database ${formatBytes(result.result.databaseSizeRecoveredBytes)}, files ${formatBytes(result.result.uploadedFilesRecoveredBytes)}.`,
       });
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: extractErrorMessage(err, "Cleanup failed."),
-      });
+      throw err;
     } finally {
       setBusyCategory(null);
     }
@@ -195,12 +201,19 @@ export function StorageManagementSection({
       </SettingsSection>
 
       <DataCleanupConfirmModal
-        open={Boolean(confirmTarget)}
+        open={Boolean(confirmTarget) && !otpOpen}
         category={confirmTarget}
         onCancel={() => {
           if (!busyCategory) setConfirmTarget(null);
         }}
         onConfirm={handleConfirmCleanup}
+      />
+
+      <EmailOtpModal
+        open={otpOpen}
+        purpose="database_cleanup"
+        onClose={() => setOtpOpen(false)}
+        onVerified={handleCleanupOtpVerified}
       />
     </div>
   );

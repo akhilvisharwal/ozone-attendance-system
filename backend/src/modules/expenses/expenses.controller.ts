@@ -30,6 +30,7 @@ import {
   buildExpensePdfReport,
   buildExpenseReportBundle,
 } from "./expenses.reports";
+import { notifyAdminEvent } from "../../services/email/adminNotifications";
 
 function receiptFile(req: Request): Express.Multer.File | undefined {
   return req.file;
@@ -167,6 +168,26 @@ export const submitReimbursementRequest = asyncHandler(async (req: Request, res:
     requestedAmount,
     expenseCount: drafts.length,
     autoApproved: !settings.approvalRequired,
+  });
+
+  void notifyAdminEvent({
+    req,
+    subject: `Expense reimbursement submitted (${input.periodType})`,
+    title: "Expense reimbursement request submitted",
+    lines: [
+      `Submitted by: ${req.user!.employeeCode}`,
+      `Period: ${input.periodType} (${period.start} to ${period.end})`,
+      `Amount: ₹${requestedAmount.toFixed(2)}`,
+      `Expenses: ${drafts.length}`,
+      settings.approvalRequired ? "Status: Pending approval" : "Status: Auto-approved",
+    ],
+    targetType: "expense",
+    targetId: request.id,
+    metadata: {
+      periodType: input.periodType,
+      requestedAmount,
+      expenseCount: drafts.length,
+    },
   });
 
   if (!settings.approvalRequired) {

@@ -21,6 +21,7 @@ import { useToast } from "@/components/ui/Toast";
 import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { formatDateTime } from "@/utils/format";
+import { EmailOtpModal } from "@/components/EmailOtpModal";
 import type {
   AuditActionType,
   AuditLogEntry,
@@ -111,6 +112,7 @@ export function AuditSettingsSection() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null);
   const [clearOpen, setClearOpen] = useState(false);
+  const [clearOtpOpen, setClearOtpOpen] = useState(false);
   const [detail, setDetail] = useState<AuditLogEntry | null>(null);
 
   const requestIdRef = useRef(0);
@@ -248,14 +250,26 @@ export function AuditSettingsSection() {
   }
 
   async function handleClear() {
-    setMessage(null);
-    const result = await settingsApi.clearAuditLogs("DELETE");
     setClearOpen(false);
-    setMessage({
-      type: "success",
-      text: `Cleared ${result.deletedRecords} audit log${result.deletedRecords === 1 ? "" : "s"}.`,
-    });
-    await loadLogs(1);
+    setClearOtpOpen(true);
+  }
+
+  async function handleClearOtpVerified(otp: { otpChallengeId: string; otpCode: string }) {
+    setMessage(null);
+    try {
+      const result = await settingsApi.clearAuditLogs({
+        confirmation: "DELETE",
+        ...otp,
+      });
+      setClearOtpOpen(false);
+      setMessage({
+        type: "success",
+        text: `Cleared ${result.deletedRecords} audit log${result.deletedRecords === 1 ? "" : "s"}.`,
+      });
+      await loadLogs(1);
+    } catch (err) {
+      throw err;
+    }
   }
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
@@ -577,6 +591,13 @@ export function AuditSettingsSection() {
         affectedRecords={totalAll}
         onCancel={() => setClearOpen(false)}
         onConfirm={handleClear}
+      />
+
+      <EmailOtpModal
+        open={clearOtpOpen}
+        purpose="database_cleanup"
+        onClose={() => setClearOtpOpen(false)}
+        onVerified={handleClearOtpVerified}
       />
 
       <Modal

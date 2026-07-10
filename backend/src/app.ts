@@ -22,6 +22,9 @@ import holidaysRoutes from "./modules/holidays/holidays.routes";
 import settingsRoutes from "./modules/settings/settings.routes";
 import juniorAdminsRoutes from "./modules/juniorAdmins/juniorAdmins.routes";
 import expensesRoutes from "./modules/expenses/expenses.routes";
+import emailVerificationRoutes, {
+  publicEmailVerificationRoutes,
+} from "./modules/emailVerification/emailVerification.routes";
 
 export function createApp() {
   const app = express();
@@ -66,6 +69,8 @@ export function createApp() {
   app.use("/assets", express.static(path.join(process.cwd(), "assets")));
 
   app.use("/api/auth", authRoutes);
+  app.use("/api/auth", publicEmailVerificationRoutes);
+  app.use("/api/email-verification", emailVerificationRoutes);
   app.use("/api/employees", employeesRoutes);
   app.use("/api/sites", sitesRoutes);
   app.use("/api/attendance", attendanceRoutes);

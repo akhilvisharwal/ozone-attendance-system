@@ -401,6 +401,8 @@ export const changePasswordSchema = z
     currentPassword: z.string().min(1),
     newPassword: z.string().min(6).max(128),
     confirmPassword: z.string().min(6).max(128),
+    otpChallengeId: z.string().uuid(),
+    otpCode: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
   })
   .refine((value) => value.newPassword === value.confirmPassword, {
     message: "New password and confirmation do not match",
@@ -460,6 +462,8 @@ export const auditClearSchema = z.object({
   confirmation: z.literal("DELETE", {
     errorMap: () => ({ message: "Type DELETE to confirm clearing all audit logs" }),
   }),
+  otpChallengeId: z.string().uuid(),
+  otpCode: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
 });
 
 export const auditExportFormatSchema = z.enum(["pdf", "excel"]);
@@ -479,6 +483,8 @@ export const cleanupConfirmSchema = z.object({
   confirmation: z.literal("DELETE", {
     errorMap: () => ({ message: "Type DELETE to confirm this cleanup action" }),
   }),
+  otpChallengeId: z.string().uuid(),
+  otpCode: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
 });
 
 

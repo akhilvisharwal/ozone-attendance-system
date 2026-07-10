@@ -10,6 +10,8 @@ import * as settingsApi from "@/api/settings";
 import { extractErrorMessage } from "@/api/client";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useToast } from "@/components/ui/Toast";
+import { EmailOtpModal } from "@/components/EmailOtpModal";
+import type { OtpPurpose } from "@/api/emailVerification";
 import type { CompanySettings } from "@/types/settings";
 import {
   DEFAULT_PHONE_DIAL_CODE,
@@ -105,6 +107,8 @@ export function CompanySettingsSection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [otpPurpose, setOtpPurpose] = useState<OtpPurpose | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<CompanySettings | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [form, setForm] = useState<CompanyFormState>(emptyForm);
@@ -168,30 +172,57 @@ export function CompanySettingsSection() {
   async function handleConfirmSave() {
     if (!baseCompany) return;
 
+    const payload: CompanySettings = {
+      ...baseCompany,
+      name: FIXED_COMPANY_NAME,
+      address: form.address.trim(),
+      phoneCountryCode: form.phoneCountryCode,
+      phone: sanitizeNationalPhoneNumber(form.phone),
+      secondaryPhoneCountryCode: form.secondaryPhoneCountryCode,
+      secondaryPhone: sanitizeNationalPhoneNumber(form.secondaryPhone),
+      email: form.email.trim(),
+      additionalEmails: form.additionalEmails.map((value) => value.trim()).filter(Boolean),
+    };
+
+    const emailChanged =
+      baseCompany.email.trim().toLowerCase() !== payload.email.trim().toLowerCase();
+    const phoneChanged =
+      baseCompany.phone.trim() !== payload.phone.trim() ||
+      baseCompany.phoneCountryCode !== payload.phoneCountryCode;
+
+    setConfirmOpen(false);
+
+    if (emailChanged) {
+      setPendingPayload(payload);
+      setOtpPurpose("company_email_change");
+      return;
+    }
+    if (phoneChanged) {
+      setPendingPayload(payload);
+      setOtpPurpose("company_phone_change");
+      return;
+    }
+
+    await saveCompanyPayload(payload);
+  }
+
+  async function saveCompanyPayload(
+    payload: CompanySettings,
+    otp?: { otpChallengeId: string; otpCode: string }
+  ) {
     setSaving(true);
     setMessage(null);
     try {
-      const payload: CompanySettings = {
-        ...baseCompany,
-        name: FIXED_COMPANY_NAME,
-        address: form.address.trim(),
-        phoneCountryCode: form.phoneCountryCode,
-        phone: sanitizeNationalPhoneNumber(form.phone),
-        secondaryPhoneCountryCode: form.secondaryPhoneCountryCode,
-        secondaryPhone: sanitizeNationalPhoneNumber(form.secondaryPhone),
-        email: form.email.trim(),
-        additionalEmails: form.additionalEmails.map((value) => value.trim()).filter(Boolean),
-      };
-
-      const updated = await settingsApi.updateSettingsCategory("company", payload);
+      const updated = await settingsApi.updateSettingsCategory("company", payload, otp);
       setBaseCompany(updated.company);
       setForm(companyToForm(updated.company));
       await refresh();
-      setConfirmOpen(false);
+      setOtpPurpose(null);
+      setPendingPayload(null);
       setMessage({ type: "success", text: "Company information updated successfully." });
       showToast("Settings saved successfully.");
     } catch (err) {
-      setConfirmOpen(false);
+      if (otp) throw err;
       setMessage({
         type: "error",
         text: extractErrorMessage(err, "Failed to save company information."),
@@ -199,6 +230,11 @@ export function CompanySettingsSection() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleCompanyOtpVerified(otp: { otpChallengeId: string; otpCode: string }) {
+    if (!pendingPayload) return;
+    await saveCompanyPayload(pendingPayload, otp);
   }
 
   if (loading) {
@@ -332,6 +368,16 @@ export function CompanySettingsSection() {
         open={confirmOpen}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={handleConfirmSave}
+      />
+
+      <EmailOtpModal
+        open={Boolean(otpPurpose)}
+        purpose={otpPurpose}
+        onClose={() => {
+          setOtpPurpose(null);
+          setPendingPayload(null);
+        }}
+        onVerified={handleCompanyOtpVerified}
       />
     </div>
   );

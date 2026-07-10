@@ -1,45 +1,31 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Navigate, useNavigate, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { motion } from "motion/react";
-import { useAuth } from "@/auth/AuthContext";
-import { usePermissions } from "@/auth/usePermissions";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
 import { Logo } from "@/components/Logo";
 import { SYSTEM_NAME } from "@/config/branding";
 import { extractErrorMessage } from "@/api/client";
-import { firstAllowedAdminPath, normalizePermissions } from "@/auth/permissions";
+import * as emailApi from "@/api/emailVerification";
 
-export function LoginPage() {
-  const { employee, isLoading, login } = useAuth();
-  const { homePath } = usePermissions();
-  const navigate = useNavigate();
+export function ForgotPasswordPage() {
   const [employeeId, setEmployeeId] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  if (!isLoading && employee) {
-    return <Navigate to={homePath} replace />;
-  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     setSubmitting(true);
     try {
-      const loggedInEmployee = await login(employeeId.trim().toUpperCase(), password);
-      const dest =
-        loggedInEmployee.role === "employee"
-          ? "/"
-          : loggedInEmployee.role === "admin"
-            ? "/admin"
-            : firstAllowedAdminPath(normalizePermissions(loggedInEmployee.admin_permissions));
-      navigate(dest, { replace: true });
+      const result = await emailApi.forgotAdminPassword(employeeId.trim().toUpperCase());
+      setSuccess(result.message);
     } catch (err) {
-      setError(extractErrorMessage(err, "Invalid employee ID or password"));
+      setError(extractErrorMessage(err, "Could not send password reset email."));
     } finally {
       setSubmitting(false);
     }
@@ -56,38 +42,33 @@ export function LoginPage() {
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <Logo variant="hero" interactive={false} />
           <p className="text-sm text-slate-500">{SYSTEM_NAME}</p>
+          <h1 className="text-lg font-semibold text-slate-900">Forgot password</h1>
+          <p className="text-sm text-slate-500">
+            Enter the System Admin employee ID. A reset link will be sent to the administrator email.
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {error && <Alert variant="error">{error}</Alert>}
+          {success && <Alert variant="success">{success}</Alert>}
 
           <Input
-            label="Employee ID"
-            placeholder="e.g. OZN001"
+            label="System Admin Employee ID"
+            placeholder="e.g. OZNADMIN"
             value={employeeId}
             onChange={(e) => setEmployeeId(e.target.value)}
             autoComplete="username"
             required
           />
-          <Input
-            label="Password"
-            type="password"
-            placeholder="Your password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
 
-          <Button type="submit" isLoading={submitting} className="mt-2 w-full">
-            Sign In
+          <Button type="submit" isLoading={submitting} className="w-full">
+            Send reset link
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
-          System Admin?{" "}
-          <Link to="/forgot-password" className="font-medium text-brand-700 hover:underline">
-            Forgot password
+        <p className="mt-4 text-center text-sm text-slate-500">
+          <Link to="/login" className="font-medium text-brand-700 hover:underline">
+            Back to sign in
           </Link>
         </p>
       </motion.div>

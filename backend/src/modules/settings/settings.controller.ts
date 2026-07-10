@@ -61,6 +61,7 @@ import {
   prefixesDiffer,
   type PrefixMigrationResult,
 } from "../../utils/employeeIdPrefixMigration";
+import { requireVerifiedOtp } from "../emailVerification/emailVerification.service";
 import { pool } from "../../config/db";
 import bcrypt from "bcryptjs";
 
@@ -129,7 +130,13 @@ export const getPublicSettings = asyncHandler(async (req: Request, res: Response
 
 export const updateSettings = asyncHandler(async (req: Request, res: Response) => {
   const category = categoryParamSchema.parse(req.params.category);
-  const raw = parseCategorySettings(category, req.body);
+  const body = req.body as Record<string, unknown>;
+  const otpChallengeId =
+    typeof body.otpChallengeId === "string" ? body.otpChallengeId : undefined;
+  const otpCode = typeof body.otpCode === "string" ? body.otpCode : undefined;
+  const { otpChallengeId: _a, otpCode: _b, ...settingsBody } = body;
+
+  const raw = parseCategorySettings(category, settingsBody);
   const parsed =
     category === "attendance"
       ? normalizeAttendanceSettings(raw as AttendanceSettings)
@@ -154,6 +161,32 @@ export const updateSettings = asyncHandler(async (req: Request, res: Response) =
   // cannot skip migration or overwrite a previously saved EMP### with OZN###.
   const freshSettings = await refreshSettingsCache();
   const previous = freshSettings[category];
+
+  if (category === "company") {
+    const prevCompany = previous as CompanySettings;
+    const nextCompany = parsed as CompanySettings;
+    const emailChanged =
+      prevCompany.email.trim().toLowerCase() !== nextCompany.email.trim().toLowerCase();
+    const phoneChanged =
+      prevCompany.phone.trim() !== nextCompany.phone.trim() ||
+      prevCompany.phoneCountryCode !== nextCompany.phoneCountryCode;
+
+    if (emailChanged) {
+      await requireVerifiedOtp({
+        req,
+        purpose: "company_email_change",
+        otpChallengeId,
+        otpCode,
+      });
+    } else if (phoneChanged) {
+      await requireVerifiedOtp({
+        req,
+        purpose: "company_phone_change",
+        otpChallengeId,
+        otpCode,
+      });
+    }
+  }
 
   let prefixMigration: PrefixMigrationResult | null = null;
   let settings;
@@ -270,6 +303,13 @@ export const cleanupData = asyncHandler(async (req: Request, res: Response) => {
   if (!CLEANUP_TARGETS.includes(input.category)) {
     throw ApiError.badRequest("Unsupported cleanup category");
   }
+
+  await requireVerifiedOtp({
+    req,
+    purpose: "database_cleanup",
+    otpChallengeId: input.otpChallengeId,
+    otpCode: input.otpCode,
+  });
 
   const result = await executeStorageCleanup(input.category);
   const [status, storage, cleanup] = await Promise.all([
@@ -455,6 +495,13 @@ export const changeAdminPassword = asyncHandler(async (req: Request, res: Respon
     throw ApiError.badRequest("New password must be different from the current password");
   }
 
+  await requireVerifiedOtp({
+    req,
+    purpose: "admin_password_change",
+    otpChallengeId: input.otpChallengeId,
+    otpCode: input.otpCode,
+  });
+
   const hash = await bcrypt.hash(input.newPassword, 12);
   await pool.query(
     `UPDATE employees
@@ -468,6 +515,7 @@ export const changeAdminPassword = asyncHandler(async (req: Request, res: Respon
   );
   await logAudit(req, "auth.password_change", "employee", req.user!.id, {
     adminCode: req.user!.employeeCode,
+    verifiedByEmailOtp: true,
   });
   res.json({ success: true });
 });
@@ -504,10 +552,17 @@ export const getAuditLog = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const clearAuditLogs = asyncHandler(async (req: Request, res: Response) => {
-  auditClearSchema.parse(req.body);
+  const input = auditClearSchema.parse(req.body);
+  await requireVerifiedOtp({
+    req,
+    purpose: "database_cleanup",
+    otpChallengeId: input.otpChallengeId,
+    otpCode: input.otpCode,
+  });
   const deleted = await clearAllAuditLogs();
   await logAudit(req, "settings.audit_clear", "audit", undefined, {
     deletedRecords: deleted,
+    verifiedByEmailOtp: true,
   });
   res.json({
     success: true,

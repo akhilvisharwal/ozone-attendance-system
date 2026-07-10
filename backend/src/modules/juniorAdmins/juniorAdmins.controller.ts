@@ -13,6 +13,7 @@ import {
   updateJuniorAdminSchema,
 } from "./juniorAdmins.validators";
 import * as repo from "./juniorAdmins.repository";
+import { notifyAdminEvent } from "../../services/email/adminNotifications";
 
 export const listJuniorAdmins = asyncHandler(async (_req: Request, res: Response) => {
   const items = await repo.listJuniorAdmins();
@@ -56,6 +57,20 @@ export const createJuniorAdmin = asyncHandler(async (req: Request, res: Response
     employeeCode,
     name: employee.name,
     permissions,
+  });
+
+  void notifyAdminEvent({
+    req,
+    subject: `New Junior Admin created: ${employeeCode}`,
+    title: "New Junior Admin account created",
+    lines: [
+      `Employee ID: ${employeeCode}`,
+      `Name: ${employee.name}`,
+      `Created by: ${req.user!.employeeCode}`,
+    ],
+    targetType: "employee",
+    targetId: employee.id,
+    metadata: { employeeCode, role: "junior_admin" },
   });
 
   res.status(201).json({

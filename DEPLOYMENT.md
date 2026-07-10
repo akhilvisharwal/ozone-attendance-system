@@ -34,6 +34,10 @@ This app is a **split deployment**:
 | `DATABASE_URL` | Neon / Render Postgres connection string |
 | `CLIENT_URL` | Exact Vercel frontend origin, **no trailing slash** (e.g. `https://your-app.vercel.app`). Comma-separate for preview URLs. |
 | `ADMIN_PASSWORD` | Strong password used only for the one-time seed |
+| `RESEND_API_KEY` | Resend API key for OTP, password reset, and admin notification emails |
+| `EMAIL_FROM` | Verified sender, e.g. `noreply@app.ozoneairconhvac.com` |
+| `ADMIN_EMAIL` | Administrator inbox for OTPs/notifications, e.g. `info@ozoneairconhvac.com` |
+| `APP_URL` | Public frontend URL for password-reset links (defaults to `CLIENT_URL`) |
 | `GOOGLE_MAPS_API_KEY` | Google Geocoding on the server (Render). Also used for browser maps when no dedicated browser key is set. |
 | `GEOCODE_PROVIDER` | `google` (default in Blueprint). Falls back to Nominatim if Google key is missing. |
 | `GOOGLE_MAPS_BROWSER_API_KEY` | Optional browser-only Maps JavaScript API key served via `/api/settings/public` |

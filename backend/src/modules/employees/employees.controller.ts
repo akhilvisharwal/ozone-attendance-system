@@ -17,6 +17,7 @@ import { getSettings } from "../settings/settings.cache";
 import { validatePasswordPolicy, resolveEmployeeRoleFromSettings } from "../../utils/settingsHelpers";
 import { logAudit } from "../audit/audit.repository";
 import { storage } from "../../services/storage";
+import { notifyAdminEvent } from "../../services/email/adminNotifications";
 
 export const createEmployee = asyncHandler(async (req: Request, res: Response) => {
   const input = createEmployeeSchema.parse(req.body);
@@ -85,6 +86,21 @@ export const createEmployee = asyncHandler(async (req: Request, res: Response) =
     idFormat: empSettings.idFormat,
     requirePasswordChange: empSettings.requirePasswordChange,
     activeByDefault: empSettings.activeByDefault,
+  });
+
+  void notifyAdminEvent({
+    req,
+    subject: `New employee created: ${employeeCode}`,
+    title: "New employee account created",
+    lines: [
+      `Employee ID: ${employeeCode}`,
+      `Name: ${employee.name}`,
+      `Role / Designation: ${designation.name}`,
+      `Created by: ${req.user!.employeeCode}`,
+    ],
+    targetType: "employee",
+    targetId: employee.id,
+    metadata: { employeeCode },
   });
 
   res.status(201).json({

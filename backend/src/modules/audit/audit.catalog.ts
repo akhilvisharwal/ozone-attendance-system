@@ -53,6 +53,41 @@ const CATALOG: Record<string, AuditActionMeta> = {
     module: "Security",
     actionType: "Password Change",
   },
+  "auth.password_reset_requested": {
+    label: "Admin password reset requested",
+    module: "Security",
+    actionType: "Password Change",
+  },
+  "auth.password_reset_completed": {
+    label: "Admin password reset completed",
+    module: "Security",
+    actionType: "Password Change",
+  },
+  "auth.password_reset_failed": {
+    label: "Admin password reset failed",
+    module: "Security",
+    actionType: "Password Change",
+  },
+  "email.otp_requested": {
+    label: "Email OTP requested",
+    module: "Security",
+    actionType: "Other",
+  },
+  "email.otp_verified": {
+    label: "Email OTP verified",
+    module: "Security",
+    actionType: "Other",
+  },
+  "email.otp_failed": {
+    label: "Email OTP failed",
+    module: "Security",
+    actionType: "Other",
+  },
+  "email.notification_sent": {
+    label: "Admin notification email sent",
+    module: "Other",
+    actionType: "Other",
+  },
 
   "employee.create": { label: "Employee created", module: "Employees", actionType: "Create" },
   "employee.update": { label: "Employee updated", module: "Employees", actionType: "Update" },
