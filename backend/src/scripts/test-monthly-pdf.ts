@@ -21,10 +21,14 @@ function buildMockGrid(year: number, month: number, employeeCount: number): Mont
     employeeCode: `OZN${String(i + 1).padStart(3, "0")}`,
     name: `Employee ${i + 1}`,
     department: i % 2 === 0 ? "Operations" : "Projects",
+    designation: i % 2 === 0 ? "Technician" : "Engineer",
     weeklyOffDays: [0],
     days: Array.from({ length: daysInMonth }, (_, d) => ({
+      day: d + 1,
       date: `${year}-${String(month).padStart(2, "0")}-${String(d + 1).padStart(2, "0")}`,
       status: makeDayStatus(d + i),
+      totalMinutes: makeDayStatus(d + i) === "present" ? 480 : null,
+      late: makeDayStatus(d + i) === "present" && (d + i) % 7 === 0,
       holidayName: null as string | null,
     })),
     summary: {
@@ -39,6 +43,7 @@ function buildMockGrid(year: number, month: number, employeeCount: number): Mont
       workingDays: 22,
       totalMinutes: 9600,
       attendancePercentage: 91,
+      lateCheckIns: 2,
     },
   }));
 

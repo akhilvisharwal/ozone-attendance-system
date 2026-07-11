@@ -18,28 +18,32 @@ interface StatusStyle {
 }
 
 const STATUS_STYLES: Record<MonthlyCellStatus, StatusStyle> = {
-  present: { code: "P", bg: "#10b981", fg: "#ffffff" },
-  half_day: { code: "H", bg: "#fbbf24", fg: "#1e293b" },
-  absent: { code: "A", bg: "#ef4444", fg: "#ffffff" },
-  leave: { code: "L", bg: "#0ea5e9", fg: "#ffffff" },
-  weekly_off: { code: "WO", bg: "#e2e8f0", fg: "#475569" },
-  holiday: { code: "HO", bg: "#a855f7", fg: "#ffffff" },
-  holiday_worked: { code: "HW", bg: "#0d9488", fg: "#ffffff" },
-  weekly_off_worked: { code: "WW", bg: "#4f46e5", fg: "#ffffff" },
-  none: { code: "", bg: "#f8fafc", fg: "#cbd5e1" },
-  not_applicable: { code: "", bg: "#ffffff", fg: "#e2e8f0" },
+  present: { code: "P", bg: "#ffffff", fg: "#000000" },
+  half_day: { code: "H", bg: "#fef9c3", fg: "#000000" },
+  absent: { code: "A", bg: "#fecaca", fg: "#000000" },
+  leave: { code: "L", bg: "#dbeafe", fg: "#000000" },
+  weekly_off: { code: "WO", bg: "#e5e7eb", fg: "#000000" },
+  holiday: { code: "HO", bg: "#ede9fe", fg: "#000000" },
+  holiday_worked: { code: "HW", bg: "#ccfbf1", fg: "#000000" },
+  weekly_off_worked: { code: "WW", bg: "#e0e7ff", fg: "#000000" },
+  none: { code: "", bg: "#ffffff", fg: "#000000" },
+  not_applicable: { code: "", bg: "#f3f4f6", fg: "#000000" },
 };
 
+/** Late check-in overlay — light orange with black text for print readability. */
+const LATE_STYLE: StatusStyle = { code: "", bg: "#ffedd5", fg: "#000000" };
+
 const LEGEND_ITEMS: { code: string; label: string; bg: string; fg: string }[] = [
-  { code: "P", label: "Present", bg: "#10b981", fg: "#ffffff" },
-  { code: "A", label: "Absent", bg: "#ef4444", fg: "#ffffff" },
-  { code: "H", label: "Half Day", bg: "#fbbf24", fg: "#1e293b" },
-  { code: "L", label: "Leave", bg: "#0ea5e9", fg: "#ffffff" },
-  { code: "WO", label: "Weekly Off", bg: "#e2e8f0", fg: "#475569" },
-  { code: "HO", label: "Holiday", bg: "#a855f7", fg: "#ffffff" },
-  { code: "HW", label: "Worked on Holiday", bg: "#0d9488", fg: "#ffffff" },
-  { code: "WW", label: "Worked on Weekly Off", bg: "#4f46e5", fg: "#ffffff" },
-  { code: "—", label: "Not Applicable (before joining)", bg: "#ffffff", fg: "#cbd5e1" },
+  { code: "P", label: "Present", bg: "#ffffff", fg: "#000000" },
+  { code: "A", label: "Absent", bg: "#fecaca", fg: "#000000" },
+  { code: "H", label: "Half Day", bg: "#fef9c3", fg: "#000000" },
+  { code: "L", label: "Leave", bg: "#dbeafe", fg: "#000000" },
+  { code: "WO", label: "Weekly Off", bg: "#e5e7eb", fg: "#000000" },
+  { code: "HO", label: "Holiday", bg: "#ede9fe", fg: "#000000" },
+  { code: "HW", label: "Worked on Holiday", bg: "#ccfbf1", fg: "#000000" },
+  { code: "WW", label: "Worked on Weekly Off", bg: "#e0e7ff", fg: "#000000" },
+  { code: "LT", label: "Late Check-in", bg: "#ffedd5", fg: "#000000" },
+  { code: "—", label: "Not Applicable (before joining)", bg: "#f3f4f6", fg: "#000000" },
 ];
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -189,9 +193,10 @@ export async function buildMonthlyCalendarPdf(
 
       for (const item of LEGEND_ITEMS) {
         doc.rect(lx, ly, 10, 10).fill(item.bg);
+        doc.rect(lx, ly, 10, 10).stroke("#cbd5e1");
         doc.fillColor(item.fg).font("Helvetica-Bold").fontSize(6)
           .text(item.code, lx, ly + 2, { width: 10, align: "center" });
-        doc.fillColor("#475569").font("Helvetica").fontSize(6.5)
+        doc.fillColor("#000000").font("Helvetica").fontSize(6.5)
           .text(item.label, lx + 12, ly + 2, { width: 44 });
         lx += 58;
       }
@@ -299,10 +304,12 @@ export async function buildMonthlyCalendarPdf(
 
       for (const day of emp.days) {
         const style = STATUS_STYLES[day.status];
-        doc.rect(x, top, dayW, rowH).fill(style.bg);
+        const bg = day.late ? LATE_STYLE.bg : style.bg;
+        const fg = day.late ? LATE_STYLE.fg : style.fg;
+        doc.rect(x, top, dayW, rowH).fill(bg);
         doc.rect(x, top, dayW, rowH).stroke("#e2e8f0");
         if (style.code) {
-          doc.fillColor(style.fg).font("Helvetica-Bold").fontSize(5)
+          doc.fillColor(fg).font("Helvetica-Bold").fontSize(5)
             .text(style.code, x, top + 4, { width: dayW, align: "center" });
         }
         x += dayW;
