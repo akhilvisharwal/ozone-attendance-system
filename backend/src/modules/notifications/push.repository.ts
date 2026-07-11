@@ -136,7 +136,14 @@ export async function upsertDeviceToken(input: {
      RETURNING *`,
     [input.employeeId, input.token, input.platform ?? "web", input.userAgent ?? null]
   );
-  return result.rows[0];
+  const row = result.rows[0];
+  console.info("[fcm] token saved", {
+    employeeId: input.employeeId,
+    platform: input.platform ?? "web",
+    tokenSuffix: input.token.slice(-12),
+    deviceId: row.id,
+  });
+  return row;
 }
 
 export async function deleteDeviceToken(employeeId: string, token: string): Promise<boolean> {
@@ -169,7 +176,15 @@ export async function claimPushDelivery(notificationId: string): Promise<boolean
      RETURNING notification_id`,
     [notificationId]
   );
-  return (result.rowCount ?? 0) > 0;
+  const claimed = (result.rowCount ?? 0) > 0;
+  console.info("[fcm] delivery claim", { notificationId, claimed });
+  return claimed;
+}
+
+/** Undo a claim so a failed send can be retried later. */
+export async function releasePushDelivery(notificationId: string): Promise<void> {
+  await pool.query(`DELETE FROM push_delivery_log WHERE notification_id = $1`, [notificationId]);
+  console.info("[fcm] delivery claim released", { notificationId });
 }
 
 export function isCategoryEnabled(

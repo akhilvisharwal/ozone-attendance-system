@@ -1,4 +1,5 @@
 import { pool } from "../../config/db";
+import { deliverPushForNotification, deliverPushForNotifications } from "./fcm.service";
 
 export interface AppNotification {
   id: string;
@@ -13,20 +14,22 @@ export interface AppNotification {
 }
 
 function queuePush(notification: AppNotification): void {
-  void import("./fcm.service.js")
-    .then(({ deliverPushForNotification }) => deliverPushForNotification(notification))
-    .catch((err) => {
-      console.error("[fcm] Failed to queue push:", err instanceof Error ? err.message : err);
-    });
+  console.info("[fcm] queue push for notification", {
+    notificationId: notification.id,
+    employeeId: notification.employee_id,
+    type: notification.type,
+  });
+  void deliverPushForNotification(notification).catch((err) => {
+    console.error("[fcm] Failed to queue push:", err instanceof Error ? err.message : err);
+  });
 }
 
 function queuePushMany(notifications: AppNotification[]): void {
   if (notifications.length === 0) return;
-  void import("./fcm.service.js")
-    .then(({ deliverPushForNotifications }) => deliverPushForNotifications(notifications))
-    .catch((err) => {
-      console.error("[fcm] Failed to queue push batch:", err instanceof Error ? err.message : err);
-    });
+  console.info("[fcm] queue push batch", { count: notifications.length });
+  void deliverPushForNotifications(notifications).catch((err) => {
+    console.error("[fcm] Failed to queue push batch:", err instanceof Error ? err.message : err);
+  });
 }
 
 export async function createNotification(input: {

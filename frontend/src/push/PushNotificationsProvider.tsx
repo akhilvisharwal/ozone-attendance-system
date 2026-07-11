@@ -3,12 +3,13 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import * as pushApi from "@/api/push";
-import type { PushPreferences } from "@/api/push";
+import type { PushPreferences, PushStatus } from "@/api/push";
 import {
   disablePushNotifications,
   enablePushNotifications,
   getStoredPushToken,
 } from "@/lib/pushNotifications";
+import { extractErrorMessage } from "@/api/client";
 import { useToast } from "@/components/ui/Toast";
 
 interface PushContextValue {
@@ -16,12 +17,15 @@ interface PushContextValue {
   permission: NotificationPermission | "unsupported";
   pushEnabled: boolean;
   preferences: PushPreferences | null;
+  status: PushStatus | null;
   loading: boolean;
   refreshing: boolean;
   enablePush: () => Promise<boolean>;
   disablePush: () => Promise<void>;
   refreshPreferences: () => Promise<void>;
+  refreshStatus: () => Promise<void>;
   savePreferences: (prefs: Omit<PushPreferences, "securityAlerts" | "updatedAt">) => Promise<void>;
+  sendTestPush: () => Promise<boolean>;
 }
 
 const PushContext = createContext<PushContextValue | undefined>(undefined);
@@ -45,6 +49,7 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
   const [pushEnabled, setPushEnabled] = useState(false);
   const [preferences, setPreferences] = useState<PushPreferences | null>(null);
+  const [status, setStatus] = useState<PushStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -55,6 +60,20 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
     }
     const prefs = await pushApi.fetchPushPreferences();
     setPreferences(prefs);
+  }, [employee]);
+
+  const refreshStatus = useCallback(async () => {
+    if (!employee) {
+      setStatus(null);
+      return;
+    }
+    try {
+      const next = await pushApi.fetchPushStatus();
+      setStatus(next);
+      setPushEnabled(next.deviceCount > 0 && Notification.permission === "granted");
+    } catch (err) {
+      console.warn("[fcm] status refresh failed", err);
+    }
   }, [employee]);
 
   useEffect(() => {
@@ -93,6 +112,7 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
         if (!employee) {
           setPushEnabled(false);
           setPreferences(null);
+          setStatus(null);
           return;
         }
 
@@ -101,28 +121,20 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
 
         if (config.configured && Notification.permission === "granted") {
           const result = await enablePushNotifications((payload) => {
+            // OS notification + sound are handled inside enablePushNotifications.
             showToast(payload.title);
-            // Soft foreground banner via toast; OS sound only when a Notification is shown.
-            if (document.visibilityState !== "visible") {
-              void new Notification(payload.title, {
-                body: payload.body,
-                icon: "/android-chrome-192x192.png",
-                tag: payload.notificationId ? `ozone-${payload.notificationId}` : undefined,
-                silent: !payload.sound,
-                // Short soft vibration pattern — not continuous.
-                vibrate: payload.vibrate ? [80, 40, 80] : undefined,
-                data: { url: payload.linkPath },
-              } as NotificationOptions);
-            }
           });
           if (!cancelled) {
             setPushEnabled(result.enabled);
             if ("Notification" in window) setPermission(Notification.permission);
+            await refreshStatus();
           }
         } else {
           setPushEnabled(Boolean(getStoredPushToken()) && Notification.permission === "granted");
+          await refreshStatus();
         }
-      } catch {
+      } catch (err) {
+        console.error("[fcm] provider bootstrap failed", err);
         if (!cancelled) {
           setConfigured(false);
           setPushEnabled(false);
@@ -135,7 +147,7 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
     return () => {
       cancelled = true;
     };
-  }, [employee, isBootstrapping, refreshPreferences, showToast]);
+  }, [employee, isBootstrapping, refreshPreferences, refreshStatus, showToast]);
 
   const enablePush = useCallback(async () => {
     const result = await enablePushNotifications((payload) => {
@@ -147,13 +159,15 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
       showToast(result.reason);
     } else if (result.enabled) {
       showToast("Push notifications enabled.");
+      await refreshStatus();
     }
     return result.enabled;
-  }, [showToast]);
+  }, [refreshStatus, showToast]);
 
   const disablePush = useCallback(async () => {
     await disablePushNotifications();
     setPushEnabled(false);
+    setStatus((prev) => (prev ? { ...prev, deviceCount: 0, devices: [] } : prev));
     showToast("Push notifications disabled on this device.");
   }, [showToast]);
 
@@ -171,31 +185,59 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
     [showToast]
   );
 
+  const sendTestPush = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const outcome = await pushApi.sendTestPush();
+      console.info("[fcm] test push result", outcome);
+      if (outcome.ok) {
+        showToast("Test notification sent — check sound and tray.");
+      } else {
+        const firstError = outcome.result?.errors?.[0]?.message;
+        showToast(firstError || "Test notification failed. Check console / server logs.");
+      }
+      await refreshStatus();
+      return outcome.ok;
+    } catch (err) {
+      console.error("[fcm] test push error", err);
+      showToast(extractErrorMessage(err, "Test notification failed."));
+      return false;
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshStatus, showToast]);
+
   const value = useMemo(
     () => ({
       configured,
       permission,
       pushEnabled,
       preferences: preferences ?? (employee ? DEFAULT_PREFS : null),
+      status,
       loading,
       refreshing,
       enablePush,
       disablePush,
       refreshPreferences,
+      refreshStatus,
       savePreferences,
+      sendTestPush,
     }),
     [
       configured,
       permission,
       pushEnabled,
       preferences,
+      status,
       employee,
       loading,
       refreshing,
       enablePush,
       disablePush,
       refreshPreferences,
+      refreshStatus,
       savePreferences,
+      sendTestPush,
     ]
   );
 

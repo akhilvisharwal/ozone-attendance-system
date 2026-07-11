@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, BellOff, ShieldCheck } from "lucide-react";
+import { Bell, BellOff, ShieldCheck, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { SettingsSection, ToggleRow } from "@/components/settings/SettingsSection";
@@ -15,11 +15,13 @@ export function NotificationPreferencesSection() {
     permission,
     pushEnabled,
     preferences,
+    status,
     loading,
     refreshing,
     enablePush,
     disablePush,
     savePreferences,
+    sendTestPush,
   } = usePushNotifications();
 
   const [form, setForm] = useState<PrefForm | null>(null);
@@ -52,6 +54,15 @@ export function NotificationPreferencesSection() {
       setDirty(false);
     } catch (err) {
       setError(extractErrorMessage(err, "Could not save notification preferences."));
+    }
+  }
+
+  async function handleTest() {
+    setError(null);
+    try {
+      await sendTestPush();
+    } catch (err) {
+      setError(extractErrorMessage(err, "Could not send test notification."));
     }
   }
 
@@ -90,18 +101,39 @@ export function NotificationPreferencesSection() {
                 Works while the app is open, in the background, and when installed as a PWA. Uses your
                 device&apos;s default notification sound.
               </p>
+              {status && (
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Devices saved: {status.deviceCount}
+                  {status.devices[0]
+                    ? ` · token …${status.devices[0].tokenSuffix}`
+                    : " · no FCM token in database yet"}
+                  {status.projectId ? ` · project ${status.projectId}` : ""}
+                </p>
+              )}
             </div>
-            <div className="flex shrink-0 gap-2">
+            <div className="flex shrink-0 flex-wrap gap-2">
               {pushEnabled ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  icon={<BellOff className="h-4 w-4" />}
-                  onClick={() => void disablePush()}
-                >
-                  Disable
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    icon={<Send className="h-4 w-4" />}
+                    isLoading={refreshing}
+                    onClick={() => void handleTest()}
+                  >
+                    Send test
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    icon={<BellOff className="h-4 w-4" />}
+                    onClick={() => void disablePush()}
+                  >
+                    Disable
+                  </Button>
+                </>
               ) : (
                 <Button
                   type="button"

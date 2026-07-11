@@ -13,6 +13,8 @@ router.post("/push/devices", controller.registerPushDevice);
 router.delete("/push/devices", controller.unregisterPushDevice);
 router.get("/push/preferences", controller.getMyPushPreferences);
 router.put("/push/preferences", controller.updateMyPushPreferences);
+router.get("/push/status", controller.getMyPushStatus);
+router.post("/push/test", controller.sendTestPush);
 
 router.get("/", controller.listMyNotifications);
 router.get("/unread-count", controller.getUnreadCount);

@@ -65,3 +65,44 @@ export async function updatePushPreferences(
   );
   return res.data.preferences;
 }
+
+export type PushStatus = {
+  configured: boolean;
+  initialized: boolean;
+  projectId: string | null;
+  webProjectId: string | null;
+  deviceCount: number;
+  devices: Array<{
+    id: string;
+    platform: string;
+    tokenSuffix: string;
+    lastSeenAt: string;
+    createdAt: string;
+  }>;
+  preferences: PushPreferences;
+};
+
+export async function fetchPushStatus() {
+  const res = await apiClient.get<PushStatus>("/notifications/push/status");
+  return res.data;
+}
+
+export type TestPushResult = {
+  ok: boolean;
+  configured: boolean;
+  initialized: boolean;
+  projectId: string | null;
+  tokensFound: number;
+  notificationId: string | null;
+  result: {
+    tokenCount: number;
+    successCount: number;
+    failureCount: number;
+    errors: Array<{ tokenSuffix: string; code: string; message: string }>;
+  } | null;
+};
+
+export async function sendTestPush() {
+  const res = await apiClient.post<TestPushResult>("/notifications/push/test");
+  return res.data;
+}
