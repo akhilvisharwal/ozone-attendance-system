@@ -29,15 +29,25 @@ function usesCrossOriginCookies(): boolean {
   return process.env.CROSS_ORIGIN_COOKIES === "true";
 }
 
-function refreshCookieOptions() {
+function refreshCookieOptions(rememberMe = false) {
   const crossOrigin = env.isProduction && usesCrossOriginCookies();
-  return {
+  const options: {
+    httpOnly: boolean;
+    secure: boolean;
+    sameSite: "none" | "lax";
+    path: string;
+    maxAge?: number;
+  } = {
     httpOnly: true,
     secure: env.isProduction,
-    sameSite: (crossOrigin ? "none" : "lax") as "none" | "lax",
+    sameSite: crossOrigin ? "none" : "lax",
     path: "/api",
-    maxAge: parseDurationMs(env.jwtRefreshExpiresIn),
   };
+  // Session cookie by default — cleared when the browser closes. Remember Me can opt into persistence later.
+  if (rememberMe) {
+    options.maxAge = parseDurationMs(env.jwtRefreshExpiresIn);
+  }
+  return options;
 }
 
 function clearRefreshCookieOptions() {

@@ -27,6 +27,7 @@ import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AppLayout, type NavItem } from "@/components/layout/AppLayout";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { OfflineScreen } from "@/components/OfflineScreen";
 import { LoginPage } from "@/pages/LoginPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
@@ -140,10 +141,15 @@ function RootRedirect() {
 }
 
 function AuthenticatedApp() {
-  const { isLoading } = useAuth();
+  const { isBootstrapping, isOffline, isReconnecting } = useAuth();
 
-  // Full-page loader only while validating the session (initial load / F5).
-  if (isLoading) return <LoadingScreen />;
+  if (isBootstrapping) {
+    return <LoadingScreen label="Verifying your session…" />;
+  }
+
+  if (isOffline) {
+    return <OfflineScreen reconnecting={isReconnecting} />;
+  }
 
   return (
     <SettingsProvider>

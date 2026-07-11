@@ -107,6 +107,10 @@ export function isNetworkError(error: unknown): boolean {
   return axios.isAxiosError(error) && !error.response;
 }
 
+export function isAuthError(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 401;
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {

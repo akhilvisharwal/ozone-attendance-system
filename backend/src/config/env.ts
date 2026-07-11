@@ -65,6 +65,7 @@ export const env = {
 
   adminEmployeeId: process.env.ADMIN_EMPLOYEE_ID ?? "OZNADMIN",
   adminName: process.env.ADMIN_NAME ?? "System Administrator",
+  /** Administrator / company contact email (seed + company defaults). Not used for OTP delivery. */
   adminEmail: process.env.ADMIN_EMAIL ?? "info@ozoneairconhvac.com",
   adminPassword: process.env.ADMIN_PASSWORD ?? "ChangeMe@123",
 
@@ -73,12 +74,17 @@ export const env = {
   /** From address for transactional email (verified domain in Resend). */
   emailFrom: process.env.EMAIL_FROM ?? "noreply@app.ozoneairconhvac.com",
   /**
-   * Administrator inbox for OTP codes, password-reset links, and security notifications.
+   * Inbox for all security OTP codes and password-reset links.
+   * Required for OTP delivery — missing value is logged and OTP requests fail gracefully.
+   */
+  otpReceiverEmail: process.env.OTP_RECEIVER_EMAIL?.trim() ?? "",
+  /**
+   * Administrator inbox for operational (non-OTP) notification emails.
    * Falls back to ADMIN_EMAIL when unset.
    */
   notificationAdminEmail:
-    process.env.ADMIN_EMAIL?.trim() ||
     process.env.NOTIFICATION_ADMIN_EMAIL?.trim() ||
+    process.env.ADMIN_EMAIL?.trim() ||
     "info@ozoneairconhvac.com",
   /** Public app URL used in password-reset links (no trailing slash). */
   appUrl: normalizeClientUrl(

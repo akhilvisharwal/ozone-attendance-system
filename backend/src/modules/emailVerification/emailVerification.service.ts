@@ -5,7 +5,7 @@ import { env } from "../../config/env";
 import { ApiError } from "../../utils/errors";
 import { logAudit } from "../audit/audit.repository";
 import {
-  getAdminNotificationEmail,
+  getOtpReceiverEmail,
   isEmailConfigured,
   sendOtpEmail,
   sendPasswordResetEmail,
@@ -49,6 +49,16 @@ export function maskEmail(email: string): string {
   return `${visible}***@${domain}`;
 }
 
+function requireOtpReceiverEmail(): string {
+  const recipient = getOtpReceiverEmail();
+  if (!recipient) {
+    throw ApiError.internal(
+      "OTP delivery is not configured. Set OTP_RECEIVER_EMAIL on the server."
+    );
+  }
+  return recipient;
+}
+
 export async function requestOtpChallenge(input: {
   req: Request;
   purpose: OtpPurpose;
@@ -58,6 +68,8 @@ export async function requestOtpChallenge(input: {
   if (!isEmailConfigured() && env.isProduction) {
     throw ApiError.internal("Email verification is not configured. Set RESEND_API_KEY.");
   }
+
+  const recipient = requireOtpReceiverEmail();
 
   const since = new Date(Date.now() - OTP_RESEND_WINDOW_MS);
   const recent = await countRecentOtpRequests({
@@ -73,7 +85,6 @@ export async function requestOtpChallenge(input: {
 
   const code = generateOtpCode();
   const expiresAt = new Date(Date.now() + OTP_TTL_MS);
-  const recipient = getAdminNotificationEmail();
   const challenge = await createOtpChallenge({
     purpose: input.purpose,
     code,
@@ -247,7 +258,7 @@ export async function issueDatabaseResetAuthorization(input: {
 }): Promise<{ authorizationId: string; authorizationToken: string; expiresAt: string }> {
   const authorizationToken = generateResetToken();
   const expiresAt = new Date(Date.now() + RESET_AUTH_TTL_MS);
-  const recipient = getAdminNotificationEmail();
+  const recipient = requireOtpReceiverEmail();
   const challenge = await createOtpChallenge({
     purpose: "database_reset_authorization",
     code: authorizationToken,
@@ -285,8 +296,8 @@ export async function requestAdminPasswordReset(input: {
   employeeCode: string;
 }): Promise<{ sent: boolean; maskedEmail: string }> {
   const code = input.employeeCode.trim().toUpperCase();
-  const recipient = getAdminNotificationEmail();
-  const masked = maskEmail(recipient);
+  const recipient = getOtpReceiverEmail();
+  const masked = recipient ? maskEmail(recipient) : "***";
 
   if (code !== env.adminEmployeeId.toUpperCase()) {
     await logAudit(input.req, "auth.password_reset_requested", "employee", undefined, {
@@ -321,6 +332,12 @@ export async function requestAdminPasswordReset(input: {
 
   if (!isEmailConfigured() && env.isProduction) {
     throw ApiError.internal("Email is not configured. Set RESEND_API_KEY.");
+  }
+
+  if (!recipient) {
+    throw ApiError.internal(
+      "OTP delivery is not configured. Set OTP_RECEIVER_EMAIL on the server."
+    );
   }
 
   const token = generateResetToken();

@@ -13,8 +13,24 @@ export function isEmailConfigured(): boolean {
   return Boolean(env.resendApiKey.trim() && env.emailFrom.trim());
 }
 
+/** Operational (non-OTP) admin notification inbox — uses ADMIN_EMAIL / NOTIFICATION_ADMIN_EMAIL. */
 export function getAdminNotificationEmail(): string {
   return env.notificationAdminEmail.trim().toLowerCase();
+}
+
+/**
+ * Recipient for all security OTP and password-reset emails.
+ * Returns null (and logs a clear error) when OTP_RECEIVER_EMAIL is unset — does not crash the process.
+ */
+export function getOtpReceiverEmail(): string | null {
+  const email = env.otpReceiverEmail.trim().toLowerCase();
+  if (!email) {
+    console.error(
+      "[email-otp] OTP_RECEIVER_EMAIL is not configured. Security OTP and password-reset emails cannot be sent. Set OTP_RECEIVER_EMAIL in the server environment."
+    );
+    return null;
+  }
+  return email;
 }
 
 export type SendEmailInput = {

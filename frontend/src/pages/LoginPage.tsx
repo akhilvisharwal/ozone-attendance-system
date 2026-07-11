@@ -13,13 +13,17 @@ import { extractErrorMessage } from "@/api/client";
 import { firstAllowedAdminPath, normalizePermissions } from "@/auth/permissions";
 
 export function LoginPage() {
-  const { employee, login } = useAuth();
+  const { employee, isBootstrapping, login } = useAuth();
   const { homePath } = usePermissions();
   const navigate = useNavigate();
   const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  if (isBootstrapping) {
+    return null;
+  }
 
   if (employee) {
     return <Navigate to={homePath} replace />;

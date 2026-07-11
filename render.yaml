@@ -40,6 +40,8 @@ services:
         value: OZNADMIN
       - key: ADMIN_PASSWORD
         sync: false
+      - key: OTP_RECEIVER_EMAIL
+        sync: false
       - key: GEOCODE_PROVIDER
         value: google
       - key: GOOGLE_MAPS_API_KEY

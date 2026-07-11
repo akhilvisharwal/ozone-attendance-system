@@ -5,8 +5,12 @@ import { usePermissions } from "./usePermissions";
 import { ChangePasswordRequiredPage } from "@/pages/ChangePasswordRequiredPage";
 
 export function ProtectedRoute({ allowedRoles }: { allowedRoles: Role[] }) {
-  const { employee } = useAuth();
+  const { employee, isBootstrapping, isOffline } = useAuth();
   const { homePath } = usePermissions();
+
+  if (isBootstrapping || isOffline) {
+    return null;
+  }
 
   if (!employee) {
     return <Navigate to="/login" replace />;

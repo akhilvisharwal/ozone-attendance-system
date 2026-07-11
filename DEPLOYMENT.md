@@ -36,7 +36,8 @@ This app is a **split deployment**:
 | `ADMIN_PASSWORD` | Strong password used only for the one-time seed |
 | `RESEND_API_KEY` | Resend API key for OTP, password reset, and admin notification emails |
 | `EMAIL_FROM` | Verified sender, e.g. `noreply@app.ozoneairconhvac.com` |
-| `ADMIN_EMAIL` | Administrator inbox for OTPs/notifications, e.g. `info@ozoneairconhvac.com` |
+| `OTP_RECEIVER_EMAIL` | Inbox for **all** security OTP codes and password-reset links (required for OTP delivery) |
+| `ADMIN_EMAIL` | Administrator / company email used for seed and company defaults (not OTP delivery) |
 | `APP_URL` | Public frontend URL for password-reset links (defaults to `CLIENT_URL`) |
 | `GOOGLE_MAPS_API_KEY` | Google Geocoding on the server (Render). Also used for browser maps when no dedicated browser key is set. |
 | `GEOCODE_PROVIDER` | `google` (default in Blueprint). Falls back to Nominatim if Google key is missing. |
