@@ -15,33 +15,40 @@ let initialized = false;
 let initAttempted = false;
 let initProjectId: string | null = null;
 
-function readServiceAccount(): admin.ServiceAccount | Record<string, unknown> | null {
-  const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
-  if (rawJson) {
+function tryParseServiceAccountJson(rawJson: string): Record<string, unknown> | null {
+  const attempts = [
+    rawJson,
+    rawJson.startsWith('"') && rawJson.endsWith('"') ? (JSON.parse(rawJson) as string) : null,
+    rawJson.replace(/\r/g, "").replace(/\n/g, ""),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  for (const candidate of attempts) {
     try {
-      // Render/env paste sometimes wraps the whole JSON in extra quotes.
-      const normalized =
-        rawJson.startsWith('"') && rawJson.endsWith('"')
-          ? (JSON.parse(rawJson) as string)
-          : rawJson;
-      const parsed = JSON.parse(normalized) as Record<string, unknown> & {
+      const parsed = JSON.parse(candidate) as Record<string, unknown> & {
         private_key?: string;
-        project_id?: string;
-        projectId?: string;
-        client_email?: string;
-        clientEmail?: string;
       };
       if (parsed.private_key) {
         parsed.private_key = String(parsed.private_key).replace(/\\n/g, "\n");
       }
       return parsed;
-    } catch (err) {
+    } catch {
+      // Try next normalization strategy.
+    }
+  }
+  return null;
+}
+
+function readServiceAccount(): admin.ServiceAccount | Record<string, unknown> | null {
+  const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
+  if (rawJson) {
+    const parsed = tryParseServiceAccountJson(rawJson);
+    if (!parsed) {
       console.error(
-        "[fcm] FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON:",
-        err instanceof Error ? err.message : err
+        "[fcm] FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON. On Render, paste it as a single line or use FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY."
       );
       return null;
     }
+    return parsed;
   }
 
   const projectId = process.env.FIREBASE_PROJECT_ID?.trim();

@@ -122,10 +122,12 @@ export function NotificationPreferencesSection() {
           </Alert>
         )}
 
-        {configured && status && !status.initialized && (
+        {configured && status && status.initialized === false && (
           <Alert variant="error">
-            Firebase Admin SDK failed to start. Check <code>FIREBASE_SERVICE_ACCOUNT_JSON</code> on
-            Render (valid JSON, correct private key).
+            Firebase Admin SDK failed to start on the server. On Render, set{" "}
+            <code>FIREBASE_SERVICE_ACCOUNT_JSON</code> as a <strong>single-line</strong> JSON string,
+            or use <code>FIREBASE_PROJECT_ID</code> + <code>FIREBASE_CLIENT_EMAIL</code> +{" "}
+            <code>FIREBASE_PRIVATE_KEY</code> instead.
           </Alert>
         )}
 

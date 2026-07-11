@@ -40,6 +40,7 @@ export const deleteNotification = asyncHandler(async (req: Request, res: Respons
 
 export const getPushConfig = asyncHandler(async (_req: Request, res: Response) => {
   const config = getPublicFcmConfig();
+  const runtime = getFcmRuntimeStatus();
   res.json({
     configured: config.configured && Boolean(config.apiKey && config.projectId && config.vapidKey),
     firebase: {
@@ -49,6 +50,13 @@ export const getPushConfig = asyncHandler(async (_req: Request, res: Response) =
       messagingSenderId: config.messagingSenderId,
       appId: config.appId,
       vapidKey: config.vapidKey,
+    },
+    diagnostics: {
+      adminInitialized: runtime.initialized,
+      adminProjectId: runtime.adminProjectId,
+      webProjectId: runtime.webProjectId,
+      projectsMatch: runtime.projectsMatch,
+      appUrl: runtime.appUrl,
     },
   });
 });
