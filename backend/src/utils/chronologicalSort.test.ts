@@ -1,20 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { normalizeEmployeeName, employeeCreatedAtOrderBy, attendanceDateOrderBy } from "./chronologicalSort";
 
 describe("normalizeEmployeeName", () => {
   it("trims and collapses whitespace", () => {
-    expect(normalizeEmployeeName("  Jane   Doe  ")).toBe("Jane Doe");
+    assert.equal(normalizeEmployeeName("  Jane   Doe  "), "Jane Doe");
   });
 });
 
 describe("order helpers", () => {
   it("defaults employee order to oldest first", () => {
-    expect(employeeCreatedAtOrderBy()).toContain("ASC");
-    expect(employeeCreatedAtOrderBy("newest")).toContain("DESC");
+    assert.match(employeeCreatedAtOrderBy(), /ASC/);
+    assert.match(employeeCreatedAtOrderBy("newest"), /DESC/);
   });
 
   it("defaults attendance order to oldest first", () => {
-    expect(attendanceDateOrderBy()).toContain("ASC");
-    expect(attendanceDateOrderBy("newest")).toContain("DESC");
+    assert.match(attendanceDateOrderBy(), /ASC/);
+    assert.match(attendanceDateOrderBy("newest"), /DESC/);
   });
 });
