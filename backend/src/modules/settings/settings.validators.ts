@@ -487,6 +487,24 @@ export const cleanupConfirmSchema = z.object({
   otpCode: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
 });
 
+export const databaseResetPrepareSchema = z.object({
+  confirmation: z.literal("RESET", {
+    errorMap: () => ({ message: "Type RESET to confirm this irreversible action" }),
+  }),
+  otpChallengeId: z.string().uuid(),
+  otpCode: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
+});
+
+export const databaseResetExecuteSchema = z.object({
+  confirmation: z.literal("RESET", {
+    errorMap: () => ({ message: "Type RESET to confirm this irreversible action" }),
+  }),
+  authorizationId: z.string().uuid(),
+  authorizationToken: z.string().min(32).max(200),
+  otpChallengeId: z.string().uuid(),
+  otpCode: z.string().regex(/^\d{6}$/, "Verification code must be 6 digits"),
+});
+
 
 
 const schemaByCategory = {

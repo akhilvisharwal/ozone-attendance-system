@@ -166,8 +166,14 @@ export async function getEmployeeDependencies(id: string): Promise<DependencyCou
   return res.data.dependencies;
 }
 
-/** Admin: soft-delete an employee (historical records are preserved). */
-export async function deleteEmployee(id: string): Promise<{ employee: Employee; dependencies: DependencyCounts }> {
-  const res = await apiClient.delete<{ employee: Employee; dependencies: DependencyCounts }>(`/employees/${id}`);
+/** Admin: soft-delete an employee (historical records are preserved). Requires email OTP. */
+export async function deleteEmployee(
+  id: string,
+  otp: { otpChallengeId: string; otpCode: string }
+): Promise<{ employee: Employee; dependencies: DependencyCounts }> {
+  const res = await apiClient.delete<{ employee: Employee; dependencies: DependencyCounts }>(
+    `/employees/${id}`,
+    { data: otp }
+  );
   return res.data;
 }

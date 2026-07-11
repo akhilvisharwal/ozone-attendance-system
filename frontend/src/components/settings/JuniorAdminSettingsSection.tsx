@@ -7,10 +7,12 @@ import { Spinner, EmptyState } from "@/components/ui/Spinner";
 import { Modal, ModalFooterActions } from "@/components/ui/Modal";
 import { SettingsSection, ToggleRow } from "@/components/settings/SettingsSection";
 import { EmployeeAvatar } from "@/components/EmployeeAvatar";
+import { EmailOtpModal } from "@/components/EmailOtpModal";
 import * as juniorAdminsApi from "@/api/juniorAdmins";
 import { extractErrorMessage } from "@/api/client";
 import { useToast } from "@/components/ui/Toast";
 import type { Employee } from "@/types";
+import type { OtpPurpose } from "@/api/emailVerification";
 import {
   ADMIN_PERMISSION_KEYS,
   ADMIN_PERMISSION_META,
@@ -80,6 +82,7 @@ export function JuniorAdminSettingsSection() {
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const [passwordTarget, setPasswordTarget] = useState<Employee | null>(null);
   const [passwordForm, setPasswordForm] = useState({ password: "" });
+  const [otpPurpose, setOtpPurpose] = useState<OtpPurpose | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -150,24 +153,43 @@ export function JuniorAdminSettingsSection() {
           isActive: form.isActive,
         });
         setMessage(`Updated ${form.name.trim()}.`);
+        showToast("Settings saved successfully.");
+        setEditorOpen(false);
+        await load();
       } else {
-        const created = await juniorAdminsApi.createJuniorAdmin({
-          name: form.name.trim(),
-          employeeCode: form.employeeCode.trim() || undefined,
-          email: form.email.trim() || null,
-          phone: form.phone.trim() || null,
-          password: form.password.trim() || undefined,
-          permissions: form.permissions,
-          isActive: form.isActive,
-        });
-        setCredentials(created.credentials);
-        setMessage(`Created Junior Admin ${created.employee.name}.`);
+        // Create requires email OTP verification before the account is created.
+        setOtpPurpose("junior_admin_create");
       }
+    } catch (err) {
+      setError(extractErrorMessage(err, "Could not save Junior Admin."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreateOtpVerified(otp: { otpChallengeId: string; otpCode: string }) {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const created = await juniorAdminsApi.createJuniorAdmin({
+        name: form.name.trim(),
+        employeeCode: form.employeeCode.trim() || undefined,
+        email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
+        password: form.password.trim() || undefined,
+        permissions: form.permissions,
+        isActive: form.isActive,
+        ...otp,
+      });
+      setCredentials(created.credentials);
+      setMessage(`Created Junior Admin ${created.employee.name}.`);
       showToast("Settings saved successfully.");
+      setOtpPurpose(null);
       setEditorOpen(false);
       await load();
     } catch (err) {
-      setError(extractErrorMessage(err, "Could not save Junior Admin."));
+      throw err;
     } finally {
       setSaving(false);
     }
@@ -204,19 +226,36 @@ export function JuniorAdminSettingsSection() {
     }
   }
 
-  async function handleDelete() {
+  function requestDeleteOtp() {
+    if (!deleteTarget) return;
+    setError(null);
+    setOtpPurpose("junior_admin_delete");
+  }
+
+  async function handleDeleteOtpVerified(otp: { otpChallengeId: string; otpCode: string }) {
     if (!deleteTarget) return;
     setSaving(true);
     setError(null);
     try {
-      await juniorAdminsApi.deleteJuniorAdmin(deleteTarget.id);
+      await juniorAdminsApi.deleteJuniorAdmin(deleteTarget.id, otp);
       setMessage(`Deleted ${deleteTarget.name}.`);
       setDeleteTarget(null);
+      setOtpPurpose(null);
       await load();
     } catch (err) {
-      setError(extractErrorMessage(err, "Could not delete Junior Admin."));
+      throw err;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleOtpVerified(otp: { otpChallengeId: string; otpCode: string }) {
+    if (otpPurpose === "junior_admin_create") {
+      await handleCreateOtpVerified(otp);
+      return;
+    }
+    if (otpPurpose === "junior_admin_delete") {
+      await handleDeleteOtpVerified(otp);
     }
   }
 
@@ -437,14 +476,14 @@ export function JuniorAdminSettingsSection() {
               Cancel
             </Button>
             <Button type="button" isLoading={saving} onClick={() => void handleSave()}>
-              Create
+              Continue
             </Button>
           </ModalFooterActions>
         }
       >
         <p className="text-sm text-slate-600">
           A new account will be created for <strong>{form.name.trim() || "this user"}</strong> with the
-          selected permissions.
+          selected permissions. You will need to enter an email verification code to complete this action.
         </p>
       </Modal>
 
@@ -508,7 +547,7 @@ export function JuniorAdminSettingsSection() {
       </Modal>
 
       <Modal
-        open={Boolean(deleteTarget)}
+        open={Boolean(deleteTarget) && otpPurpose !== "junior_admin_delete"}
         onClose={() => setDeleteTarget(null)}
         title="Delete Junior Admin"
         description="This permanently deactivates the account and revokes all sessions."
@@ -517,16 +556,24 @@ export function JuniorAdminSettingsSection() {
             <Button type="button" variant="secondary" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button type="button" variant="danger" isLoading={saving} onClick={() => void handleDelete()}>
-              Delete
+            <Button type="button" variant="danger" isLoading={saving} onClick={requestDeleteOtp}>
+              Continue
             </Button>
           </ModalFooterActions>
         }
       >
         <p className="text-sm text-slate-600">
-          Delete <strong>{deleteTarget?.name}</strong> ({deleteTarget?.employee_code})?
+          Delete <strong>{deleteTarget?.name}</strong> ({deleteTarget?.employee_code})? You will need to
+          enter an email verification code to complete this action.
         </p>
       </Modal>
+
+      <EmailOtpModal
+        open={otpPurpose === "junior_admin_create" || otpPurpose === "junior_admin_delete"}
+        purpose={otpPurpose}
+        onClose={() => setOtpPurpose(null)}
+        onVerified={handleOtpVerified}
+      />
     </div>
   );
 }

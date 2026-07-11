@@ -51,7 +51,7 @@ export function DataCleanupConfirmModal(props: LegacyProps | CategoryProps) {
                   `${category.fileCount.toLocaleString()} file${category.fileCount === 1 ? "" : "s"}`,
                 ]
               : []),
-            `Storage used: ${category.totalLabel}`,
+            `Storage to be permanently freed: ${category.totalLabel}`,
           ]
         : [];
   const affectedRecords =
@@ -129,6 +129,10 @@ export function DataCleanupConfirmModal(props: LegacyProps | CategoryProps) {
           </div>
           <div className="min-w-0 space-y-2">
             <p className="text-sm leading-snug text-slate-700">{description}</p>
+            <p className="text-sm font-semibold text-red-800">
+              This action permanently deletes the selected data from the database and cannot be
+              undone.
+            </p>
             <p className="text-sm font-semibold text-red-700">
               {affectedRecords.toLocaleString()} record{affectedRecords === 1 ? "" : "s"}
               {category && category.fileCount > 0 &&
@@ -137,7 +141,7 @@ export function DataCleanupConfirmModal(props: LegacyProps | CategoryProps) {
             </p>
             {category && category.totalBytes > 0 && (
               <p className="text-sm font-medium text-slate-800">
-                Storage used: {category.totalLabel}
+                Storage to be permanently freed: {category.totalLabel}
                 {(category.databaseBytes > 0 || category.fileBytes > 0) && (
                   <>
                     {" "}
@@ -156,8 +160,8 @@ export function DataCleanupConfirmModal(props: LegacyProps | CategoryProps) {
             )}
             {category && (
               <p className="text-xs text-slate-500">
-                PostgreSQL rows and linked upload files are deleted together. Live database and
-                storage statistics refresh immediately after cleanup.
+                PostgreSQL rows and linked upload files are permanently deleted together. Live
+                database and storage statistics refresh immediately after deletion.
               </p>
             )}
           </div>

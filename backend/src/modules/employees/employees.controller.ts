@@ -11,6 +11,8 @@ import {
   resetPasswordSchema,
   weeklyOffSchema,
 } from "./employees.validators";
+import { otpFieldsSchema } from "../emailVerification/emailVerification.validators";
+import { requireVerifiedOtp } from "../emailVerification/emailVerification.service";
 import * as repo from "./employees.repository";
 import * as designationsRepo from "./designations.repository";
 import { getSettings } from "../settings/settings.cache";
@@ -321,6 +323,15 @@ export const getEmployeeDependencies = asyncHandler(async (req: Request, res: Re
 });
 
 export const deleteEmployee = asyncHandler(async (req: Request, res: Response) => {
+  const otp = otpFieldsSchema.parse(req.body ?? {});
+
+  await requireVerifiedOtp({
+    req,
+    purpose: "employee_delete",
+    otpChallengeId: otp.otpChallengeId,
+    otpCode: otp.otpCode,
+  });
+
   const employee = await repo.findEmployeeById(req.params.id);
   if (!employee || employee.role !== "employee") throw ApiError.notFound("Employee not found");
 
@@ -328,7 +339,10 @@ export const deleteEmployee = asyncHandler(async (req: Request, res: Response) =
   const deleted = await repo.softDeleteEmployee(employee.id);
   if (!deleted) throw ApiError.notFound("Employee not found");
 
-  await logAudit(req, "employee.delete", "employee", employee.id, { dependencies });
+  await logAudit(req, "employee.delete", "employee", employee.id, {
+    dependencies,
+    verifiedByEmailOtp: true,
+  });
   res.json({ employee: deleted, dependencies });
 });
 

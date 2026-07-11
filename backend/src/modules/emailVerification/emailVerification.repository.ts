@@ -6,15 +6,33 @@ export const OTP_PURPOSES = [
   "database_cleanup",
   "company_email_change",
   "company_phone_change",
+  "junior_admin_create",
+  "junior_admin_delete",
+  "employee_delete",
+  "database_reset_step1",
+  "database_reset_step2",
+  /** Server-issued ticket after step-1 OTP — not requestable by clients. */
+  "database_reset_authorization",
 ] as const;
 
 export type OtpPurpose = (typeof OTP_PURPOSES)[number];
+
+/** Purposes clients may request via POST /otp/request. */
+export const REQUESTABLE_OTP_PURPOSES = OTP_PURPOSES.filter(
+  (purpose) => purpose !== "database_reset_authorization"
+) as Exclude<OtpPurpose, "database_reset_authorization">[];
 
 export const OTP_PURPOSE_LABELS: Record<OtpPurpose, string> = {
   admin_password_change: "Change System Admin password",
   database_cleanup: "Delete database records / cleanup",
   company_email_change: "Change company email address",
   company_phone_change: "Change company mobile number",
+  junior_admin_create: "Create Junior Admin account",
+  junior_admin_delete: "Delete Junior Admin account",
+  employee_delete: "Delete employee account",
+  database_reset_step1: "Reset entire database (step 1 of 2)",
+  database_reset_step2: "Reset entire database (step 2 of 2)",
+  database_reset_authorization: "Database reset authorization ticket",
 };
 
 export type EmailOtpChallenge = {

@@ -25,6 +25,8 @@ router.get("/backup/status", requireMasterAdmin(), controller.getBackupStatus);
 router.get("/backup/storage", requireMasterAdmin(), controller.getStorageStatus);
 router.get("/backup/cleanup/options", requireMasterAdmin(), controller.getCleanupOptions);
 router.post("/backup/cleanup", requireMasterAdmin(), controller.cleanupData);
+router.post("/backup/reset/prepare", requireMasterAdmin(), controller.prepareDatabaseReset);
+router.post("/backup/reset", requireMasterAdmin(), controller.executeFullDatabaseReset);
 router.post("/backup/run", requireMasterAdmin(), controller.runBackupNow);
 router.post(
   "/backup/restore",

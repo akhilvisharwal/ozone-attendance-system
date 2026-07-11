@@ -235,6 +235,51 @@ export async function requireVerifiedOtp(input: {
   });
 }
 
+const RESET_AUTH_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * After step-1 OTP succeeds, issue a short-lived authorization ticket required for step-2 execute.
+ * The ticket is stored as a hashed OTP challenge (never emailed).
+ */
+export async function issueDatabaseResetAuthorization(input: {
+  req: Request;
+  actorId: string;
+}): Promise<{ authorizationId: string; authorizationToken: string; expiresAt: string }> {
+  const authorizationToken = generateResetToken();
+  const expiresAt = new Date(Date.now() + RESET_AUTH_TTL_MS);
+  const recipient = getAdminNotificationEmail();
+  const challenge = await createOtpChallenge({
+    purpose: "database_reset_authorization",
+    code: authorizationToken,
+    recipientEmail: recipient,
+    actorId: input.actorId,
+    expiresAt,
+    payload: { kind: "database_reset_authorization" },
+    maxAttempts: 3,
+  });
+
+  return {
+    authorizationId: challenge.id,
+    authorizationToken,
+    expiresAt: expiresAt.toISOString(),
+  };
+}
+
+export async function consumeDatabaseResetAuthorization(input: {
+  req: Request;
+  authorizationId: string;
+  authorizationToken: string;
+  actorId: string;
+}): Promise<void> {
+  await verifyOtpChallenge({
+    req: input.req,
+    challengeId: input.authorizationId,
+    code: input.authorizationToken,
+    purpose: "database_reset_authorization",
+    actorId: input.actorId,
+  });
+}
+
 export async function requestAdminPasswordReset(input: {
   req: Request;
   employeeCode: string;

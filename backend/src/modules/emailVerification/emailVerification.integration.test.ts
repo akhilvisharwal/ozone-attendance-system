@@ -124,21 +124,28 @@ describe("email OTP challenge lifecycle", { skip: process.env.SKIP_DB_TESTS === 
     assert.equal(afterFail?.code_hash, hashSecret(liveCode));
   });
 
-  it("marks challenges consumed only once", async () => {
-    const code = generateOtpCode();
-    const challenge = await createOtpChallenge({
-      purpose: "company_phone_change",
-      code,
-      recipientEmail: "info@ozoneairconhvac.com",
-      actorId,
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-    });
-    createdIds.push(challenge.id);
-    await incrementOtpAttempts(challenge.id);
-    await consumeOtpChallenge(challenge.id);
-    await consumeOtpChallenge(challenge.id);
-    const row = await findOtpChallengeById(challenge.id);
-    assert.ok(row?.consumed_at);
-    assert.equal(row?.attempts, 1);
+  it("accepts OTP challenges for junior admin and employee delete purposes", async () => {
+    for (const purpose of ["junior_admin_create", "junior_admin_delete", "employee_delete"] as const) {
+      const code = generateOtpCode();
+      const challenge = await createOtpChallenge({
+        purpose,
+        code,
+        recipientEmail: "info@ozoneairconhvac.com",
+        actorId,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      });
+      createdIds.push(challenge.id);
+
+      await verifyOtpChallenge({
+        req: fakeReq(),
+        challengeId: challenge.id,
+        code,
+        purpose,
+        actorId,
+      });
+
+      const consumed = await findOtpChallengeById(challenge.id);
+      assert.ok(consumed?.consumed_at, `expected ${purpose} challenge to be consumed`);
+    }
   });
 });

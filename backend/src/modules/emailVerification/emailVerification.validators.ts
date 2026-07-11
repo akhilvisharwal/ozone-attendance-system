@@ -1,8 +1,13 @@
 import { z } from "zod";
-import { OTP_PURPOSES } from "./emailVerification.repository";
+import { REQUESTABLE_OTP_PURPOSES } from "./emailVerification.repository";
 
 export const requestOtpSchema = z.object({
-  purpose: z.enum(OTP_PURPOSES),
+  purpose: z.enum(
+    REQUESTABLE_OTP_PURPOSES as [
+      (typeof REQUESTABLE_OTP_PURPOSES)[number],
+      ...(typeof REQUESTABLE_OTP_PURPOSES)[number][],
+    ]
+  ),
 });
 
 export const otpFieldsSchema = z.object({

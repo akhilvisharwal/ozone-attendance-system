@@ -16,6 +16,7 @@ import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import { ResponsiveTable, type Column } from "@/components/ui/ResponsiveTable";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { EmployeeAvatar } from "@/components/EmployeeAvatar";
+import { EmailOtpModal } from "@/components/EmailOtpModal";
 import { ProfilePhotoCropModal } from "@/components/ProfilePhotoCropModal";
 import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from "@/utils/profilePhoto";
 import * as employeesApi from "@/api/employees";
@@ -1236,6 +1237,7 @@ function ConfirmDeleteEmployeeModal({
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
+  const [otpOpen, setOtpOpen] = useState(false);
 
   useEffect(() => {
     employeesApi.getEmployeeDependencies(employee.id)
@@ -1244,14 +1246,20 @@ function ConfirmDeleteEmployeeModal({
       .finally(() => setChecking(false));
   }, [employee.id]);
 
-  async function handleConfirm() {
+  function handleConfirm() {
     setError(null);
+    setOtpOpen(true);
+  }
+
+  async function handleOtpVerified(otp: { otpChallengeId: string; otpCode: string }) {
     setLoading(true);
+    setError(null);
     try {
-      await employeesApi.deleteEmployee(employee.id);
+      await employeesApi.deleteEmployee(employee.id, otp);
+      setOtpOpen(false);
       onDeleted(employee.id);
     } catch (err) {
-      setError(extractErrorMessage(err, "Could not delete employee"));
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -1260,56 +1268,69 @@ function ConfirmDeleteEmployeeModal({
   const hasRecords = deps && (deps.attendance > 0 || deps.leaves > 0 || deps.tasks > 0);
 
   return (
-    <Modal open onClose={onClose} title="Delete Employee">
-      <div className="flex flex-col gap-4">
-        {error && <Alert variant="error">{error}</Alert>}
+    <>
+      <Modal open={!otpOpen} onClose={onClose} title="Delete Employee">
+        <div className="flex flex-col gap-4">
+          {error && <Alert variant="error">{error}</Alert>}
 
-        <Alert variant="error">
-          Are you sure you want to delete <strong>{employee.name}</strong>? This removes the account
-          from all active lists, dropdowns, and statistics.
-        </Alert>
+          <Alert variant="error">
+            Are you sure you want to delete <strong>{employee.name}</strong>? This removes the account
+            from all active lists, dropdowns, and statistics.
+          </Alert>
 
-        <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-          <p><span className="font-medium">Employee:</span> {employee.name}</p>
-          <p><span className="font-medium">ID:</span> {employee.employee_code}</p>
-        </div>
-
-        {checking ? (
-          <div className="flex justify-center py-2"><Spinner /></div>
-        ) : hasRecords ? (
-          <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <div>
-              <p className="font-medium">Related records will be preserved</p>
-              <p className="mt-0.5">
-                This employee has{" "}
-                {[
-                  deps!.attendance ? `${deps!.attendance} attendance record${deps!.attendance === 1 ? "" : "s"}` : null,
-                  deps!.leaves ? `${deps!.leaves} leave request${deps!.leaves === 1 ? "" : "s"}` : null,
-                  deps!.tasks ? `${deps!.tasks} task${deps!.tasks === 1 ? "" : "s"}` : null,
-                ].filter(Boolean).join(", ")}
-                . To protect historical reports, the account is soft-deleted — these records are kept
-                but the employee can no longer log in and won't appear anywhere.
-              </p>
-            </div>
+          <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+            <p><span className="font-medium">Employee:</span> {employee.name}</p>
+            <p><span className="font-medium">ID:</span> {employee.employee_code}</p>
           </div>
-        ) : (
-          <p className="text-sm text-slate-500">This employee has no related records.</p>
-        )}
 
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button
-            isLoading={loading}
-            disabled={checking}
-            onClick={handleConfirm}
-            className="bg-red-600 hover:bg-red-700 text-white"
-            icon={<Trash2 className="h-4 w-4" />}
-          >
-            Delete Employee
-          </Button>
+          {checking ? (
+            <div className="flex justify-center py-2"><Spinner /></div>
+          ) : hasRecords ? (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <div>
+                <p className="font-medium">Related records will be preserved</p>
+                <p className="mt-0.5">
+                  This employee has{" "}
+                  {[
+                    deps!.attendance ? `${deps!.attendance} attendance record${deps!.attendance === 1 ? "" : "s"}` : null,
+                    deps!.leaves ? `${deps!.leaves} leave request${deps!.leaves === 1 ? "" : "s"}` : null,
+                    deps!.tasks ? `${deps!.tasks} task${deps!.tasks === 1 ? "" : "s"}` : null,
+                  ].filter(Boolean).join(", ")}
+                  . To protect historical reports, the account is soft-deleted — these records are kept
+                  but the employee can no longer log in and won't appear anywhere.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">This employee has no related records.</p>
+          )}
+
+          <p className="text-sm text-slate-500">
+            You will need to enter an email verification code sent to the System Administrator to complete
+            this deletion.
+          </p>
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button
+              disabled={checking || loading}
+              onClick={handleConfirm}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              icon={<Trash2 className="h-4 w-4" />}
+            >
+              Continue
+            </Button>
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+
+      <EmailOtpModal
+        open={otpOpen}
+        purpose="employee_delete"
+        onClose={() => setOtpOpen(false)}
+        onVerified={handleOtpVerified}
+      />
+    </>
   );
 }

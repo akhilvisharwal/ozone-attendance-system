@@ -9,11 +9,13 @@ import { revokeAllRefreshTokens } from "../auth/auth.repository";
 import { updateEmployeePassword, findEmployeeByCode } from "../employees/employees.repository";
 import {
   createJuniorAdminSchema,
+  deleteJuniorAdminSchema,
   resetJuniorAdminPasswordSchema,
   updateJuniorAdminSchema,
 } from "./juniorAdmins.validators";
 import * as repo from "./juniorAdmins.repository";
 import { notifyAdminEvent } from "../../services/email/adminNotifications";
+import { requireVerifiedOtp } from "../emailVerification/emailVerification.service";
 
 export const listJuniorAdmins = asyncHandler(async (_req: Request, res: Response) => {
   const items = await repo.listJuniorAdmins();
@@ -28,6 +30,14 @@ export const getJuniorAdmin = asyncHandler(async (req: Request, res: Response) =
 
 export const createJuniorAdmin = asyncHandler(async (req: Request, res: Response) => {
   const input = createJuniorAdminSchema.parse(req.body);
+
+  await requireVerifiedOtp({
+    req,
+    purpose: "junior_admin_create",
+    otpChallengeId: input.otpChallengeId,
+    otpCode: input.otpCode,
+  });
+
   const employeeCode = (input.employeeCode ?? (await repo.nextJuniorAdminCode())).toUpperCase();
 
   const existing = await findEmployeeByCode(employeeCode);
@@ -57,6 +67,7 @@ export const createJuniorAdmin = asyncHandler(async (req: Request, res: Response
     employeeCode,
     name: employee.name,
     permissions,
+    verifiedByEmailOtp: true,
   });
 
   void notifyAdminEvent({
@@ -170,6 +181,15 @@ export const resetJuniorAdminPassword = asyncHandler(async (req: Request, res: R
 });
 
 export const deleteJuniorAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const input = deleteJuniorAdminSchema.parse(req.body ?? {});
+
+  await requireVerifiedOtp({
+    req,
+    purpose: "junior_admin_delete",
+    otpChallengeId: input.otpChallengeId,
+    otpCode: input.otpCode,
+  });
+
   const employee = await repo.softDeleteJuniorAdmin(req.params.id);
   if (!employee) throw ApiError.notFound("Junior Admin not found");
 
@@ -177,6 +197,7 @@ export const deleteJuniorAdmin = asyncHandler(async (req: Request, res: Response
   await logAudit(req, "junior_admin.delete", "employee", employee.id, {
     employeeCode: employee.employee_code,
     name: employee.name,
+    verifiedByEmailOtp: true,
   });
 
   res.json({ employee, message: "Junior Admin deleted" });

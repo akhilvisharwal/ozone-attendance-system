@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ADMIN_PERMISSION_KEYS } from "../auth/permissions";
+import { otpFieldsSchema } from "../emailVerification/emailVerification.validators";
 
 const permissionsSchema = z.object(
   Object.fromEntries(ADMIN_PERMISSION_KEYS.map((key) => [key, z.boolean()])) as Record<
@@ -8,22 +9,26 @@ const permissionsSchema = z.object(
   >
 );
 
-export const createJuniorAdminSchema = z.object({
-  name: z.string().trim().min(2).max(150),
-  employeeCode: z
-    .string()
-    .trim()
-    .min(2)
-    .max(20)
-    .transform((v) => v.toUpperCase())
-    .optional(),
-  email: z.string().trim().email().max(150).optional().nullable(),
-  phone: z.string().trim().max(20).optional().nullable(),
-  password: z.string().min(6).max(128).optional(),
-  permissions: permissionsSchema.optional(),
-  isActive: z.boolean().optional(),
-  mustChangePassword: z.boolean().optional(),
-});
+export const createJuniorAdminSchema = z
+  .object({
+    name: z.string().trim().min(2).max(150),
+    employeeCode: z
+      .string()
+      .trim()
+      .min(2)
+      .max(20)
+      .transform((v) => v.toUpperCase())
+      .optional(),
+    email: z.string().trim().email().max(150).optional().nullable(),
+    phone: z.string().trim().max(20).optional().nullable(),
+    password: z.string().min(6).max(128).optional(),
+    permissions: permissionsSchema.optional(),
+    isActive: z.boolean().optional(),
+    mustChangePassword: z.boolean().optional(),
+  })
+  .merge(otpFieldsSchema);
+
+export const deleteJuniorAdminSchema = otpFieldsSchema;
 
 export const updateJuniorAdminSchema = z.object({
   name: z.string().trim().min(2).max(150).optional(),

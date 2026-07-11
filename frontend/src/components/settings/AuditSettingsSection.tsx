@@ -594,7 +594,7 @@ export function AuditSettingsSection() {
       <DataCleanupConfirmModal
         open={clearOpen}
         title="Clear all audit logs"
-        description="This permanently deletes every audit log entry. This action cannot be undone. Type DELETE to confirm."
+        description="This action permanently deletes the selected data from the database and cannot be undone. Every audit log entry will be removed."
         details={[
           `${totalAll.toLocaleString()} audit log entr${totalAll === 1 ? "y" : "ies"} will be removed`,
           "Application data (employees, attendance, settings) is not affected",

@@ -25,6 +25,28 @@ const PURPOSE_COPY: Record<OtpPurpose, { title: string; description: string }> =
     title: "Verify company mobile change",
     description: "Enter the 6-digit code sent to the administrator email to update the company mobile number.",
   },
+  junior_admin_create: {
+    title: "Verify Junior Admin creation",
+    description: "Enter the 6-digit code sent to the administrator email to create this Junior Admin account.",
+  },
+  junior_admin_delete: {
+    title: "Verify Junior Admin deletion",
+    description: "Enter the 6-digit code sent to the administrator email to delete this Junior Admin account.",
+  },
+  employee_delete: {
+    title: "Verify employee deletion",
+    description: "Enter the 6-digit code sent to the administrator email to delete this employee account.",
+  },
+  database_reset_step1: {
+    title: "Verify database reset — step 1 of 2",
+    description:
+      "Enter the first 6-digit code sent to the administrator email. A second verification will be required before anything is deleted.",
+  },
+  database_reset_step2: {
+    title: "Verify database reset — step 2 of 2",
+    description:
+      "Enter the second 6-digit code sent to the administrator email to permanently reset the database. This cannot be undone.",
+  },
 };
 
 export function EmailOtpModal({

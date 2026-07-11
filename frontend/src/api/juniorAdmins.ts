@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 import type { Employee } from "@/types";
 import type { AdminPermissions } from "@/auth/permissions";
+import type { EmailOtpPayload } from "@/api/emailVerification";
 
 export interface JuniorAdminCredentials {
   employeeId: string;
@@ -26,7 +27,7 @@ export async function createJuniorAdmin(payload: {
   permissions?: AdminPermissions;
   isActive?: boolean;
   mustChangePassword?: boolean;
-}) {
+} & EmailOtpPayload) {
   const res = await apiClient.post<{ employee: Employee; credentials: JuniorAdminCredentials }>(
     "/junior-admins",
     payload
@@ -67,7 +68,10 @@ export async function resetJuniorAdminPassword(
   return res.data;
 }
 
-export async function deleteJuniorAdmin(id: string) {
-  const res = await apiClient.delete<{ employee: Employee; message: string }>(`/junior-admins/${id}`);
+export async function deleteJuniorAdmin(id: string, otp: EmailOtpPayload) {
+  const res = await apiClient.delete<{ employee: Employee; message: string }>(
+    `/junior-admins/${id}`,
+    { data: otp }
+  );
   return res.data;
 }

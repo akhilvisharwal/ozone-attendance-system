@@ -47,6 +47,7 @@ import {
   executeStorageCleanup,
   getCleanupCenterSummary,
 } from "./settings.storageCleanup";
+import { executeDatabaseReset } from "./settings.databaseReset";
 import {
   auditClearSchema,
   auditExportFormatSchema,
@@ -54,6 +55,8 @@ import {
   categoryParamSchema,
   changePasswordSchema,
   cleanupConfirmSchema,
+  databaseResetExecuteSchema,
+  databaseResetPrepareSchema,
   parseCategorySettings,
 } from "./settings.validators";
 import {
@@ -61,7 +64,11 @@ import {
   prefixesDiffer,
   type PrefixMigrationResult,
 } from "../../utils/employeeIdPrefixMigration";
-import { requireVerifiedOtp } from "../emailVerification/emailVerification.service";
+import {
+  consumeDatabaseResetAuthorization,
+  issueDatabaseResetAuthorization,
+  requireVerifiedOtp,
+} from "../emailVerification/emailVerification.service";
 import { pool } from "../../config/db";
 import bcrypt from "bcryptjs";
 
@@ -325,6 +332,86 @@ export const cleanupData = asyncHandler(async (req: Request, res: Response) => {
     databaseSizeRecoveredBytes: result.databaseSizeRecoveredBytes,
     uploadedFilesRecoveredBytes: result.uploadedFilesRecoveredBytes,
     details: result.details,
+  });
+
+  res.json({
+    success: true,
+    result,
+    status,
+    storage,
+    cleanup,
+    backup: getSettings().backup,
+  });
+});
+
+export const prepareDatabaseReset = asyncHandler(async (req: Request, res: Response) => {
+  const input = databaseResetPrepareSchema.parse(req.body);
+
+  await requireVerifiedOtp({
+    req,
+    purpose: "database_reset_step1",
+    otpChallengeId: input.otpChallengeId,
+    otpCode: input.otpCode,
+  });
+
+  const authorization = await issueDatabaseResetAuthorization({
+    req,
+    actorId: req.user!.id,
+  });
+
+  await logAudit(req, "settings.database_reset_started", "settings", undefined, {
+    phase: "step1_verified",
+    authorizationId: authorization.authorizationId,
+    expiresAt: authorization.expiresAt,
+  });
+
+  res.json({
+    success: true,
+    message: "First verification complete. Enter the second email code to finish the reset.",
+    ...authorization,
+  });
+});
+
+export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: Response) => {
+  const input = databaseResetExecuteSchema.parse(req.body);
+
+  await consumeDatabaseResetAuthorization({
+    req,
+    authorizationId: input.authorizationId,
+    authorizationToken: input.authorizationToken,
+    actorId: req.user!.id,
+  });
+
+  await requireVerifiedOtp({
+    req,
+    purpose: "database_reset_step2",
+    otpChallengeId: input.otpChallengeId,
+    otpCode: input.otpCode,
+  });
+
+  await logAudit(req, "settings.database_reset_started", "settings", undefined, {
+    phase: "step2_verified_executing",
+    authorizationId: input.authorizationId,
+    verifiedByDualEmailOtp: true,
+  });
+
+  const result = await executeDatabaseReset();
+
+  const [status, storage, cleanup] = await Promise.all([
+    backupService.getDatabaseStatus(),
+    getStorageBreakdown(),
+    getCleanupCenterSummary(),
+  ]);
+
+  await logAudit(req, "settings.database_reset_completed", "settings", undefined, {
+    verifiedByDualEmailOtp: true,
+    preservedAdminCode: result.preservedAdminCode,
+    deletedRecords: result.deletedRecords,
+    deletedFiles: result.deletedFiles,
+    deletedEmployees: result.deletedEmployees,
+    databaseSizeRecoveredBytes: result.databaseSizeRecoveredBytes,
+    uploadedFilesRecoveredBytes: result.uploadedFilesRecoveredBytes,
+    tableCounts: result.tableCounts,
   });
 
   res.json({

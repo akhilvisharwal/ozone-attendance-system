@@ -327,6 +327,16 @@ const CATALOG: Record<string, AuditActionMeta> = {
     module: "Database",
     actionType: "Cleanup",
   },
+  "settings.database_reset_started": {
+    label: "Database reset started",
+    module: "Database",
+    actionType: "Cleanup",
+  },
+  "settings.database_reset_completed": {
+    label: "Database reset completed",
+    module: "Database",
+    actionType: "Cleanup",
+  },
   "settings.audit_clear": {
     label: "Audit logs cleared",
     module: "Database",

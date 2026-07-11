@@ -4,7 +4,17 @@ export type OtpPurpose =
   | "admin_password_change"
   | "database_cleanup"
   | "company_email_change"
-  | "company_phone_change";
+  | "company_phone_change"
+  | "junior_admin_create"
+  | "junior_admin_delete"
+  | "employee_delete"
+  | "database_reset_step1"
+  | "database_reset_step2";
+
+export type EmailOtpPayload = {
+  otpChallengeId: string;
+  otpCode: string;
+};
 
 export type OtpChallengeResponse = {
   challengeId: string;

@@ -12,6 +12,7 @@ import type {
   CleanupResultResponse,
   CleanupCategory,
   DatabasePanelResponse,
+  DatabaseStatus,
   PublicSettings,
   SettingsCategory,
   StorageBreakdown,
@@ -60,6 +61,54 @@ export async function runStorageCleanup(input: {
   otpCode: string;
 }): Promise<CleanupResultResponse> {
   const res = await apiClient.post<CleanupResultResponse>("/settings/backup/cleanup", input);
+  return res.data;
+}
+
+export type DatabaseResetAuthorization = {
+  success: boolean;
+  message: string;
+  authorizationId: string;
+  authorizationToken: string;
+  expiresAt: string;
+};
+
+export type DatabaseResetResultResponse = {
+  success: boolean;
+  result: {
+    deletedRecords: number;
+    deletedFiles: number;
+    deletedEmployees: number;
+    preservedAdminCode: string;
+    databaseSizeBeforeBytes: number;
+    databaseSizeAfterBytes: number;
+    databaseSizeRecoveredBytes: number;
+    uploadedFilesBeforeBytes: number;
+    uploadedFilesAfterBytes: number;
+    uploadedFilesRecoveredBytes: number;
+    tableCounts: Record<string, number>;
+  };
+  status: DatabaseStatus;
+  storage: StorageBreakdown;
+  cleanup: CleanupCenterSummary;
+};
+
+export async function prepareDatabaseReset(input: {
+  confirmation: "RESET";
+  otpChallengeId: string;
+  otpCode: string;
+}): Promise<DatabaseResetAuthorization> {
+  const res = await apiClient.post<DatabaseResetAuthorization>("/settings/backup/reset/prepare", input);
+  return res.data;
+}
+
+export async function executeDatabaseReset(input: {
+  confirmation: "RESET";
+  authorizationId: string;
+  authorizationToken: string;
+  otpChallengeId: string;
+  otpCode: string;
+}): Promise<DatabaseResetResultResponse> {
+  const res = await apiClient.post<DatabaseResetResultResponse>("/settings/backup/reset", input);
   return res.data;
 }
 
