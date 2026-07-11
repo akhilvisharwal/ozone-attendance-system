@@ -55,12 +55,14 @@ describe("database reset OTP schemas", () => {
     assert.ok(OTP_PURPOSE_LABELS.database_reset_step2.includes("step 2"));
   });
 
-  it("preserves System Admin refresh tokens during reset wipe", () => {
+  it("uses FK-safe wipe without session_replication_role", () => {
     const source = readFileSync(
       path.join(__dirname, "settings.databaseReset.ts"),
       "utf8"
     );
     assert.match(source, /DELETE FROM refresh_tokens WHERE employee_id <> \$1/);
+    assert.match(source, /UPDATE audit_logs/);
+    assert.doesNotMatch(source, /SET LOCAL session_replication_role/);
     assert.equal(
       /RESET_DELETE_TABLES[\s\S]*?\] as const/.exec(source)?.[0]?.includes('"refresh_tokens"'),
       false

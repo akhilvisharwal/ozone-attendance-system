@@ -205,13 +205,15 @@ export function StorageManagementSection({
       });
     } catch (err) {
       const text = extractErrorMessage(err, "Database reset failed.");
-      // Only wrong/expired step-2 email codes are safe to retry — the authorization
-      // ticket is still intact. Anything else requires a full restart.
-      const retryable =
-        /incorrect verification code/i.test(text) ||
-        /verification code has expired/i.test(text);
+      // Step-2 OTP + authorization stay valid until the wipe commits, so most
+      // failures can be retried with the same codes. Only force a full restart
+      // when the tickets are clearly gone/expired/already used.
+      const mustRestart =
+        /already been used|first verification expired|authorization ticket|start the reset again/i.test(
+          text
+        ) && !/incorrect verification code/i.test(text);
 
-      if (retryable) {
+      if (!mustRestart) {
         resetInFlightRef.current = false;
         setResetExecuting(false);
         setResetError(text);

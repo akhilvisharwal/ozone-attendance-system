@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { pool } from "../../config/db";
 import { env } from "../../config/env";
 import { ApiError } from "../../utils/errors";
@@ -12,10 +13,11 @@ import { getSettings, refreshSettingsCache } from "./settings.cache";
 
 /**
  * Tables cleared during a full application reset (FK-safe child-first order).
- * Intentionally NOT cleared:
+ * Intentionally NOT cleared here:
  * - app_settings / employee_designations (protected system configuration)
- * - audit_logs (OTP + reset security trail)
- * - refresh_tokens for the preserved System Admin (session must survive the reset)
+ * - audit_logs (OTP + reset security trail — actor_id reassigned to System Admin)
+ * - refresh_tokens for the preserved System Admin
+ * - email_otp_challenges / password_reset_tokens (cleared at end of successful tx)
  */
 const RESET_DELETE_TABLES = [
   "task_reminder_log",
@@ -33,8 +35,6 @@ const RESET_DELETE_TABLES = [
   "tasks",
   "company_holidays",
   "sites",
-  "email_otp_challenges",
-  "password_reset_tokens",
 ] as const;
 
 export interface DatabaseResetResult {
@@ -51,8 +51,20 @@ export interface DatabaseResetResult {
   tableCounts: Record<string, number>;
 }
 
-async function countTable(table: string): Promise<number> {
-  const res = await pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ${table}`);
+export interface DatabaseResetOtpHandles {
+  /** Step-2 email OTP challenge id — deleted only after a successful wipe. */
+  step2ChallengeId: string;
+  /** Authorization ticket challenge id — deleted only after a successful wipe. */
+  authorizationId: string;
+}
+
+function logReset(step: string, detail?: Record<string, unknown>): void {
+  const suffix = detail ? ` ${JSON.stringify(detail)}` : "";
+  console.info(`[database-reset] ${step}${suffix}`);
+}
+
+async function countTable(client: PoolClient | typeof pool, table: string): Promise<number> {
+  const res = await client.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ${table}`);
   return parseInt(res.rows[0]?.count ?? "0", 10);
 }
 
@@ -62,11 +74,58 @@ async function removeFiles(paths: string[]): Promise<number> {
     try {
       await storage.remove(relativePath);
       removed += 1;
-    } catch {
-      // Best-effort file cleanup — missing files should not abort the reset.
+    } catch (err) {
+      console.warn(
+        `[database-reset] file remove failed for ${relativePath}:`,
+        err instanceof Error ? err.message : err
+      );
     }
   }
   return removed;
+}
+
+/**
+ * Re-point or clear FK columns that would block deleting non-admin employees.
+ * Managed Postgres (Neon/Render) often forbids session_replication_role=replica,
+ * so we must satisfy constraints explicitly.
+ */
+async function clearEmployeeForeignKeys(client: PoolClient, adminId: string): Promise<void> {
+  // Preserved audit trail must not reference employees we are about to delete.
+  const audit = await client.query(
+    `UPDATE audit_logs
+        SET actor_id = $1
+      WHERE actor_id IS NOT NULL
+        AND actor_id IS DISTINCT FROM $1`,
+    [adminId]
+  );
+  logReset("FK: audit_logs.actor_id reassigned to System Admin", {
+    rows: audit.rowCount ?? 0,
+  });
+
+  const settings = await client.query(
+    `UPDATE app_settings
+        SET updated_by = $1
+      WHERE updated_by IS DISTINCT FROM $1`,
+    [adminId]
+  );
+  logReset("FK: app_settings.updated_by reassigned", { rows: settings.rowCount ?? 0 });
+
+  const designations = await client.query(
+    `UPDATE employee_designations
+        SET created_by = $1
+      WHERE created_by IS NOT NULL
+        AND created_by IS DISTINCT FROM $1`,
+    [adminId]
+  );
+  logReset("FK: employee_designations.created_by reassigned", {
+    rows: designations.rowCount ?? 0,
+  });
+
+  // Break self-references among employees about to be deleted / keep admin clean.
+  const selfRefs = await client.query(
+    `UPDATE employees SET created_by = NULL WHERE created_by IS NOT NULL`
+  );
+  logReset("FK: employees.created_by cleared", { rows: selfRefs.rowCount ?? 0 });
 }
 
 /**
@@ -75,8 +134,14 @@ async function removeFiles(paths: string[]): Promise<number> {
  * - All app_settings (company, security, attendance, etc.)
  * - employee_designations catalog
  * - Company logo file and admin profile photo (if any)
+ * - audit_logs (security trail)
+ *
+ * OTP challenge rows are deleted only inside the successful transaction so a
+ * failed wipe leaves both codes reusable until they expire.
  */
-export async function executeDatabaseReset(): Promise<DatabaseResetResult> {
+export async function executeDatabaseReset(
+  otpHandles?: DatabaseResetOtpHandles
+): Promise<DatabaseResetResult> {
   const adminCode = env.adminEmployeeId.trim().toUpperCase();
   const settings = getSettings();
   const preservedPaths = new Set<string>();
@@ -103,14 +168,19 @@ export async function executeDatabaseReset(): Promise<DatabaseResetResult> {
   const adminPhoto = normalizeRelativePath(admin.profile_photo_path);
   if (adminPhoto) preservedPaths.add(adminPhoto);
 
+  logReset("System Admin resolved", { adminId: admin.id, adminCode });
+
   const referencedBefore = await collectReferencedFilePaths();
   const filesBefore = await measureUploadDirectoryBytes(referencedBefore.allReferenced);
   const databaseSizeBeforeBytes = await queryDatabaseSizeBytes();
 
   const tableCounts: Record<string, number> = {};
   for (const table of RESET_DELETE_TABLES) {
-    tableCounts[table] = await countTable(table);
+    tableCounts[table] = await countTable(pool, table);
   }
+  tableCounts.email_otp_challenges = await countTable(pool, "email_otp_challenges");
+  tableCounts.password_reset_tokens = await countTable(pool, "password_reset_tokens");
+
   const nonAdminEmployees = await pool.query<{ count: string }>(
     `SELECT COUNT(*)::text AS count
        FROM employees
@@ -122,26 +192,25 @@ export async function executeDatabaseReset(): Promise<DatabaseResetResult> {
 
   const client = await pool.connect();
   try {
+    logReset("Transaction started");
     await client.query("BEGIN");
-    await client.query("SET LOCAL session_replication_role = replica");
 
     for (const table of RESET_DELETE_TABLES) {
-      await client.query(`DELETE FROM ${table}`);
+      const del = await client.query(`DELETE FROM ${table}`);
+      logReset(`Table deleted: ${table}`, { rows: del.rowCount ?? 0 });
     }
 
-    // Drop other users' sessions; keep the System Admin's refresh tokens so the
-    // current browser session can finish and refresh after the wipe.
-    await client.query(`DELETE FROM refresh_tokens WHERE employee_id <> $1`, [admin.id]);
-
-    // Point settings authorship at the preserved admin before removing other accounts.
-    await client.query(`UPDATE app_settings SET updated_by = $1 WHERE updated_by IS DISTINCT FROM $1`, [
+    // Drop other users' sessions; keep the System Admin's refresh tokens.
+    const tokens = await client.query(`DELETE FROM refresh_tokens WHERE employee_id <> $1`, [
       admin.id,
     ]);
+    logReset("Table deleted: refresh_tokens (non-admin)", { rows: tokens.rowCount ?? 0 });
 
-    // Soft-deleted and junior/employee accounts — keep only the System Admin.
-    await client.query(`DELETE FROM employees WHERE id <> $1`, [admin.id]);
+    await clearEmployeeForeignKeys(client, admin.id);
 
-    // Ensure the preserved admin remains active and usable.
+    const empDel = await client.query(`DELETE FROM employees WHERE id <> $1`, [admin.id]);
+    logReset("Non-admin employees deleted", { rows: empDel.rowCount ?? 0 });
+
     await client.query(
       `UPDATE employees
           SET is_active = true,
@@ -150,12 +219,33 @@ export async function executeDatabaseReset(): Promise<DatabaseResetResult> {
         WHERE id = $1`,
       [admin.id]
     );
+    logReset("System Admin reactivated");
 
-    await client.query("SET LOCAL session_replication_role = DEFAULT");
+    // Clear auth/OTP material only after the wipe succeeded in this transaction.
+    const otpDel = await client.query(`DELETE FROM email_otp_challenges`);
+    logReset("Table deleted: email_otp_challenges", { rows: otpDel.rowCount ?? 0 });
+    const resetDel = await client.query(`DELETE FROM password_reset_tokens`);
+    logReset("Table deleted: password_reset_tokens", { rows: resetDel.rowCount ?? 0 });
+
+    if (otpHandles) {
+      logReset("OTP handles invalidated inside successful transaction", {
+        step2ChallengeId: otpHandles.step2ChallengeId,
+        authorizationId: otpHandles.authorizationId,
+      });
+    }
+
     await client.query("COMMIT");
+    logReset("Transaction committed");
   } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
+    console.error("[database-reset] Transaction failed — rolling back", err);
+    try {
+      await client.query("ROLLBACK");
+      logReset("Transaction rolled back");
+    } catch (rollbackErr) {
+      console.error("[database-reset] ROLLBACK failed", rollbackErr);
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    throw ApiError.internal(`Database reset failed: ${message}`);
   } finally {
     client.release();
   }
@@ -164,7 +254,9 @@ export async function executeDatabaseReset(): Promise<DatabaseResetResult> {
   const pathsToRemove = [...referencedBefore.allReferenced].filter(
     (p) => !referencedAfter.allReferenced.has(p) && !preservedPaths.has(p)
   );
+  logReset("Removing orphaned upload files", { count: pathsToRemove.length });
   const deletedFiles = await removeFiles(pathsToRemove);
+  logReset("Files removed", { deletedFiles });
 
   for (const table of [
     "attendance",
@@ -177,12 +269,17 @@ export async function executeDatabaseReset(): Promise<DatabaseResetResult> {
   ]) {
     try {
       await pool.query(`VACUUM ANALYZE ${table}`);
-    } catch {
-      // managed providers may restrict VACUUM; autovacuum still reclaims space
+      logReset(`VACUUM ANALYZE ${table}`);
+    } catch (err) {
+      console.warn(
+        `[database-reset] VACUUM skipped for ${table}:`,
+        err instanceof Error ? err.message : err
+      );
     }
   }
 
   await refreshSettingsCache();
+  logReset("Settings cache refreshed");
 
   const databaseSizeAfterBytes = await queryDatabaseSizeBytes();
   const referencedFinal = await collectReferencedFilePaths();
@@ -193,6 +290,13 @@ export async function executeDatabaseReset(): Promise<DatabaseResetResult> {
     Object.entries(tableCounts)
       .filter(([key]) => key !== "employees_non_admin")
       .reduce((sum, [, count]) => sum + count, 0) + deletedEmployees;
+
+  logReset("Reset complete", {
+    deletedRecords,
+    deletedFiles,
+    deletedEmployees,
+    preservedAdminCode: adminCode,
+  });
 
   return {
     deletedRecords,

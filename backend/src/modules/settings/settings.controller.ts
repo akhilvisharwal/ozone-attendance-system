@@ -65,7 +65,6 @@ import {
   type PrefixMigrationResult,
 } from "../../utils/employeeIdPrefixMigration";
 import {
-  consumeDatabaseResetAuthorization,
   issueDatabaseResetAuthorization,
   requireVerifiedOtp,
   verifyOtpChallenge,
@@ -366,16 +365,22 @@ export const cleanupData = asyncHandler(async (req: Request, res: Response) => {
 export const prepareDatabaseReset = asyncHandler(async (req: Request, res: Response) => {
   const input = databaseResetPrepareSchema.parse(req.body);
 
+  console.info("[database-reset] Validating step-1 OTP");
   await requireVerifiedOtp({
     req,
     purpose: "database_reset_step1",
     otpChallengeId: input.otpChallengeId,
     otpCode: input.otpCode,
   });
+  console.info("[database-reset] OTP 1 verified and consumed");
 
   const authorization = await issueDatabaseResetAuthorization({
     req,
     actorId: req.user!.id,
+  });
+  console.info("[database-reset] Authorization ticket issued", {
+    authorizationId: authorization.authorizationId,
+    expiresAt: authorization.expiresAt,
   });
 
   await logAudit(req, "settings.database_reset_started", "settings", undefined, {
@@ -383,6 +388,7 @@ export const prepareDatabaseReset = asyncHandler(async (req: Request, res: Respo
     authorizationId: authorization.authorizationId,
     expiresAt: authorization.expiresAt,
   });
+  console.info("[database-reset] Audit log written: step1_verified");
 
   res.json({
     success: true,
@@ -405,8 +411,9 @@ export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: R
 
   databaseResetInFlight = true;
   try {
-    // Validate step-2 OTP before burning the authorization ticket. Wrong/expired OTP
-    // must not force the user to restart from step 1.
+    // Validate both credentials WITHOUT consuming. They are deleted inside the
+    // successful reset transaction so a failed wipe leaves codes reusable.
+    console.info("[database-reset] Validating step-2 OTP (peek, not consumed)");
     await requireVerifiedOtp({
       req,
       purpose: "database_reset_step2",
@@ -414,7 +421,9 @@ export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: R
       otpCode: input.otpCode,
       consume: false,
     });
+    console.info("[database-reset] OTP 2 verified (not yet consumed)");
 
+    console.info("[database-reset] Validating authorization ticket (peek, not consumed)");
     await verifyOtpChallenge({
       req,
       challengeId: input.authorizationId,
@@ -423,31 +432,21 @@ export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: R
       actorId: req.user!.id,
       consume: false,
     });
-
-    // Both credentials are valid — consume exactly once, then wipe.
-    await requireVerifiedOtp({
-      req,
-      purpose: "database_reset_step2",
-      otpChallengeId: input.otpChallengeId,
-      otpCode: input.otpCode,
-      consume: true,
-    });
-
-    await consumeDatabaseResetAuthorization({
-      req,
-      authorizationId: input.authorizationId,
-      authorizationToken: input.authorizationToken,
-      actorId: req.user!.id,
-    });
+    console.info("[database-reset] Authorization ticket verified (not yet consumed)");
 
     await logAudit(req, "settings.database_reset_started", "settings", undefined, {
       phase: "step2_verified_executing",
       authorizationId: input.authorizationId,
       verifiedByDualEmailOtp: true,
     });
+    console.info("[database-reset] Audit log written: step2_verified_executing");
 
-    const result = await executeDatabaseReset();
+    const result = await executeDatabaseReset({
+      step2ChallengeId: input.otpChallengeId,
+      authorizationId: input.authorizationId,
+    });
 
+    console.info("[database-reset] Gathering post-reset status/storage/cleanup");
     const [status, storage, cleanup] = await Promise.all([
       backupService.getDatabaseStatus(),
       getStorageBreakdown(),
@@ -464,6 +463,7 @@ export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: R
       uploadedFilesRecoveredBytes: result.uploadedFilesRecoveredBytes,
       tableCounts: result.tableCounts,
     });
+    console.info("[database-reset] Audit log written: database_reset_completed");
 
     res.setHeader("Cache-Control", "no-store");
     res.json({
@@ -474,6 +474,12 @@ export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: R
       cleanup,
       backup: getSettings().backup,
     });
+  } catch (err) {
+    console.error("[database-reset] executeFullDatabaseReset failed", err);
+    if (err instanceof Error && err.stack) {
+      console.error(err.stack);
+    }
+    throw err;
   } finally {
     databaseResetInFlight = false;
   }

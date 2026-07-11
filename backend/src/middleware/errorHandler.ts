@@ -18,16 +18,28 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   }
 
   if (err instanceof ApiError) {
+    if (err.statusCode >= 500) {
+      console.error(`[api-error ${err.statusCode}] ${req.method} ${req.originalUrl}:`, err.message);
+      if (err.stack) console.error(err.stack);
+      if (err.details) console.error("[api-error details]", err.details);
+    }
     return res.status(err.statusCode).json({
       error: { message: err.message, details: err.details },
     });
   }
 
-  console.error("Unhandled error:", err);
+  console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err);
+  if (err instanceof Error && err.stack) {
+    console.error(err.stack);
+  }
+  const message =
+    err instanceof Error && err.message.trim()
+      ? err.message
+      : "Internal server error";
   return res.status(500).json({
     error: {
-      message: "Internal server error",
-      ...(env.isProduction ? {} : { stack: (err as Error)?.stack }),
+      message,
+      ...(env.isProduction ? {} : { stack: err instanceof Error ? err.stack : undefined }),
     },
   });
 }
