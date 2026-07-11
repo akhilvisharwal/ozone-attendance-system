@@ -91,6 +91,44 @@ export function NotificationPreferencesSection() {
           <Alert variant="info">This browser does not support web push notifications.</Alert>
         )}
 
+        {configured && permission === "denied" && (
+          <Alert variant="error">
+            Browser notifications are blocked for this site. Open your browser site settings for{" "}
+            <strong>app.ozoneairconhvac.com</strong> and allow notifications, then reload and click
+            Enable again.
+          </Alert>
+        )}
+
+        {configured && permission === "default" && !pushEnabled && (
+          <Alert variant="info">
+            Click <strong>Enable</strong> and choose <strong>Allow</strong> when the browser asks for
+            notification permission.
+          </Alert>
+        )}
+
+        {configured && permission === "granted" && status && status.deviceCount === 0 && (
+          <Alert variant="error">
+            Permission is granted but no FCM token is saved in the database. Click{" "}
+            <strong>Disable</strong>, then <strong>Enable</strong> again. If it still fails, open
+            DevTools (F12) → Console and look for lines starting with <code>[fcm]</code>.
+          </Alert>
+        )}
+
+        {configured && status && status.projectsMatch === false && (
+          <Alert variant="error">
+            Firebase project mismatch: service account project ({status.adminProjectId}) does not
+            match web config ({status.webProjectId}). Fix env vars on Render so both use the same
+            Firebase project.
+          </Alert>
+        )}
+
+        {configured && status && !status.initialized && (
+          <Alert variant="error">
+            Firebase Admin SDK failed to start. Check <code>FIREBASE_SERVICE_ACCOUNT_JSON</code> on
+            Render (valid JSON, correct private key).
+          </Alert>
+        )}
+
         {configured && permission !== "unsupported" && (
           <div className="flex flex-col gap-3 rounded-xl border border-slate-200/80 bg-slate-50/80 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">

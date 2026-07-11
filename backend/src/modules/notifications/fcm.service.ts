@@ -124,21 +124,19 @@ export type SendPushResult = {
 };
 
 async function sendToTokens(input: {
-  tokens: string[];
+  devices: Array<{ token: string; platform: string }>;
   notification: AppNotification;
   soundEnabled: boolean;
   vibrationEnabled: boolean;
 }): Promise<SendPushResult> {
   const empty: SendPushResult = { tokenCount: 0, successCount: 0, failureCount: 0, errors: [] };
-  if (input.tokens.length === 0) return empty;
+  if (input.devices.length === 0) return empty;
   if (!ensureFirebase()) {
     console.error("[fcm] send aborted: Admin SDK not initialized");
     return empty;
   }
 
   const link = absoluteDeepLink(input.notification.link_path);
-  const icon = absoluteAsset("/android-chrome-192x192.png");
-  const badge = absoluteAsset("/favicon-48x48.png");
   const data: Record<string, string> = {
     notificationId: input.notification.id,
     type: input.notification.type,
@@ -149,86 +147,48 @@ async function sendToTokens(input: {
     vibrate: input.vibrationEnabled ? "1" : "0",
   };
 
-  // notification + data: browser shows system tray alert (with default sound) in background;
-  // foreground clients receive onMessage and must display locally.
-  const message: admin.messaging.MulticastMessage = {
-    tokens: input.tokens,
-    notification: {
-      title: input.notification.title,
-      body: input.notification.body ?? undefined,
-    },
-    data,
-    webpush: {
-      headers: {
-        Urgency: "high",
-        TTL: "86400",
-      },
-      notification: {
-        title: input.notification.title,
-        body: input.notification.body ?? undefined,
-        icon,
-        badge,
-        tag: `ozone-${input.notification.id}`,
-        renotify: Boolean(input.soundEnabled),
-        requireInteraction: false,
-        silent: !input.soundEnabled,
-        vibrate: input.vibrationEnabled ? [80, 40, 80] : undefined,
-        data: { ...data, url: link ?? data.linkPath },
-      },
-      ...(link ? { fcmOptions: { link } } : {}),
-    },
-    android: {
-      priority: "high",
-      notification: {
-        channelId: "ozone_default",
-        sound: input.soundEnabled ? "default" : undefined,
-        defaultSound: input.soundEnabled,
-        defaultVibrateTimings: input.vibrationEnabled,
-        tag: `ozone-${input.notification.id}`,
-        ...(link ? { clickAction: link } : {}),
-      },
-    },
-    apns: {
-      payload: {
-        aps: {
-          sound: input.soundEnabled ? "default" : undefined,
-          "thread-id": input.notification.type,
-        },
-      },
-    },
-  };
+  const webTokens = input.devices.filter((d) => d.platform === "web").map((d) => d.token);
+  const nativeTokens = input.devices.filter((d) => d.platform !== "web").map((d) => d.token);
 
-  console.info("[fcm] sending via HTTP v1 (sendEachForMulticast)", {
-    notificationId: input.notification.id,
-    type: input.notification.type,
-    employeeId: input.notification.employee_id,
-    tokenCount: input.tokens.length,
-    tokenSuffixes: input.tokens.map((t) => t.slice(-12)),
-    soundEnabled: input.soundEnabled,
-    projectId: initProjectId,
-    link,
-  });
+  let successCount = 0;
+  let failureCount = 0;
+  const errors: SendPushResult["errors"] = [];
 
-  try {
-    const result = await admin.messaging().sendEachForMulticast(message);
+  async function dispatchMulticast(
+    tokens: string[],
+    message: Omit<admin.messaging.MulticastMessage, "tokens">,
+    label: string
+  ) {
+    if (tokens.length === 0) return;
+    console.info(`[fcm] sending ${label} via HTTP v1`, {
+      notificationId: input.notification.id,
+      tokenCount: tokens.length,
+      tokenSuffixes: tokens.map((t) => t.slice(-12)),
+      projectId: initProjectId,
+    });
+
+    const result = await admin.messaging().sendEachForMulticast({ ...message, tokens });
     const stale: string[] = [];
-    const errors: SendPushResult["errors"] = [];
 
     result.responses.forEach((response, index) => {
-      const token = input.tokens[index];
+      const token = tokens[index];
       const tokenSuffix = token.slice(-12);
       if (response.success) {
+        successCount += 1;
         console.info("[fcm] Firebase response: success", {
           notificationId: input.notification.id,
+          label,
           tokenSuffix,
           messageId: response.messageId,
         });
         return;
       }
+      failureCount += 1;
       const code = response.error?.code ?? "unknown";
       const messageText = response.error?.message ?? code;
       console.error("[fcm] Firebase response: failure", {
         notificationId: input.notification.id,
+        label,
         tokenSuffix,
         code,
         message: messageText,
@@ -248,25 +208,75 @@ async function sendToTokens(input: {
       console.warn("[fcm] removing stale tokens", { count: stale.length });
       await deleteTokens(stale);
     }
+  }
 
-    console.info("[fcm] multicast complete", {
+  try {
+    // Web browsers are most reliable with data-only payloads handled by the service worker.
+    await dispatchMulticast(
+      webTokens,
+      {
+        data,
+        webpush: {
+          headers: {
+            Urgency: "high",
+            TTL: "86400",
+          },
+          ...(link ? { fcmOptions: { link } } : {}),
+        },
+      },
+      "web-data-only"
+    );
+
+    // Native apps can use the notification payload directly.
+    await dispatchMulticast(
+      nativeTokens,
+      {
+        notification: {
+          title: input.notification.title,
+          body: input.notification.body ?? undefined,
+        },
+        data,
+        android: {
+          priority: "high",
+          notification: {
+            channelId: "ozone_default",
+            sound: input.soundEnabled ? "default" : undefined,
+            defaultSound: input.soundEnabled,
+            defaultVibrateTimings: input.vibrationEnabled,
+            tag: `ozone-${input.notification.id}`,
+            ...(link ? { clickAction: link } : {}),
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: input.soundEnabled ? "default" : undefined,
+              "thread-id": input.notification.type,
+            },
+          },
+        },
+      },
+      "native"
+    );
+
+    console.info("[fcm] send complete", {
       notificationId: input.notification.id,
-      successCount: result.successCount,
-      failureCount: result.failureCount,
+      successCount,
+      failureCount,
     });
 
     return {
-      tokenCount: input.tokens.length,
-      successCount: result.successCount,
-      failureCount: result.failureCount,
+      tokenCount: input.devices.length,
+      successCount,
+      failureCount,
       errors,
     };
   } catch (err) {
     console.error("[fcm] Multicast send error:", err instanceof Error ? err.message : err);
     return {
-      tokenCount: input.tokens.length,
+      tokenCount: input.devices.length,
       successCount: 0,
-      failureCount: input.tokens.length,
+      failureCount: input.devices.length,
       errors: [
         {
           tokenSuffix: "all",
@@ -319,7 +329,7 @@ export async function deliverPushForNotification(notification: AppNotification):
   });
 
   const result = await sendToTokens({
-    tokens: tokens.map((row) => row.token),
+    devices: tokens.map((row) => ({ token: row.token, platform: row.platform })),
     notification,
     soundEnabled: prefs.soundEnabled,
     vibrationEnabled: prefs.vibrationEnabled,
@@ -390,7 +400,7 @@ export async function sendTestPushToEmployee(employeeId: string): Promise<{
 
   // Test ids are not real app_notifications rows — skip claim/FK log.
   const result = await sendToTokens({
-    tokens: tokens.map((row) => row.token),
+    devices: tokens.map((row) => ({ token: row.token, platform: row.platform })),
     notification,
     soundEnabled: prefs.soundEnabled,
     vibrationEnabled: prefs.vibrationEnabled,
@@ -411,10 +421,19 @@ export function getFcmRuntimeStatus() {
   if (configured) {
     ensureFirebase();
   }
+  const account = readServiceAccount() as { project_id?: string; projectId?: string } | null;
+  const adminProjectId = account?.projectId || account?.project_id || initProjectId || null;
+  const webProjectId = process.env.FIREBASE_PROJECT_ID?.trim() || null;
+  const projectsMatch =
+    !adminProjectId || !webProjectId ? null : adminProjectId === webProjectId;
+
   return {
     configured,
     initialized,
     projectId: initProjectId,
-    webProjectId: process.env.FIREBASE_PROJECT_ID?.trim() || null,
+    adminProjectId,
+    webProjectId,
+    projectsMatch,
+    appUrl: env.appUrl,
   };
 }

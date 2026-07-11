@@ -46,15 +46,7 @@ function initFirebase(config) {
       console.info("[fcm-sw] background message", {
         notificationId,
         title: data.title || payload.notification?.title,
-        hasNotificationPayload: Boolean(payload.notification),
       });
-
-      // When FCM includes a notification payload, the browser already displays it
-      // with the device default sound. Only show manually for data-only messages.
-      if (payload.notification && payload.notification.title) {
-        console.info("[fcm-sw] browser/system will display notification payload");
-        return;
-      }
 
       if (notificationId) {
         if (shownIds.has(notificationId)) return;
@@ -65,13 +57,13 @@ function initFirebase(config) {
         }
       }
 
-      const title = data.title || "Ozone Aircon";
-      const body = data.body || "";
+      const title = data.title || (payload.notification && payload.notification.title) || "Ozone Aircon";
+      const body = data.body || (payload.notification && payload.notification.body) || "";
       const linkPath = data.linkPath || "/";
       const sound = data.sound !== "0";
       const vibrate = data.vibrate !== "0";
 
-      console.info("[fcm-sw] showing data-only notification", { title, sound });
+      console.info("[fcm-sw] showing notification", { title, sound });
       return self.registration.showNotification(title, {
         body,
         icon: "/android-chrome-192x192.png",

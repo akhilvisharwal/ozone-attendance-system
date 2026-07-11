@@ -70,7 +70,10 @@ export type PushStatus = {
   configured: boolean;
   initialized: boolean;
   projectId: string | null;
+  adminProjectId?: string | null;
   webProjectId: string | null;
+  projectsMatch?: boolean | null;
+  appUrl?: string;
   deviceCount: number;
   devices: Array<{
     id: string;

@@ -23,7 +23,7 @@ interface PushContextValue {
   enablePush: () => Promise<boolean>;
   disablePush: () => Promise<void>;
   refreshPreferences: () => Promise<void>;
-  refreshStatus: () => Promise<void>;
+  refreshStatus: () => Promise<PushStatus | null>;
   savePreferences: (prefs: Omit<PushPreferences, "securityAlerts" | "updatedAt">) => Promise<void>;
   sendTestPush: () => Promise<boolean>;
 }
@@ -62,17 +62,28 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
     setPreferences(prefs);
   }, [employee]);
 
-  const refreshStatus = useCallback(async () => {
+  const refreshStatus = useCallback(async (): Promise<PushStatus | null> => {
     if (!employee) {
       setStatus(null);
-      return;
+      setPushEnabled(false);
+      return null;
     }
     try {
       const next = await pushApi.fetchPushStatus();
       setStatus(next);
-      setPushEnabled(next.deviceCount > 0 && Notification.permission === "granted");
+      const enabled =
+        next.deviceCount > 0 &&
+        "Notification" in window &&
+        Notification.permission === "granted";
+      setPushEnabled(enabled);
+      if (!enabled && getStoredPushToken()) {
+        localStorage.removeItem("ozone.fcm.token");
+      }
+      return next;
     } catch (err) {
       console.warn("[fcm] status refresh failed", err);
+      setPushEnabled(false);
+      return null;
     }
   }, [employee]);
 
@@ -121,16 +132,20 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
 
         if (config.configured && Notification.permission === "granted") {
           const result = await enablePushNotifications((payload) => {
-            // OS notification + sound are handled inside enablePushNotifications.
             showToast(payload.title);
           });
           if (!cancelled) {
-            setPushEnabled(result.enabled);
             if ("Notification" in window) setPermission(Notification.permission);
-            await refreshStatus();
+            const nextStatus = await refreshStatus();
+            if (!result.enabled) {
+              setPushEnabled(false);
+              if (result.reason) showToast(result.reason);
+            } else if ((nextStatus?.deviceCount ?? 0) === 0) {
+              setPushEnabled(false);
+              showToast("Push token was not saved on the server. Click Enable again.");
+            }
           }
         } else {
-          setPushEnabled(Boolean(getStoredPushToken()) && Notification.permission === "granted");
           await refreshStatus();
         }
       } catch (err) {
@@ -154,14 +169,19 @@ export function PushNotificationsProvider({ children }: { children: ReactNode })
       showToast(payload.title);
     });
     if ("Notification" in window) setPermission(Notification.permission);
-    setPushEnabled(result.enabled);
-    if (!result.enabled && result.reason) {
-      showToast(result.reason);
-    } else if (result.enabled) {
-      showToast("Push notifications enabled.");
-      await refreshStatus();
+    if (!result.enabled) {
+      setPushEnabled(false);
+      if (result.reason) showToast(result.reason);
+      return false;
     }
-    return result.enabled;
+    const nextStatus = await refreshStatus();
+    if ((nextStatus?.deviceCount ?? 0) === 0) {
+      setPushEnabled(false);
+      showToast("Push token was not saved on the server. Check browser console and try again.");
+      return false;
+    }
+    showToast("Push notifications enabled.");
+    return true;
   }, [refreshStatus, showToast]);
 
   const disablePush = useCallback(async () => {

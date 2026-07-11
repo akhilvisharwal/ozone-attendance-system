@@ -105,6 +105,26 @@ export type ForegroundHandler = (payload: {
   vibrate: boolean;
 }) => void;
 
+function playForegroundChime(): void {
+  try {
+    const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.value = 0.04;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.12);
+    window.setTimeout(() => void ctx.close(), 250);
+  } catch {
+    // Ignore if autoplay policy blocks audio.
+  }
+}
+
 async function showLocalNotification(
   registration: ServiceWorkerRegistration,
   input: {
@@ -248,6 +268,9 @@ export async function enablePushNotifications(onForeground?: ForegroundHandler):
       sound,
       vibrate,
     });
+    if (sound && document.visibilityState === "visible") {
+      playForegroundChime();
+    }
 
     onForeground?.({ notificationId, title, body, linkPath, sound, vibrate });
   });
