@@ -31,6 +31,7 @@ import {
   buildExpenseReportBundle,
 } from "./expenses.reports";
 import { notifyAdminEvent } from "../../services/email/adminNotifications";
+import { notifyExpenseReviewed } from "../notifications/securityNotifications";
 
 function receiptFile(req: Request): Express.Multer.File | undefined {
   return req.file;
@@ -365,6 +366,13 @@ export const adminReviewRequestExpense = asyncHandler(async (req: Request, res: 
     }
   );
 
+  void notifyExpenseReviewed({
+    employeeId: result.expense.employee_id,
+    status: input.status,
+    amountLabel: `₹${Number(result.expense.amount).toFixed(2)}`,
+    requestId: result.request.id,
+  });
+
   const summary = await requestsRepo.getRequestExpenseSummary(result.request.id);
   res.json({ request: result.request, expense: result.expense, summary });
 });
@@ -416,6 +424,13 @@ export const adminReviewRequest = asyncHandler(async (req: Request, res: Respons
       remarks: input.remarks ?? null,
     }
   );
+
+  void notifyExpenseReviewed({
+    employeeId: request.employee_id,
+    status: input.status,
+    amountLabel: `₹${Number(request.requested_amount).toFixed(2)}`,
+    requestId: request.id,
+  });
 
   res.json({ request });
 });

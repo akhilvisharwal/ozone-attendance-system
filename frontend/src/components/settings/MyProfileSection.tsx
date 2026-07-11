@@ -1,4 +1,5 @@
 import { ProfilePhotoEditor } from "@/components/ProfilePhotoEditor";
+import { NotificationPreferencesSection } from "@/components/settings/NotificationPreferencesSection";
 import { useAuth } from "@/auth/AuthContext";
 import { Spinner } from "@/components/ui/Spinner";
 
@@ -21,19 +22,25 @@ export function MyProfileSection() {
         : "Employee";
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-slate-500">
-        Signed in as <span className="font-medium text-slate-700">{employee.name}</span>
-        {" · "}
-        {employee.employee_code}
-        {" · "}
-        {roleLabel}
-      </p>
-      <p className="text-sm text-slate-500">
-        Your profile picture appears in the sidebar, navigation, and across attendance, tasks, leave,
-        and expenses. Attendance selfies are stored separately and are not used here.
-      </p>
-      <ProfilePhotoEditor employee={employee} />
+    <div className="space-y-8">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-500">
+          Signed in as <span className="font-medium text-slate-700">{employee.name}</span>
+          {" · "}
+          {employee.employee_code}
+          {" · "}
+          {roleLabel}
+        </p>
+        <p className="text-sm text-slate-500">
+          Your profile picture appears in the sidebar, navigation, and across attendance, tasks, leave,
+          and expenses. Attendance selfies are stored separately and are not used here.
+        </p>
+        <ProfilePhotoEditor employee={employee} />
+      </div>
+
+      <div className="border-t border-slate-100 pt-6">
+        <NotificationPreferencesSection />
+      </div>
     </div>
   );
 }

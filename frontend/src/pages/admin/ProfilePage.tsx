@@ -9,7 +9,7 @@ export function ProfilePage() {
     <div>
       <PageHeader
         title="My Profile"
-        subtitle="Manage your profile picture"
+        subtitle="Manage your profile picture and notification preferences"
         icon={<UserCircle className="h-5 w-5" />}
       />
       <Card>

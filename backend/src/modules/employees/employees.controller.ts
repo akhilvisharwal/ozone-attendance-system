@@ -21,6 +21,7 @@ import { logAudit } from "../audit/audit.repository";
 import { storage } from "../../services/storage";
 import { notifyAdminEvent } from "../../services/email/adminNotifications";
 import { processProfilePhoto } from "../../utils/profilePhoto";
+import { notifySecurityAlert } from "../notifications/securityNotifications";
 
 export const createEmployee = asyncHandler(async (req: Request, res: Response) => {
   const input = createEmployeeSchema.parse(req.body);
@@ -343,6 +344,15 @@ export const deleteEmployee = asyncHandler(async (req: Request, res: Response) =
     dependencies,
     verifiedByEmailOtp: true,
   });
+
+  void notifySecurityAlert({
+    type: "security_employee_deleted",
+    title: "Employee deleted",
+    body: `${employee.name} (${employee.employee_code}) was deleted by ${req.user!.employeeCode}.`,
+    linkPath: "/admin/employees",
+    entityId: employee.id,
+  });
+
   res.json({ employee: deleted, dependencies });
 });
 

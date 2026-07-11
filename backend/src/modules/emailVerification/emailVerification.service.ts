@@ -10,6 +10,7 @@ import {
   sendOtpEmail,
   sendPasswordResetEmail,
 } from "../../services/email/email.service";
+import { notifySecurityAlert } from "../notifications/securityNotifications";
 import {
   consumeOtpChallenge,
   consumePasswordResetToken,
@@ -109,6 +110,14 @@ export async function requestOtpChallenge(input: {
     purpose: input.purpose,
     recipient: maskEmail(recipient),
     skipped: Boolean(sendResult.skipped),
+  });
+
+  void notifySecurityAlert({
+    type: "otp_verification",
+    title: "Security verification code sent",
+    body: `A one-time code was sent for: ${OTP_PURPOSE_LABELS[input.purpose]}.`,
+    linkPath: "/admin/settings",
+    entityId: challenge.id,
   });
 
   if (sendResult.skipped && !env.isProduction) {

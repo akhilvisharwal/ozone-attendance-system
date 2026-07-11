@@ -12,6 +12,23 @@ export interface AppNotification {
   created_at: string;
 }
 
+function queuePush(notification: AppNotification): void {
+  void import("./fcm.service.js")
+    .then(({ deliverPushForNotification }) => deliverPushForNotification(notification))
+    .catch((err) => {
+      console.error("[fcm] Failed to queue push:", err instanceof Error ? err.message : err);
+    });
+}
+
+function queuePushMany(notifications: AppNotification[]): void {
+  if (notifications.length === 0) return;
+  void import("./fcm.service.js")
+    .then(({ deliverPushForNotifications }) => deliverPushForNotifications(notifications))
+    .catch((err) => {
+      console.error("[fcm] Failed to queue push batch:", err instanceof Error ? err.message : err);
+    });
+}
+
 export async function createNotification(input: {
   employeeId: string;
   type: string;
@@ -32,25 +49,37 @@ export async function createNotification(input: {
       input.entityId ?? null,
     ]
   );
-  return result.rows[0];
+  const notification = result.rows[0];
+  queuePush(notification);
+  return notification;
 }
 
 export async function createNotificationsForEmployees(
   employeeIds: string[],
   input: Omit<Parameters<typeof createNotification>[0], "employeeId">
-): Promise<void> {
-  if (employeeIds.length === 0) return;
+): Promise<AppNotification[]> {
+  if (employeeIds.length === 0) return [];
   const values: unknown[] = [];
   const rows = employeeIds.map((employeeId, index) => {
     const base = index * 6;
-    values.push(employeeId, input.type, input.title, input.body ?? null, input.linkPath ?? null, input.entityId ?? null);
+    values.push(
+      employeeId,
+      input.type,
+      input.title,
+      input.body ?? null,
+      input.linkPath ?? null,
+      input.entityId ?? null
+    );
     return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
   });
-  await pool.query(
+  const result = await pool.query<AppNotification>(
     `INSERT INTO app_notifications (employee_id, type, title, body, link_path, entity_id)
-     VALUES ${rows.join(", ")}`,
+     VALUES ${rows.join(", ")}
+     RETURNING *`,
     values
   );
+  queuePushMany(result.rows);
+  return result.rows;
 }
 
 export async function listMyNotifications(employeeId: string, limit = 50): Promise<AppNotification[]> {

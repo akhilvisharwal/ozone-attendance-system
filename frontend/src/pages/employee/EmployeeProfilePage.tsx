@@ -8,7 +8,7 @@ export function EmployeeProfilePage() {
     <div className="min-w-0 space-y-4 overflow-x-hidden pb-2">
       <PageHeader
         title="My Profile"
-        subtitle="Manage your profile picture"
+        subtitle="Manage your profile picture and notification preferences"
         icon={<UserCircle className="h-5 w-5" />}
       />
       <Card className="min-w-0 overflow-hidden">

@@ -64,6 +64,8 @@ export async function generateFavicons() {
     background_color: "#ffffff",
     display: "standalone",
     start_url: "/",
+    // Required for Chrome to route FCM pushes to this origin's service worker.
+    gcm_sender_id: "103953800507",
   };
   fs.writeFileSync(path.join(publicDir, "site.webmanifest"), `${JSON.stringify(manifest, null, 2)}\n`);
 }
