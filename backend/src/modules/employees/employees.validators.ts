@@ -1,7 +1,12 @@
 import { z } from "zod";
+import { CHRONOLOGICAL_SORTS } from "../../utils/chronologicalSort";
 
 export const createEmployeeSchema = z.object({
-  name: z.string().min(2).max(150),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Full name must be at least 2 characters")
+    .max(150, "Full name is too long"),
   email: z.string().email().optional().nullable(),
   phone: z.string().min(6).max(20).optional().nullable(),
   department: z.string().max(100).optional().nullable(),
@@ -10,7 +15,12 @@ export const createEmployeeSchema = z.object({
 });
 
 export const updateEmployeeSchema = z.object({
-  name: z.string().min(2).max(150).optional(),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Full name must be at least 2 characters")
+    .max(150, "Full name is too long")
+    .optional(),
   email: z.string().email().optional().nullable(),
   phone: z.string().min(6).max(20).optional().nullable(),
   department: z.string().max(100).optional().nullable(),
@@ -47,6 +57,7 @@ export const listEmployeesQuerySchema = z.object({
   search: z.string().optional(),
   isActive: z.enum(["true", "false"]).optional(),
   designationId: z.string().uuid().optional(),
+  sort: z.enum(CHRONOLOGICAL_SORTS).default("oldest"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });

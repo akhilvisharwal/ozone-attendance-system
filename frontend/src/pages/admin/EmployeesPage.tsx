@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/Card";
 import { ContentSkeleton, EmptyState, Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Input, FieldWrapper, Textarea } from "@/components/ui/Input";
+import { Input, FieldWrapper, Textarea, Select } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Alert } from "@/components/ui/Alert";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
@@ -28,6 +28,8 @@ import { usePublicSettings } from "@/contexts/SettingsContext";
 import { usePermissions } from "@/auth/usePermissions";
 import { formatDate } from "@/utils/format";
 import { DesignationSelect } from "@/components/DesignationSelect";
+import type { ChronologicalSort } from "@/utils/chronologicalSort";
+import { normalizeEmployeeName, findDuplicateEmployeeName } from "@/utils/chronologicalSort";
 import { EMPLOYEE_CODES_CHANGED_EVENT } from "@/utils/employeeCodeEvents";
 
 function todayStr() {
@@ -122,6 +124,7 @@ export function EmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState("");
   const [designationFilter, setDesignationFilter] = useState("");
+  const [sortOrder, setSortOrder] = useState<ChronologicalSort>("oldest");
 
   // Today's attendance keyed by employee id, so the page shows an always-current
   // status and can enforce the one-status-per-day lock.
@@ -145,6 +148,7 @@ export function EmployeesPage() {
       employeesApi.listEmployees({
         search: search || undefined,
         designationId: designationFilter || undefined,
+        sort: sortOrder,
         limit: 100,
       }),
       loadToday(),
@@ -164,7 +168,7 @@ export function EmployeesPage() {
     }
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sortOrder]);
 
   useEffect(() => {
     function onCodesChanged() {
@@ -173,7 +177,7 @@ export function EmployeesPage() {
     window.addEventListener(EMPLOYEE_CODES_CHANGED_EVENT, onCodesChanged);
     return () => window.removeEventListener(EMPLOYEE_CODES_CHANGED_EVENT, onCodesChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sortOrder, search, designationFilter]);
 
   function buildMenu(employee: Employee) {
     const marked = todayMap[employee.id];
@@ -343,6 +347,16 @@ export function EmployeesPage() {
               emptyLabel="All roles"
             />
           </div>
+          <div className="w-full sm:w-48">
+            <Select
+              label="Sort"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as ChronologicalSort)}
+            >
+              <option value="oldest">Oldest First</option>
+              <option value="newest">Newest First</option>
+            </Select>
+          </div>
           <Button type="submit" variant="outline" icon={<Search className="h-4 w-4" />} className="sm:self-end">
             Search
           </Button>
@@ -507,14 +521,33 @@ function CreateEmployeeModal({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    const trimmedName = normalizeEmployeeName(name);
+    if (trimmedName.length < 2) {
+      setError("Full name must be at least 2 characters.");
+      return;
+    }
     if (!designationId) {
       setError("Please select a Role / Designation.");
       return;
     }
     setSubmitting(true);
     try {
+      const existing = await employeesApi.listEmployees({
+        search: trimmedName,
+        limit: 50,
+        sort: "oldest",
+      });
+      const duplicate = findDuplicateEmployeeName(trimmedName, existing.items);
+      if (duplicate) {
+        setError(
+          `An employee named "${duplicate.name}" already exists${
+            duplicate.employee_code ? ` (${duplicate.employee_code})` : ""
+          }. Full names must be unique.`
+        );
+        return;
+      }
       const result = await employeesApi.createEmployee({
-        name,
+        name: trimmedName,
         email: email || null,
         phone: phone || null,
         designationId,
@@ -602,14 +635,33 @@ function EditEmployeeModal({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    const trimmedName = normalizeEmployeeName(name);
+    if (trimmedName.length < 2) {
+      setError("Full name must be at least 2 characters.");
+      return;
+    }
     if (!designationId) {
       setError("Please select a Role / Designation.");
       return;
     }
     setSaving(true);
     try {
+      const existing = await employeesApi.listEmployees({
+        search: trimmedName,
+        limit: 50,
+        sort: "oldest",
+      });
+      const duplicate = findDuplicateEmployeeName(trimmedName, existing.items, employee.id);
+      if (duplicate) {
+        setError(
+          `An employee named "${duplicate.name}" already exists${
+            duplicate.employee_code ? ` (${duplicate.employee_code})` : ""
+          }. Full names must be unique.`
+        );
+        return;
+      }
       const updated = await employeesApi.updateEmployee(employee.id, {
-        name,
+        name: trimmedName,
         email: email || null,
         phone: phone || null,
         department: department || null,

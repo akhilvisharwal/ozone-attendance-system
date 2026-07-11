@@ -15,12 +15,14 @@ import type { AdminAttendanceFilterStatus } from "@/api/attendance";
 import { extractErrorMessage } from "@/api/client";
 import type { AdminAttendanceRow } from "@/types";
 import { usePermissions } from "@/auth/usePermissions";
+import type { ChronologicalSort } from "@/utils/chronologicalSort";
 
 interface FilterState {
   employeeId: string;
   from: string;
   to: string;
   status: AdminAttendanceFilterStatus | "";
+  sort: ChronologicalSort;
 }
 
 const FILTER_CONTROL_CLASS =
@@ -42,6 +44,7 @@ function defaultDayFilters(): FilterState {
     from: today,
     to: today,
     status: "",
+    sort: "oldest",
   };
 }
 
@@ -58,6 +61,7 @@ function toQueryFilters(filters: FilterState): attendanceApi.AdminListParams {
     from: filters.from || undefined,
     to: filters.to || undefined,
     status: filters.status || undefined,
+    sort: filters.sort,
   };
 }
 
@@ -77,6 +81,7 @@ export function AttendanceRecordsPage() {
   const [from, setFrom] = useState(() => todayLocalDateString());
   const [to, setTo] = useState(() => todayLocalDateString());
   const [status, setStatus] = useState<AdminAttendanceFilterStatus | "">("");
+  const [sortOrder, setSortOrder] = useState<ChronologicalSort>("oldest");
   const [day, setDay] = useState(() => todayLocalDateString());
 
   const requestIdRef = useRef(0);
@@ -86,6 +91,7 @@ export function AttendanceRecordsPage() {
     from,
     to,
     status,
+    sort: sortOrder,
   });
 
   const fetchRecords = useCallback(
@@ -135,8 +141,9 @@ export function AttendanceRecordsPage() {
   );
 
   useEffect(() => {
-    fetchRecords(defaultDayFilters(), 1);
-  }, [fetchRecords]);
+    fetchRecords(currentFilters(), 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchRecords, sortOrder]);
 
   function applyFilters() {
     fetchRecords(currentFilters(), 1);
@@ -148,6 +155,7 @@ export function AttendanceRecordsPage() {
     setFrom(today);
     setTo(today);
     setStatus("");
+    setSortOrder("oldest");
     setDay(today);
     setFilterError(null);
     setFetchError(null);
@@ -206,7 +214,7 @@ export function AttendanceRecordsPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 sm:items-end xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)_auto] xl:gap-3">
+        <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 sm:items-end xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_auto] xl:gap-3">
           <div className="sm:col-span-2 xl:col-span-1">
             <EmployeeCombobox
               label="Employee"
@@ -251,6 +259,18 @@ export function AttendanceRecordsPage() {
               <option value="pending">Pending</option>
               <option value="checked_in">Checked In</option>
               <option value="checked_out">Checked Out</option>
+            </Select>
+          </div>
+
+          <div className="sm:col-span-2 xl:col-span-1">
+            <Select
+              label="Sort"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as ChronologicalSort)}
+              className={FILTER_CONTROL_CLASS}
+            >
+              <option value="oldest">Oldest First</option>
+              <option value="newest">Newest First</option>
             </Select>
           </div>
 

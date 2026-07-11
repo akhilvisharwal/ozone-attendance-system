@@ -37,6 +37,7 @@ export async function listEmployees(params: {
   search?: string;
   isActive?: boolean;
   designationId?: string;
+  sort?: "oldest" | "newest";
   page?: number;
   limit?: number;
 }) {
@@ -82,7 +83,7 @@ export async function deleteDesignation(id: string): Promise<void> {
   await apiClient.delete(`/employees/designations/${id}`);
 }
 
-/** All active employees for filter dropdowns (sorted by name, no pagination cap issues). */
+/** All active employees for filter dropdowns (chronological by createdAt, oldest first). */
 export async function listActiveEmployees() {
   const res = await apiClient.get<{ items: Employee[]; total: number }>("/employees/active");
   return res.data.items;

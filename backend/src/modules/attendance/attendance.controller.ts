@@ -300,6 +300,7 @@ export const adminMonthly = asyncHandler(async (req: Request, res: Response) => 
     month,
     employeeId: query.employeeId,
     siteId: query.siteId,
+    sort: query.sort,
   });
   res.json(grid);
 });
@@ -317,6 +318,7 @@ export const adminMonthlyExport = asyncHandler(async (req: Request, res: Respons
     month,
     employeeId: query.employeeId,
     siteId: query.siteId,
+    sort: query.sort,
   });
 
   let generatedBy = req.user!.employeeCode;

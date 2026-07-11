@@ -94,6 +94,7 @@ export async function listEmployees(params: {
   search?: string;
   isActive?: boolean;
   designationId?: string;
+  sort?: "oldest" | "newest";
   page: number;
   limit: number;
 }): Promise<{ items: PublicEmployee[]; total: number }> {
@@ -116,6 +117,10 @@ export async function listEmployees(params: {
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const orderBy =
+    params.sort === "newest"
+      ? "ORDER BY e.created_at DESC, e.employee_code ASC"
+      : "ORDER BY e.created_at ASC, e.employee_code ASC";
 
   const countResult = await pool.query<{ count: string }>(
     `SELECT COUNT(*) FROM ${EMPLOYEE_FROM} ${whereClause}`,
@@ -129,7 +134,7 @@ export async function listEmployees(params: {
     `SELECT ${EMPLOYEE_SELECT}
        FROM ${EMPLOYEE_FROM}
        ${whereClause}
-     ORDER BY e.created_at DESC
+     ${orderBy}
      LIMIT $${values.length - 1} OFFSET $${values.length}`,
     values
   );
@@ -138,12 +143,18 @@ export async function listEmployees(params: {
 }
 
 /** All active, non-deleted employees for admin filter dropdowns (no pagination). */
-export async function listActiveEmployees(): Promise<PublicEmployee[]> {
+export async function listActiveEmployees(
+  sort: "oldest" | "newest" = "oldest"
+): Promise<PublicEmployee[]> {
+  const orderBy =
+    sort === "newest"
+      ? "ORDER BY e.created_at DESC, e.employee_code ASC"
+      : "ORDER BY e.created_at ASC, e.employee_code ASC";
   const result = await pool.query<PublicEmployee>(
     `SELECT ${EMPLOYEE_SELECT}
        FROM ${EMPLOYEE_FROM}
       WHERE e.role = 'employee' AND e.deleted_at IS NULL AND e.is_active = true
-      ORDER BY e.name ASC`,
+      ${orderBy}`,
     []
   );
   return result.rows;
@@ -271,7 +282,8 @@ export async function updateWeeklyOffDays(
 
 /** Lightweight list of active employees (with weekly-off) for the monthly grid. */
 export async function listActiveEmployeesForGrid(
-  employeeId?: string
+  employeeId?: string,
+  sort: "oldest" | "newest" = "oldest"
 ): Promise<
   {
     id: string;
@@ -290,6 +302,10 @@ export async function listActiveEmployeesForGrid(
     values.push(employeeId);
     conditions.push(`e.id = $${values.length}`);
   }
+  const orderBy =
+    sort === "newest"
+      ? "ORDER BY e.created_at DESC, e.employee_code ASC"
+      : "ORDER BY e.created_at ASC, e.employee_code ASC";
   const result = await pool.query<{
     id: string;
     employee_code: string;
@@ -305,7 +321,7 @@ export async function listActiveEmployeesForGrid(
        FROM employees e
        LEFT JOIN employee_designations d ON d.id = e.designation_id
       WHERE ${conditions.join(" AND ")}
-      ORDER BY e.name ASC`,
+      ${orderBy}`,
     values
   );
   return result.rows;
@@ -316,6 +332,35 @@ export async function countActiveEmployees(): Promise<number> {
     "SELECT COUNT(*) FROM employees WHERE role = 'employee' AND is_active = true AND deleted_at IS NULL"
   );
   return parseInt(result.rows[0].count, 10);
+}
+
+/** Returns another active employee with the same normalized full name, if any. */
+export async function findEmployeeByNormalizedName(
+  name: string,
+  excludeId?: string
+): Promise<{ id: string; employee_code: string; name: string } | null> {
+  const normalized = name.trim().replace(/\s+/g, " ");
+  if (!normalized) return null;
+
+  const values: unknown[] = [normalized];
+  let excludeSql = "";
+  if (excludeId) {
+    values.push(excludeId);
+    excludeSql = ` AND id <> $${values.length}`;
+  }
+
+  const result = await pool.query<{ id: string; employee_code: string; name: string }>(
+    `SELECT id, employee_code, name
+       FROM employees
+      WHERE deleted_at IS NULL
+        AND role = 'employee'
+        AND lower(btrim(name)) = lower(btrim($1))
+        ${excludeSql}
+      ORDER BY created_at ASC
+      LIMIT 1`,
+    values
+  );
+  return result.rows[0] ?? null;
 }
 
 /** Soft-deletes an employee: hidden from lists but historical records are kept. */

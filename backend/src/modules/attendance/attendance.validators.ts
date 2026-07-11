@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CHRONOLOGICAL_SORTS } from "../../utils/chronologicalSort";
 
 const workStatusEnum = z.enum(
   ["completed", "in_progress", "pending", "on_hold", "cancelled"],
@@ -36,6 +37,7 @@ export const monthlyQuerySchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/, "Month must be in YYYY-MM format").optional(),
   employeeId: z.string().uuid().optional(),
   siteId: z.string().uuid().optional(),
+  sort: z.enum(CHRONOLOGICAL_SORTS).default("oldest"),
 });
 
 export const monthlyExportQuerySchema = z.object({
@@ -43,6 +45,7 @@ export const monthlyExportQuerySchema = z.object({
   employeeId: z.string().uuid().optional(),
   siteId: z.string().uuid().optional(),
   format: z.enum(["excel", "pdf"]).optional(),
+  sort: z.enum(CHRONOLOGICAL_SORTS).default("oldest"),
 });
 
 export const adminListQuerySchema = z
@@ -53,6 +56,7 @@ export const adminListQuerySchema = z
     status: z
       .enum(["present", "half_day", "absent", "pending", "checked_in", "checked_out"])
       .optional(),
+    sort: z.enum(CHRONOLOGICAL_SORTS).default("oldest"),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(200).default(20),
   })

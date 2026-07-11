@@ -191,10 +191,16 @@ function buildDayCell(input: {
   };
 }
 
-async function loadGridContext(from: string, to: string, employeeId?: string, siteId?: string) {
+async function loadGridContext(
+  from: string,
+  to: string,
+  employeeId?: string,
+  siteId?: string,
+  sort: "oldest" | "newest" = "oldest"
+) {
   const todayStr = toDateString(new Date());
   const defaultWeeklyOffDays = normalizeWeeklyOffDays(getSettings().weeklyOff.defaultWeeklyOffDays);
-  const employees = await employeesRepo.listActiveEmployeesForGrid(employeeId);
+  const employees = await employeesRepo.listActiveEmployeesForGrid(employeeId, sort);
   const attendanceRows = await repo.listAttendanceInRange(from, to, employeeId, siteId);
   const leaveRows = await repo.listApprovedLeavesInRange(from, to, employeeId);
   const holidayRows = await holidaysRepo.listHolidaysForRange(from, to);
@@ -236,9 +242,10 @@ export async function buildAttendanceGridForRange(params: {
   to: string;
   employeeId?: string;
   siteId?: string;
+  sort?: "oldest" | "newest";
 }): Promise<AttendanceRangeGrid> {
   const { from, to } = params;
-  const ctx = await loadGridContext(from, to, params.employeeId, params.siteId);
+  const ctx = await loadGridContext(from, to, params.employeeId, params.siteId, params.sort ?? "oldest");
   const dates = enumerateDates(from, to);
 
   const rows: MonthlyEmployeeRow[] = ctx.employees.map((emp) => {
@@ -286,6 +293,7 @@ export async function buildMonthlyGrid(params: {
   month: number;
   employeeId?: string;
   siteId?: string;
+  sort?: "oldest" | "newest";
 }): Promise<MonthlyGrid> {
   const { year, month } = params;
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -297,6 +305,7 @@ export async function buildMonthlyGrid(params: {
     to,
     employeeId: params.employeeId,
     siteId: params.siteId,
+    sort: params.sort ?? "oldest",
   });
 
   return {

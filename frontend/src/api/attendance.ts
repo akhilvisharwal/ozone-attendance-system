@@ -61,6 +61,7 @@ export interface AdminListParams {
   from?: string;
   to?: string;
   status?: AdminAttendanceFilterStatus;
+  sort?: "oldest" | "newest";
 }
 
 export async function getTimingRules(date?: string): Promise<TimingRulesResponse> {
@@ -167,6 +168,7 @@ export interface MonthlyParams {
   month?: string; // YYYY-MM
   employeeId?: string;
   siteId?: string;
+  sort?: "oldest" | "newest";
 }
 
 export async function getMyMonthly(params: MonthlyParams): Promise<MonthlyGrid> {

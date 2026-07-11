@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/Toast";
 import type { MonthlyCellStatus, MonthlyGrid, Site } from "@/types";
 import { formatMinutesAsHours } from "@/utils/format";
 import { usePermissions } from "@/auth/usePermissions";
+import type { ChronologicalSort } from "@/utils/chronologicalSort";
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -59,6 +60,7 @@ export function MonthlyAttendancePage() {
   const [employeeId, setEmployeeId] = useState("");
   const [siteId, setSiteId] = useState("");
   const [statusFilter, setStatusFilter] = useState<MonthlyCellStatus | "">("");
+  const [sortOrder, setSortOrder] = useState<ChronologicalSort>("oldest");
 
   const [sites, setSites] = useState<Site[]>([]);
   const [grid, setGrid] = useState<MonthlyGrid | null>(null);
@@ -78,6 +80,7 @@ export function MonthlyAttendancePage() {
         month,
         employeeId: employeeId || undefined,
         siteId: siteId || undefined,
+        sort: sortOrder,
       })
       .then(setGrid)
       .catch((err) => {
@@ -94,7 +97,7 @@ export function MonthlyAttendancePage() {
   useEffect(() => {
     loadGrid();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month, employeeId, siteId]);
+  }, [month, employeeId, siteId, sortOrder]);
 
   async function handleDownload(format: "excel" | "pdf") {
     setDownloading(format);
@@ -103,6 +106,7 @@ export function MonthlyAttendancePage() {
         month,
         employeeId: employeeId || undefined,
         siteId: siteId || undefined,
+        sort: sortOrder,
         format,
       });
     } catch (err) {
@@ -173,6 +177,14 @@ export function MonthlyAttendancePage() {
               <option value="holiday">Holiday</option>
               <option value="holiday_worked">Worked on Holiday</option>
               <option value="weekly_off_worked">Worked on Weekly Off</option>
+            </Select>
+            <Select
+              label="Sort"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as ChronologicalSort)}
+            >
+              <option value="oldest">Oldest First</option>
+              <option value="newest">Newest First</option>
             </Select>
           </FilterBar>
 

@@ -21,11 +21,27 @@ import { logAudit } from "../audit/audit.repository";
 import { storage } from "../../services/storage";
 import { notifyAdminEvent } from "../../services/email/adminNotifications";
 import { processProfilePhoto } from "../../utils/profilePhoto";
+import { normalizeEmployeeName } from "../../utils/chronologicalSort";
+
+async function assertUniqueEmployeeName(name: string, excludeId?: string): Promise<string> {
+  const normalized = normalizeEmployeeName(name);
+  if (normalized.length < 2) {
+    throw ApiError.badRequest("Full name must be at least 2 characters");
+  }
+  const existing = await repo.findEmployeeByNormalizedName(normalized, excludeId);
+  if (existing) {
+    throw ApiError.conflict(
+      `An employee named "${existing.name}" already exists (${existing.employee_code}). Full names must be unique.`
+    );
+  }
+  return normalized;
+}
 
 export const createEmployee = asyncHandler(async (req: Request, res: Response) => {
   const input = createEmployeeSchema.parse(req.body);
   const empSettings = getSettings().employee;
   const weeklyOff = getSettings().weeklyOff.defaultWeeklyOffDays;
+  const uniqueName = await assertUniqueEmployeeName(input.name);
 
   const designationId = input.designationId ?? empSettings.defaultDesignationId ?? null;
   if (!designationId) {
@@ -54,7 +70,7 @@ export const createEmployee = asyncHandler(async (req: Request, res: Response) =
 
       employee = await repo.createEmployee({
         employeeCode,
-        name: input.name,
+        name: uniqueName,
         email: input.email ?? null,
         phone: input.phone ?? null,
         passwordHash,
@@ -72,7 +88,17 @@ export const createEmployee = asyncHandler(async (req: Request, res: Response) =
     } catch (err) {
       lastError = err;
       const code = (err as { code?: string })?.code;
-      if (code !== "23505") throw err;
+      if (code === "23505") {
+        const constraint = (err as { constraint?: string })?.constraint ?? "";
+        if (constraint.includes("unique_name") || /name/i.test(String((err as Error).message))) {
+          throw ApiError.conflict(
+            `An employee with the name "${uniqueName}" already exists. Full names must be unique.`
+          );
+        }
+        // Retry employee_code collisions once.
+        continue;
+      }
+      throw err;
     }
   }
 
@@ -122,16 +148,19 @@ export const listEmployees = asyncHandler(async (req: Request, res: Response) =>
     search: query.search,
     isActive: query.isActive === undefined ? undefined : query.isActive === "true",
     designationId: query.designationId,
+    sort: query.sort,
     page: query.page,
     limit: query.limit,
   });
 
-  res.json({ items, total, page: query.page, limit: query.limit });
+  res.json({ items, total, page: query.page, limit: query.limit, sort: query.sort });
 });
 
-export const listActiveEmployees = asyncHandler(async (_req: Request, res: Response) => {
-  const items = await repo.listActiveEmployees();
-  res.json({ items, total: items.length });
+export const listActiveEmployees = asyncHandler(async (req: Request, res: Response) => {
+  const sort =
+    req.query.sort === "newest" || req.query.sort === "oldest" ? req.query.sort : "oldest";
+  const items = await repo.listActiveEmployees(sort);
+  res.json({ items, total: items.length, sort });
 });
 
 export const getEmployee = asyncHandler(async (req: Request, res: Response) => {
@@ -148,20 +177,36 @@ export const updateEmployee = asyncHandler(async (req: Request, res: Response) =
     if (!designation) throw ApiError.badRequest("Selected Role / Designation was not found");
   }
 
-  const employee = await repo.updateEmployeeProfile(req.params.id, {
-    name: input.name,
-    email: input.email,
-    phone: input.phone,
-    department: input.department,
-    designationId: input.designationId,
-  });
-  if (!employee) throw ApiError.notFound("Employee not found");
+  let name = input.name;
+  if (name !== undefined) {
+    name = await assertUniqueEmployeeName(name, req.params.id);
+  }
 
-  await logAudit(req, "employee.update", "employee", employee.id, {
-    ...input,
-    designation: employee.designation ?? null,
-  });
-  res.json({ employee });
+  try {
+    const employee = await repo.updateEmployeeProfile(req.params.id, {
+      name,
+      email: input.email,
+      phone: input.phone,
+      department: input.department,
+      designationId: input.designationId,
+    });
+    if (!employee) throw ApiError.notFound("Employee not found");
+
+    await logAudit(req, "employee.update", "employee", employee.id, {
+      ...input,
+      name,
+      designation: employee.designation ?? null,
+    });
+    res.json({ employee });
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    if (code === "23505") {
+      throw ApiError.conflict(
+        `An employee with the name "${name ?? input.name}" already exists. Full names must be unique.`
+      );
+    }
+    throw err;
+  }
 });
 
 export const setEmployeeActive = asyncHandler(async (req: Request, res: Response) => {

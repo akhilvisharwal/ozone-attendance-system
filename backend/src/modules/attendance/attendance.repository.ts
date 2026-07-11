@@ -241,6 +241,7 @@ export interface AdminAttendanceFilters {
   from?: string;
   to?: string;
   status?: "present" | "half_day" | "absent" | "pending" | "checked_in" | "checked_out";
+  sort?: "oldest" | "newest";
   page: number;
   limit: number;
 }
@@ -316,6 +317,10 @@ export async function listAllAttendance(
   const listValues = [...values, filters.limit, (filters.page - 1) * filters.limit];
   const limitParam = listValues.length - 1;
   const offsetParam = listValues.length;
+  const orderBy =
+    filters.sort === "newest"
+      ? "ORDER BY a.attendance_date DESC, a.check_in_time DESC NULLS LAST"
+      : "ORDER BY a.attendance_date ASC, a.check_in_time ASC NULLS LAST";
 
   const itemsResult = await pool.query(
     `SELECT ${ADMIN_LIST_SELECT}
@@ -326,7 +331,7 @@ export async function listAllAttendance(
      LEFT JOIN employees marker ON marker.id = a.admin_marked_by
      LEFT JOIN employees approver ON approver.id = a.admin_approved_by
      ${whereClause}
-     ORDER BY a.attendance_date DESC, a.check_in_time DESC NULLS LAST
+     ${orderBy}
      LIMIT $${limitParam} OFFSET $${offsetParam}`,
     listValues
   );
@@ -363,7 +368,7 @@ export async function listAttendanceInRange(
      JOIN employees e ON e.id = a.employee_id
      LEFT JOIN sites s ON s.id = a.site_id
      WHERE ${conditions.join(" AND ")}
-     ORDER BY a.attendance_date ASC, e.name ASC`,
+     ORDER BY a.attendance_date ASC, e.created_at ASC, e.employee_code ASC`,
     values
   );
   return result.rows;
