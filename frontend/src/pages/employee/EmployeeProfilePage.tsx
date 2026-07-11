@@ -5,13 +5,13 @@ import { UserCircle } from "lucide-react";
 
 export function EmployeeProfilePage() {
   return (
-    <div>
+    <div className="min-w-0 space-y-4 overflow-x-hidden pb-2">
       <PageHeader
         title="My Profile"
         subtitle="Manage your profile picture"
         icon={<UserCircle className="h-5 w-5" />}
       />
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CardBody>
           <MyProfileSection />
         </CardBody>

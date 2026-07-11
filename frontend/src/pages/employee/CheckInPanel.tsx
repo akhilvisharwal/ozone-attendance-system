@@ -372,7 +372,7 @@ export function CheckInPanel({ onCheckedIn }: { onCheckedIn: () => void }) {
 
   return (
     <>
-      <Card className="overflow-hidden">
+      <Card className="min-w-0 overflow-hidden">
         <CardBody className="flex flex-col gap-6 px-5 py-6 sm:px-8 sm:py-8">
           <div className="text-center">
             <p className="text-sm font-medium text-slate-500">{todayLabel}</p>

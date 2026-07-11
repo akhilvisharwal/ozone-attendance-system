@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import { Card, CardBody } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/Button";
 import { MonthPicker } from "@/components/ui/MonthPicker";
@@ -38,28 +38,40 @@ export function EmployeeMonthlyCalendar({
   const row = grid?.employees[0];
 
   return (
-    <Card className="h-full">
-      <CardHeader
-        title="Attendance Calendar"
-        subtitle={grid?.label}
-        action={
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" onClick={() => onMonthChange(shiftMonthString(month, -1))}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <MonthPicker
-              value={month}
-              onChange={onMonthChange}
-              emphasis
-              className="w-[11rem]"
-            />
-            <Button variant="outline" size="sm" onClick={() => onMonthChange(shiftMonthString(month, 1))}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        }
-      />
-      <CardBody>
+    <Card className="h-full min-w-0 overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:px-5">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold tracking-tight text-slate-900">Attendance Calendar</h3>
+          {grid?.label && <p className="mt-0.5 text-sm text-slate-500">{grid.label}</p>}
+        </div>
+        <div className="flex w-full min-w-0 items-center gap-1 sm:w-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => onMonthChange(shiftMonthString(month, -1))}
+            aria-label="Previous month"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <MonthPicker
+            value={month}
+            onChange={onMonthChange}
+            emphasis
+            className="min-w-0 flex-1 sm:w-[11rem] sm:flex-none"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => onMonthChange(shiftMonthString(month, 1))}
+            aria-label="Next month"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+      <CardBody className="min-w-0">
         {loading ? (
           <Spinner label="Loading calendar…" />
         ) : !row ? (
@@ -72,7 +84,7 @@ export function EmployeeMonthlyCalendar({
                 {grid!.holidays.map((h) => `${h.date.slice(8)} ${h.name}`).join(" · ")}
               </div>
             )}
-            <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+            <div className="grid min-w-0 grid-cols-7 gap-1 sm:gap-1.5">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                 <div key={d} className="text-center text-[10px] font-semibold uppercase text-slate-400">
                   {d}

@@ -56,12 +56,12 @@ import { ExpenseManagementPage } from "@/pages/admin/ExpenseManagementPage";
 import { EmployeeProfilePage } from "@/pages/employee/EmployeeProfilePage";
 
 const employeeNavItems: NavItem[] = [
-  { to: "/", label: "Check In / Out", icon: <Clock className="h-4 w-4" />, end: true },
-  { to: "/history", label: "Attendance History", icon: <ClipboardList className="h-4 w-4" /> },
-  { to: "/work-reports", label: "Work Reports", icon: <FileText className="h-4 w-4" /> },
-  { to: "/tasks", label: "My Tasks", icon: <CheckSquare className="h-4 w-4" /> },
-  { to: "/leaves", label: "Leave Requests", icon: <CalendarDays className="h-4 w-4" /> },
-  { to: "/profile", label: "My Profile", icon: <UserCircle className="h-4 w-4" /> },
+  { to: "/", label: "Check In / Out", shortLabel: "Home", icon: <Clock className="h-4 w-4" />, end: true },
+  { to: "/history", label: "Attendance History", shortLabel: "Attendance", icon: <ClipboardList className="h-4 w-4" /> },
+  { to: "/work-reports", label: "Work Reports", shortLabel: "Reports", icon: <FileText className="h-4 w-4" /> },
+  { to: "/tasks", label: "My Tasks", shortLabel: "Tasks", icon: <CheckSquare className="h-4 w-4" /> },
+  { to: "/leaves", label: "Leave Requests", shortLabel: "Leaves", icon: <CalendarDays className="h-4 w-4" /> },
+  { to: "/profile", label: "My Profile", shortLabel: "Profile", icon: <UserCircle className="h-4 w-4" /> },
 ];
 
 function AdminShell() {

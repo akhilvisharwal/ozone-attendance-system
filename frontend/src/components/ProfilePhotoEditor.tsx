@@ -105,7 +105,7 @@ export function ProfilePhotoEditor({
           <p className="max-w-sm text-center text-xs text-slate-500 sm:text-left">
             JPG, PNG, or WebP · max 2 MB. Images are cropped square and saved as WebP.
           </p>
-          <div className="mt-1 flex flex-wrap justify-center gap-2 sm:justify-start">
+          <div className="mt-1 flex w-full min-w-0 flex-wrap justify-center gap-2 sm:justify-start">
             <Button type="button" size="sm" icon={<Upload className="h-4 w-4" />} onClick={openPicker}>
               {employee.profile_photo_path ? "Replace photo" : "Upload photo"}
             </Button>

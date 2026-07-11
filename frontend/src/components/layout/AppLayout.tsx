@@ -17,6 +17,8 @@ import { quickTransition } from "@/lib/motion";
 export interface NavItem {
   to: string;
   label: string;
+  /** Shorter label for the employee bottom tab bar on narrow screens. */
+  shortLabel?: string;
   icon: ReactNode;
   end?: boolean;
 }
@@ -276,7 +278,7 @@ export function AppLayout({
 
         <main
           className={clsx(
-            "min-h-0 flex-1 overscroll-contain",
+            "min-h-0 min-w-0 flex-1 overscroll-contain overflow-x-hidden",
             isSettingsPage
               ? "flex flex-col overflow-y-auto lg:overflow-hidden"
               : "overflow-y-auto"
@@ -287,8 +289,8 @@ export function AppLayout({
           </div>
           <div
             className={clsx(
-              "mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 pb-safe",
-              isEmployeeMobile && "pb-24 lg:pb-safe",
+              "mx-auto w-full max-w-[1600px] min-w-0 px-3 py-4 sm:px-6 sm:py-6 lg:px-8",
+              isEmployeeMobile ? "pb-employee-nav" : "pb-safe",
               isSettingsPage && "flex min-h-0 flex-1 flex-col lg:overflow-hidden"
             )}
           >

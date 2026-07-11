@@ -78,9 +78,11 @@ function StatTile({
                   : "text-slate-900";
 
   return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={clsx("mt-1 text-xl font-semibold tabular-nums", accentClass)}>{value}</p>
+    <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-2.5 py-3 sm:px-3">
+      <p className="truncate text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:text-[11px]">
+        {label}
+      </p>
+      <p className={clsx("mt-1 text-lg font-semibold tabular-nums sm:text-xl", accentClass)}>{value}</p>
     </div>
   );
 }
@@ -92,9 +94,9 @@ export function EmployeeMonthlySummaryPanel({
   loading,
 }: EmployeeMonthlySummaryPanelProps) {
   return (
-    <Card className="h-full">
+    <Card className="h-full min-w-0 overflow-hidden">
       <CardHeader title="Monthly Summary" subtitle={label} />
-      <CardBody className="space-y-5">
+      <CardBody className="min-w-0 space-y-5">
         {loading ? (
           <Spinner label="Loading summary…" />
         ) : !summary || !extended ? (
@@ -103,19 +105,19 @@ export function EmployeeMonthlySummaryPanel({
           <>
             <div
               className={clsx(
-                "rounded-2xl p-4 ring-1",
+                "min-w-0 overflow-hidden rounded-2xl p-3 ring-1 sm:p-4",
                 PERFORMANCE_STYLES[extended.performanceLevel].ring,
                 PERFORMANCE_STYLES[extended.performanceLevel].bg
               )}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
+              <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
+                <div className="min-w-0">
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                     Performance
                   </p>
                   <p
                     className={clsx(
-                      "mt-1 text-lg font-semibold",
+                      "mt-1 text-base font-semibold sm:text-lg",
                       PERFORMANCE_STYLES[extended.performanceLevel].text
                     )}
                   >
@@ -124,25 +126,25 @@ export function EmployeeMonthlySummaryPanel({
                 </div>
                 <div
                   className={clsx(
-                    "flex h-10 w-10 items-center justify-center rounded-full bg-white/80",
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/80 sm:h-10 sm:w-10",
                     PERFORMANCE_STYLES[extended.performanceLevel].text
                   )}
                 >
                   <Award className="h-5 w-5" aria-hidden="true" />
                 </div>
               </div>
-              <div className="mt-4">
-                <div className="mb-1.5 flex items-center justify-between text-xs text-slate-600">
-                  <span className="inline-flex items-center gap-1">
-                    <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
+              <div className="mt-4 min-w-0">
+                <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2 text-xs text-slate-600">
+                  <span className="inline-flex min-w-0 items-center gap-1">
+                    <TrendingUp className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     Attendance
                   </span>
-                  <span className="font-semibold tabular-nums">{summary.attendancePercentage}%</span>
+                  <span className="shrink-0 font-semibold tabular-nums">{summary.attendancePercentage}%</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-white/70">
                   <div
                     className={clsx(
-                      "h-full rounded-full transition-all",
+                      "h-full max-w-full rounded-full transition-all",
                       PERFORMANCE_STYLES[extended.performanceLevel].bar
                     )}
                     style={{ width: `${Math.min(summary.attendancePercentage, 100)}%` }}
@@ -161,7 +163,7 @@ export function EmployeeMonthlySummaryPanel({
               </div>
             </div>
 
-            <div>
+            <div className="min-w-0">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Attendance
               </p>

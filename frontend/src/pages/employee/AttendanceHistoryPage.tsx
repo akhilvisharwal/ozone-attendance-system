@@ -41,14 +41,14 @@ export function AttendanceHistoryPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6 overflow-x-hidden">
       <PageHeader
         title="My Attendance"
         subtitle="Monthly overview, calendar, and record history"
       />
 
-      <div className="grid gap-4 xl:grid-cols-5">
-        <div className="xl:col-span-2">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-5">
+        <div className="min-w-0 xl:col-span-2">
           <EmployeeMonthlySummaryPanel
             label={grid?.label ?? "Selected month"}
             summary={summary}
@@ -56,7 +56,7 @@ export function AttendanceHistoryPage() {
             loading={loading}
           />
         </div>
-        <div className="xl:col-span-3">
+        <div className="min-w-0 xl:col-span-3">
           <EmployeeMonthlyCalendar
             month={month}
             onMonthChange={setMonth}
@@ -66,7 +66,7 @@ export function AttendanceHistoryPage() {
         </div>
       </div>
 
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="text-base font-semibold text-slate-900">Records</h3>
           <p className="mt-0.5 text-sm text-slate-500">

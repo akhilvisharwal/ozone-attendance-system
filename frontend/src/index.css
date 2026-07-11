@@ -30,6 +30,7 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   height: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -37,10 +38,13 @@ body {
   height: 100%;
   /* Avoid rubber-band horizontal scroll on small screens */
   overflow-x: hidden;
+  max-width: 100vw;
 }
 
 #root {
   height: 100%;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 * {
@@ -65,7 +69,7 @@ body {
 
 /* Safe-area helpers for notched devices */
 .pt-safe {
-  padding-top: env(safe-area-inset-top);
+  padding-top: env(safe-area-inset-top, 0px);
 }
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -78,6 +82,20 @@ body {
 }
 .pb-8-safe {
   padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
+}
+
+/*
+ * Employee mobile shell: clear the fixed bottom tab bar + iOS home indicator.
+ * Do not combine with a conflicting Tailwind pb-* utility — that can override this.
+ * Tab bar content ≈ 3.75rem; +1rem breathing room below the last control.
+ */
+.pb-employee-nav {
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px) + 1.25rem);
+}
+@media (min-width: 1024px) {
+  .pb-employee-nav {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 /* ── Brand logo — fixed 40 × 165 px everywhere (see components/Logo.tsx) ── */

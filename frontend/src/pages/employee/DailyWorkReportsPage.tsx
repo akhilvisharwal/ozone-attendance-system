@@ -22,10 +22,10 @@ export function DailyWorkReportsPage() {
   }, []);
 
   return (
-    <div>
+    <div className="min-w-0 overflow-x-hidden">
       <PageHeader title="My Daily Work Reports" subtitle="Work summaries you submitted at check-out" />
 
-      <Card>
+      <Card className="min-w-0 overflow-hidden">
         <CrossfadeSwitch state={loading ? "loading" : "content"}>
         {loading ? (
           <ContentSkeleton />

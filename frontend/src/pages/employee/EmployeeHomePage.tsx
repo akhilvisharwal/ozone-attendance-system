@@ -69,7 +69,7 @@ export function EmployeeHomePage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-3">
+    <div className="mx-auto w-full min-w-0 max-w-lg space-y-3 overflow-x-hidden">
       <AttendanceOverrideNoticeBanner override={publicSettings?.attendanceOverride} compact />
       {pendingCount > 0 && (
         <Alert variant="info">
@@ -132,18 +132,18 @@ function CheckedInConfirmation({
   onStartCheckOut: () => void;
 }) {
   return (
-    <Card>
-      <CardBody className="flex flex-col items-center gap-6 px-6 py-10 text-center">
+    <Card className="min-w-0 overflow-hidden">
+      <CardBody className="flex flex-col items-center gap-6 px-4 py-8 text-center sm:px-6 sm:py-10">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
           <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
         </div>
-        <div>
+        <div className="min-w-0">
           <h2 className="text-xl font-semibold text-slate-900">You&apos;re checked in</h2>
           <p className="mt-2 text-3xl font-semibold tabular-nums text-brand-600">
             {formatTime(attendance.check_in_time)}
           </p>
           {attendance.site_name && (
-            <p className="mt-2 text-sm text-slate-500">{attendance.site_name}</p>
+            <p className="mt-2 truncate text-sm text-slate-500">{attendance.site_name}</p>
           )}
         </div>
         <Button

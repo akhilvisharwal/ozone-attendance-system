@@ -143,7 +143,7 @@ export default function LeaveRequestsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6 overflow-x-hidden">
       <PageHeader
         title="Leave Requests"
         description="Submit and track your leave requests"

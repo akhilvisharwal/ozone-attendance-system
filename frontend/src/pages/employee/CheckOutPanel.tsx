@@ -209,7 +209,7 @@ export function CheckOutPanel({
   const mirror = camera.facingMode === "user";
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader
         title="Check Out"
         subtitle="Complete your daily work report and confirm check-out"
@@ -221,7 +221,7 @@ export function CheckOutPanel({
           ) : undefined
         }
       />
-      <CardBody>
+      <CardBody className="min-w-0">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {error && <Alert variant="error">{error}</Alert>}
           {desktopBlocked && (
@@ -235,7 +235,7 @@ export function CheckOutPanel({
             </Alert>
           )}
 
-          <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-3">
+          <div className="flex min-w-0 items-center gap-3 rounded-lg bg-slate-50 p-3">
             <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-white text-slate-500 ring-1 ring-slate-200">
               <Building2 className="h-4 w-4" />
             </div>
@@ -340,10 +340,11 @@ export function CheckOutPanel({
 
           <Button
             type="submit"
+            size="lg"
             isLoading={submitting}
             disabled={(!readyToSubmit && !(mobile?.allowOfflineMode && !online)) || submitting}
             icon={<LogOut className="h-4 w-4" />}
-            className="mt-2"
+            className="mt-1 min-h-[3.25rem] w-full text-base font-semibold"
           >
             Confirm Check Out
           </Button>
