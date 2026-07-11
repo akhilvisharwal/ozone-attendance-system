@@ -29,30 +29,19 @@ function usesCrossOriginCookies(): boolean {
   return process.env.CROSS_ORIGIN_COOKIES === "true";
 }
 
-function refreshCookieOptions(rememberMe = false) {
+function refreshCookieOptions() {
   const crossOrigin = env.isProduction && usesCrossOriginCookies();
-  const options: {
-    httpOnly: boolean;
-    secure: boolean;
-    sameSite: "none" | "lax";
-    path: string;
-    maxAge?: number;
-  } = {
+  // Always a session cookie (no maxAge) — browser discard on close; frontend also revokes on reload.
+  return {
     httpOnly: true,
     secure: env.isProduction,
-    sameSite: crossOrigin ? "none" : "lax",
+    sameSite: (crossOrigin ? "none" : "lax") as "none" | "lax",
     path: "/api",
   };
-  // Session cookie by default — cleared when the browser closes. Remember Me can opt into persistence later.
-  if (rememberMe) {
-    options.maxAge = parseDurationMs(env.jwtRefreshExpiresIn);
-  }
-  return options;
 }
 
 function clearRefreshCookieOptions() {
-  const { maxAge: _maxAge, ...options } = refreshCookieOptions();
-  return options;
+  return refreshCookieOptions();
 }
 
 export const login = asyncHandler(async (req: Request, res: Response) => {

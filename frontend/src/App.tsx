@@ -27,7 +27,6 @@ import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AppLayout, type NavItem } from "@/components/layout/AppLayout";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { OfflineScreen } from "@/components/OfflineScreen";
 import { LoginPage } from "@/pages/LoginPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
@@ -141,14 +140,10 @@ function RootRedirect() {
 }
 
 function AuthenticatedApp() {
-  const { isBootstrapping, isOffline, isReconnecting } = useAuth();
+  const { isBootstrapping } = useAuth();
 
   if (isBootstrapping) {
-    return <LoadingScreen label="Verifying your session…" />;
-  }
-
-  if (isOffline) {
-    return <OfflineScreen reconnecting={isReconnecting} />;
+    return <LoadingScreen label="Loading…" />;
   }
 
   return (

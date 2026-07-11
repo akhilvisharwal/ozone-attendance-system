@@ -21,6 +21,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Sessions are never restored across reloads — only an in-memory login can set employee.
   if (isBootstrapping) {
     return null;
   }

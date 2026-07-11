@@ -3,13 +3,15 @@ import type { Role } from "@/types";
 import { useAuth } from "./AuthContext";
 import { usePermissions } from "./usePermissions";
 import { ChangePasswordRequiredPage } from "@/pages/ChangePasswordRequiredPage";
+import { LoadingScreen } from "@/components/LoadingScreen";
 
 export function ProtectedRoute({ allowedRoles }: { allowedRoles: Role[] }) {
-  const { employee, isBootstrapping, isOffline } = useAuth();
+  const { employee, isBootstrapping } = useAuth();
   const { homePath } = usePermissions();
 
-  if (isBootstrapping || isOffline) {
-    return null;
+  // While wiping leftover cookies on first paint, do not flash protected content.
+  if (isBootstrapping) {
+    return <LoadingScreen label="Loading…" />;
   }
 
   if (!employee) {

@@ -2,13 +2,11 @@ import { useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { SessionTimeoutModal } from "@/components/SessionTimeoutModal";
-import { OfflineStatusBanner } from "@/components/OfflineStatusBanner";
-import { useAuthReconnect } from "@/hooks/useAuthReconnect";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useSessionTimeout } from "@/hooks/useSessionTimeout";
 
 export function SessionManager() {
-  const { employee, isBootstrapping, session, logout, refreshMe, revalidateSession } = useAuth();
+  const { employee, isBootstrapping, session, logout, refreshMe } = useAuth();
   const navigate = useNavigate();
   const online = useOnlineStatus();
   const enabled = Boolean(employee) && !isBootstrapping;
@@ -21,26 +19,20 @@ export function SessionManager() {
     }
   }, [logout, navigate]);
 
-  const handleRestored = useCallback(async () => {
-    try {
-      await refreshMe();
-    } catch {
-      await handleExpire();
-    }
-  }, [handleExpire, refreshMe]);
-
   const { warningOpen, warningSecondsRemaining, staySignedIn } = useSessionTimeout({
     enabled,
     onExpire: handleExpire,
     initialLastActivityAt: session?.lastActivityAt,
   });
 
-  useAuthReconnect({
-    enabled,
-    onRestored: handleRestored,
-    onSessionInvalid: handleExpire,
-  });
+  // Offline while signed in → force login again (AuthContext also clears; ensure redirect).
+  useEffect(() => {
+    if (!enabled) return;
+    if (online) return;
+    void handleExpire();
+  }, [enabled, online, handleExpire]);
 
+  // Junior-admin permission changes: refresh in-tab only; failure ends the session.
   useEffect(() => {
     if (!employee || employee.role !== "junior_admin") return;
     const onFocus = () => {
@@ -52,33 +44,24 @@ export function SessionManager() {
     return () => window.removeEventListener("focus", onFocus);
   }, [employee, handleExpire, refreshMe]);
 
+  // bfcache restore must not resurrect a session — always require login.
   useEffect(() => {
     const handlePageShow = (event: PageTransitionEvent) => {
-      if (!event.persisted || !employee) return;
-      void (async () => {
-        const valid = await revalidateSession();
-        if (!valid && !navigator.onLine) return;
-        if (!valid) {
-          await handleExpire();
-        }
-      })();
+      if (!event.persisted) return;
+      void handleExpire();
     };
-
     window.addEventListener("pageshow", handlePageShow);
     return () => window.removeEventListener("pageshow", handlePageShow);
-  }, [employee, handleExpire, revalidateSession]);
+  }, [handleExpire]);
 
   return (
-    <>
-      {enabled && !online ? <OfflineStatusBanner /> : null}
-      <SessionTimeoutModal
-        open={warningOpen}
-        secondsRemaining={warningSecondsRemaining}
-        onStaySignedIn={staySignedIn}
-        onLogout={() => {
-          void handleExpire();
-        }}
-      />
-    </>
+    <SessionTimeoutModal
+      open={warningOpen}
+      secondsRemaining={warningSecondsRemaining}
+      onStaySignedIn={staySignedIn}
+      onLogout={() => {
+        void handleExpire();
+      }}
+    />
   );
 }

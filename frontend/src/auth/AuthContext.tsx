@@ -1,32 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Employee } from "@/types";
-import { isAuthError, isNetworkError, setAccessToken, setUnauthorizedHandler } from "@/api/client";
+import { setAccessToken, setUnauthorizedHandler } from "@/api/client";
 import * as authApi from "@/api/auth";
 import type { SessionInfo } from "@/api/auth";
-import {
-  clearBrowserSession,
-  hasBrowserSession,
-  markBrowserSession,
-} from "@/auth/browserSession";
-import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 interface AuthContextValue {
   employee: Employee | null;
-  /** True while the initial session is being validated with the backend. */
+  /** True only while clearing any leftover cookie/storage on first paint. */
   isBootstrapping: boolean;
   /** @deprecated Use isBootstrapping — kept for gradual migration. */
   isLoading: boolean;
-  /** True when connectivity is unavailable during session validation. */
-  isOffline: boolean;
-  /** True when retrying session validation after coming back online. */
-  isReconnecting: boolean;
   session: SessionInfo | null;
   login: (employeeId: string, password: string) => Promise<Employee>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
-  /** Silently re-check the session with the backend (no full-page loader). */
-  revalidateSession: () => Promise<boolean>;
   /** Instantly update the signed-in employee in memory (e.g. after avatar upload). */
   setEmployee: (employee: Employee | null) => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<Employee>;
@@ -34,137 +22,127 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+/** Wipe client-side auth and app caches. Does not touch httpOnly cookies (server logout does). */
+function wipeClientStorage() {
+  try {
+    sessionStorage.clear();
+  } catch {
+    // Ignore quota / private-mode errors.
+  }
+  try {
+    localStorage.clear();
+  } catch {
+    // Ignore quota / private-mode errors.
+  }
+}
+
+async function revokeServerSession() {
+  try {
+    await authApi.logout();
+  } catch {
+    // Cookie may already be missing or unreachable.
+  }
+}
+
 function applySession(data: { accessToken: string; employee: Employee; session?: SessionInfo }) {
   setAccessToken(data.accessToken);
-  markBrowserSession();
   return {
     employee: data.employee,
     session: data.session ?? null,
   };
 }
 
-async function clearStaleRefreshCookie() {
-  try {
-    await authApi.logout();
-  } catch {
-    // Cookie may already be missing or unreachable — still clear client state.
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const online = useOnlineStatus();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
-  const [isOffline, setIsOffline] = useState(false);
-  const [reconnecting, setReconnecting] = useState(false);
-  /** Bumps when login/logout/changePassword establishes a new session — stale bootstrap refresh must not clear it. */
+  /** Bumps when login/logout/changePassword establishes a new session. */
   const sessionEpochRef = useRef(0);
-  const bootstrapAttemptRef = useRef(0);
+  const employeeRef = useRef<Employee | null>(null);
+
+  useEffect(() => {
+    employeeRef.current = employee;
+  }, [employee]);
 
   const clearSession = useCallback(() => {
     sessionEpochRef.current += 1;
-    clearBrowserSession();
     setAccessToken(null);
     setEmployee(null);
     setSession(null);
-    setIsOffline(false);
-    setReconnecting(false);
+    wipeClientStorage();
   }, []);
 
-  const establishSession = useCallback(
-    (data: { accessToken: string; employee: Employee; session?: SessionInfo }) => {
-      const next = applySession(data);
-      setEmployee(next.employee);
-      setSession(next.session);
-      setIsOffline(false);
-      setReconnecting(false);
-    },
-    []
-  );
-
-  const runBootstrap = useCallback(async () => {
-    const attempt = ++bootstrapAttemptRef.current;
-    const epoch = sessionEpochRef.current;
-
-    if (!hasBrowserSession()) {
-      await clearStaleRefreshCookie();
-      if (attempt !== bootstrapAttemptRef.current || epoch !== sessionEpochRef.current) return false;
-      clearSession();
-      return false;
-    }
-
-    try {
-      const data = await authApi.refresh();
-      if (attempt !== bootstrapAttemptRef.current || epoch !== sessionEpochRef.current) return false;
-      establishSession(data);
-      return true;
-    } catch (error) {
-      if (attempt !== bootstrapAttemptRef.current || epoch !== sessionEpochRef.current) return false;
-      if (isNetworkError(error)) {
-        setIsOffline(true);
-        setReconnecting(false);
-        return false;
-      }
-      if (isAuthError(error)) {
-        await clearStaleRefreshCookie();
-      }
-      clearSession();
-      return false;
-    }
-  }, [clearSession, establishSession]);
-
+  // On every page load / reopen: never restore a session. Revoke leftover refresh cookie and wipe storage.
   useEffect(() => {
-    setUnauthorizedHandler(clearSession);
+    let cancelled = false;
+
+    void (async () => {
+      await revokeServerSession();
+      if (cancelled) return;
+      clearSession();
+      setIsBootstrapping(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [clearSession]);
 
   useEffect(() => {
-    let cancelled = false;
+    setUnauthorizedHandler(() => {
+      clearSession();
+    });
+  }, [clearSession]);
 
-    void (async () => {
-      await runBootstrap();
-      if (!cancelled) {
-        setIsBootstrapping(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [runBootstrap]);
-
+  // Tab/browser close or hard navigation: revoke server session so the cookie cannot be reused.
   useEffect(() => {
-    if (isBootstrapping || !isOffline || !online) return;
-
-    let cancelled = false;
-    setReconnecting(true);
-
-    void (async () => {
-      await runBootstrap();
-      if (!cancelled) {
-        setReconnecting(false);
+    const revokeOnUnload = () => {
+      if (!employeeRef.current) return;
+      try {
+        void fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+        });
+      } catch {
+        // Best-effort during unload.
       }
-    })();
-
-    return () => {
-      cancelled = true;
+      setAccessToken(null);
+      wipeClientStorage();
     };
-  }, [isBootstrapping, isOffline, online, runBootstrap]);
 
-  const login = useCallback(
-    async (employeeId: string, password: string) => {
-      const data = await authApi.login(employeeId, password);
-      sessionEpochRef.current += 1;
-      const next = applySession(data);
-      setEmployee(next.employee);
-      setSession(next.session);
-      setIsBootstrapping(false);
-      setIsOffline(false);
-      setReconnecting(false);
-      return next.employee;
-    },
-    []
-  );
+    window.addEventListener("pagehide", revokeOnUnload);
+    window.addEventListener("beforeunload", revokeOnUnload);
+    return () => {
+      window.removeEventListener("pagehide", revokeOnUnload);
+      window.removeEventListener("beforeunload", revokeOnUnload);
+    };
+  }, []);
+
+  // Losing connectivity while signed in ends the session (no offline persistence).
+  useEffect(() => {
+    if (!employee) return;
+
+    const onOffline = () => {
+      void (async () => {
+        await revokeServerSession();
+        clearSession();
+      })();
+    };
+
+    window.addEventListener("offline", onOffline);
+    return () => window.removeEventListener("offline", onOffline);
+  }, [employee, clearSession]);
+
+  const login = useCallback(async (employeeId: string, password: string) => {
+    const data = await authApi.login(employeeId, password);
+    sessionEpochRef.current += 1;
+    const next = applySession(data);
+    setEmployee(next.employee);
+    setSession(next.session);
+    setIsBootstrapping(false);
+    return next.employee;
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -175,35 +153,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession]);
 
   const refreshMe = useCallback(async () => {
+    if (!employeeRef.current) {
+      throw new Error("Not authenticated");
+    }
     const data = await authApi.refresh();
     sessionEpochRef.current += 1;
     const next = applySession(data);
     setEmployee(next.employee);
     setSession(next.session);
   }, []);
-
-  const revalidateSession = useCallback(async () => {
-    if (!hasBrowserSession()) {
-      await clearStaleRefreshCookie();
-      clearSession();
-      return false;
-    }
-
-    try {
-      const data = await authApi.refresh();
-      sessionEpochRef.current += 1;
-      establishSession(data);
-      return true;
-    } catch (error) {
-      if (isNetworkError(error)) {
-        setIsOffline(true);
-        return false;
-      }
-      await clearStaleRefreshCookie();
-      clearSession();
-      return false;
-    }
-  }, [clearSession, establishSession]);
 
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
     const data = await authApi.changePassword(currentPassword, newPassword);
@@ -219,28 +177,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       employee,
       isBootstrapping,
       isLoading: isBootstrapping,
-      isOffline,
-      isReconnecting: reconnecting,
       session,
       login,
       logout,
       refreshMe,
-      revalidateSession,
       setEmployee,
       changePassword,
     }),
-    [
-      employee,
-      isBootstrapping,
-      isOffline,
-      reconnecting,
-      session,
-      login,
-      logout,
-      refreshMe,
-      revalidateSession,
-      changePassword,
-    ]
+    [employee, isBootstrapping, session, login, logout, refreshMe, changePassword]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
