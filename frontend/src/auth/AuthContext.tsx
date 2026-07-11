@@ -168,12 +168,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      const { disablePushNotifications } = await import("@/lib/pushNotifications");
-      await disablePushNotifications();
-    } catch {
-      // Push unregister is best-effort on logout.
-    }
-    try {
       await authApi.logout();
     } finally {
       clearSession();

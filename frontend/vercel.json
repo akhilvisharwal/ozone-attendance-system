@@ -14,7 +14,7 @@
       "destination": "https://ozone-attendance-api.onrender.com/assets/:path*"
     },
     {
-      "source": "/((?!assets/|favicon|apple-touch|android-chrome|site\\.webmanifest|firebase-messaging-sw\\.js|logo\\.png).*)",
+      "source": "/((?!assets/|favicon|apple-touch|android-chrome|site\\.webmanifest|logo\\.png).*)",
       "destination": "/index.html"
     }
   ],

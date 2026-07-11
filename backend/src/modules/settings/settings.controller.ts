@@ -69,7 +69,6 @@ import {
   issueDatabaseResetAuthorization,
   requireVerifiedOtp,
 } from "../emailVerification/emailVerification.service";
-import { notifySecurityAlert } from "../notifications/securityNotifications";
 import { pool } from "../../config/db";
 import bcrypt from "bcryptjs";
 
@@ -415,13 +414,6 @@ export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: R
     tableCounts: result.tableCounts,
   });
 
-  void notifySecurityAlert({
-    type: "security_database_reset",
-    title: "Database reset completed",
-    body: `A full database reset was completed by ${req.user!.employeeCode}. System Admin and settings were preserved.`,
-    linkPath: "/admin/settings",
-  });
-
   res.json({
     success: true,
     result,
@@ -612,15 +604,6 @@ export const changeAdminPassword = asyncHandler(async (req: Request, res: Respon
     adminCode: req.user!.employeeCode,
     verifiedByEmailOtp: true,
   });
-
-  void notifySecurityAlert({
-    type: "security_password_changed",
-    title: "System Admin password changed",
-    body: `Password for ${req.user!.employeeCode} was changed successfully.`,
-    linkPath: "/admin/settings",
-    entityId: req.user!.id,
-  });
-
   res.json({ success: true });
 });
 

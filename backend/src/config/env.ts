@@ -91,20 +91,6 @@ export const env = {
     process.env.APP_URL?.trim() || process.env.CLIENT_URL?.trim() || "http://localhost:5173"
   ),
 
-  /**
-   * Firebase Cloud Messaging — optional. When unset, push delivery is skipped gracefully.
-   * Prefer FIREBASE_SERVICE_ACCOUNT_JSON (full service-account JSON string).
-   */
-  firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim() ?? "",
-  firebaseProjectId: process.env.FIREBASE_PROJECT_ID?.trim() ?? "",
-  firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL?.trim() ?? "",
-  firebasePrivateKey: process.env.FIREBASE_PRIVATE_KEY?.trim() ?? "",
-  firebaseWebApiKey: process.env.FIREBASE_WEB_API_KEY?.trim() ?? "",
-  firebaseWebAuthDomain: process.env.FIREBASE_WEB_AUTH_DOMAIN?.trim() ?? "",
-  firebaseMessagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID?.trim() ?? "",
-  firebaseWebAppId: process.env.FIREBASE_WEB_APP_ID?.trim() ?? "",
-  firebaseVapidKey: process.env.FIREBASE_VAPID_KEY?.trim() ?? "",
-
   companyName: process.env.COMPANY_NAME ?? "Ozone Aircon",
   companyLogoPath: process.env.COMPANY_LOGO_PATH ?? "assets/logo.png",
 

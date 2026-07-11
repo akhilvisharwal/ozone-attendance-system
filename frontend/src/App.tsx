@@ -25,7 +25,6 @@ import { useAuth } from "@/auth/AuthContext";
 import { usePermissions } from "@/auth/usePermissions";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ToastProvider } from "@/components/ui/Toast";
-import { PushNotificationsProvider } from "@/push/PushNotificationsProvider";
 import { AppLayout, type NavItem } from "@/components/layout/AppLayout";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { OfflineScreen } from "@/components/OfflineScreen";
@@ -155,9 +154,8 @@ function AuthenticatedApp() {
   return (
     <SettingsProvider>
       <ToastProvider>
-        <PushNotificationsProvider>
-          <SessionManager />
-          <Routes>
+        <SessionManager />
+        <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
@@ -209,7 +207,6 @@ function AuthenticatedApp() {
 
           <Route path="*" element={<RootRedirect />} />
         </Routes>
-        </PushNotificationsProvider>
       </ToastProvider>
     </SettingsProvider>
   );

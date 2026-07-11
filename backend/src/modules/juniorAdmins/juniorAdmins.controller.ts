@@ -16,7 +16,6 @@ import {
 import * as repo from "./juniorAdmins.repository";
 import { notifyAdminEvent } from "../../services/email/adminNotifications";
 import { requireVerifiedOtp } from "../emailVerification/emailVerification.service";
-import { notifySecurityAlert } from "../notifications/securityNotifications";
 
 export const listJuniorAdmins = asyncHandler(async (_req: Request, res: Response) => {
   const items = await repo.listJuniorAdmins();
@@ -83,14 +82,6 @@ export const createJuniorAdmin = asyncHandler(async (req: Request, res: Response
     targetType: "employee",
     targetId: employee.id,
     metadata: { employeeCode, role: "junior_admin" },
-  });
-
-  void notifySecurityAlert({
-    type: "security_junior_admin_created",
-    title: "Junior Admin created",
-    body: `${employee.name} (${employeeCode}) was created by ${req.user!.employeeCode}.`,
-    linkPath: "/admin/settings",
-    entityId: employee.id,
   });
 
   res.status(201).json({
@@ -207,14 +198,6 @@ export const deleteJuniorAdmin = asyncHandler(async (req: Request, res: Response
     employeeCode: employee.employee_code,
     name: employee.name,
     verifiedByEmailOtp: true,
-  });
-
-  void notifySecurityAlert({
-    type: "security_junior_admin_deleted",
-    title: "Junior Admin deleted",
-    body: `${employee.name} (${employee.employee_code}) was deleted by ${req.user!.employeeCode}.`,
-    linkPath: "/admin/settings",
-    entityId: employee.id,
   });
 
   res.json({ employee, message: "Junior Admin deleted" });

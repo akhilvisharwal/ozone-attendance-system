@@ -42,20 +42,6 @@ services:
         sync: false
       - key: OTP_RECEIVER_EMAIL
         sync: false
-      - key: FIREBASE_SERVICE_ACCOUNT_JSON
-        sync: false
-      - key: FIREBASE_WEB_API_KEY
-        sync: false
-      - key: FIREBASE_WEB_AUTH_DOMAIN
-        sync: false
-      - key: FIREBASE_PROJECT_ID
-        sync: false
-      - key: FIREBASE_MESSAGING_SENDER_ID
-        sync: false
-      - key: FIREBASE_WEB_APP_ID
-        sync: false
-      - key: FIREBASE_VAPID_KEY
-        sync: false
       - key: GEOCODE_PROVIDER
         value: google
       - key: GOOGLE_MAPS_API_KEY

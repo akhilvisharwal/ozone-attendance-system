@@ -39,12 +39,6 @@ This app is a **split deployment**:
 | `OTP_RECEIVER_EMAIL` | Inbox for **all** security OTP codes and password-reset links (required for OTP delivery) |
 | `ADMIN_EMAIL` | Administrator / company email used for seed and company defaults (not OTP delivery) |
 | `APP_URL` | Public frontend URL for password-reset links (defaults to `CLIENT_URL`) |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | Optional Firebase service-account JSON (enables FCM push). Or use `FIREBASE_PROJECT_ID` + `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY` |
-| `FIREBASE_WEB_API_KEY` | Firebase web API key (client) |
-| `FIREBASE_WEB_AUTH_DOMAIN` | Firebase auth domain (client) |
-| `FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender id (client) |
-| `FIREBASE_WEB_APP_ID` | Firebase web app id (client) |
-| `FIREBASE_VAPID_KEY` | Web Push certificates key pair (public VAPID key from Firebase Console → Cloud Messaging) |
 | `GOOGLE_MAPS_API_KEY` | Google Geocoding on the server (Render). Also used for browser maps when no dedicated browser key is set. |
 | `GEOCODE_PROVIDER` | `google` (default in Blueprint). Falls back to Nominatim if Google key is missing. |
 | `GOOGLE_MAPS_BROWSER_API_KEY` | Optional browser-only Maps JavaScript API key served via `/api/settings/public` |
