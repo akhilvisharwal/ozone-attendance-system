@@ -10,7 +10,13 @@ import {
 } from "../../utils/storageAnalytics";
 import { getSettings, refreshSettingsCache } from "./settings.cache";
 
-/** Tables cleared during a full application reset (FK-safe child-first order). */
+/**
+ * Tables cleared during a full application reset (FK-safe child-first order).
+ * Intentionally NOT cleared:
+ * - app_settings / employee_designations (protected system configuration)
+ * - audit_logs (OTP + reset security trail)
+ * - refresh_tokens for the preserved System Admin (session must survive the reset)
+ */
 const RESET_DELETE_TABLES = [
   "task_reminder_log",
   "app_notifications",
@@ -27,8 +33,6 @@ const RESET_DELETE_TABLES = [
   "tasks",
   "company_holidays",
   "sites",
-  // audit_logs intentionally preserved so OTP + reset security events remain
-  "refresh_tokens",
   "email_otp_challenges",
   "password_reset_tokens",
 ] as const;
@@ -124,6 +128,15 @@ export async function executeDatabaseReset(): Promise<DatabaseResetResult> {
     for (const table of RESET_DELETE_TABLES) {
       await client.query(`DELETE FROM ${table}`);
     }
+
+    // Drop other users' sessions; keep the System Admin's refresh tokens so the
+    // current browser session can finish and refresh after the wipe.
+    await client.query(`DELETE FROM refresh_tokens WHERE employee_id <> $1`, [admin.id]);
+
+    // Point settings authorship at the preserved admin before removing other accounts.
+    await client.query(`UPDATE app_settings SET updated_by = $1 WHERE updated_by IS DISTINCT FROM $1`, [
+      admin.id,
+    ]);
 
     // Soft-deleted and junior/employee accounts — keep only the System Admin.
     await client.query(`DELETE FROM employees WHERE id <> $1`, [admin.id]);

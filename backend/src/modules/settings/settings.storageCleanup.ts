@@ -350,8 +350,18 @@ export async function executeStorageCleanup(category: CleanupCategory): Promise<
   switch (category) {
     case "attendance_records": {
       const paths = await collectAttendanceImagePaths("TRUE");
-      const del = await pool.query(`DELETE FROM attendance`);
-      deletedRecords = del.rowCount ?? 0;
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const del = await client.query(`DELETE FROM attendance`);
+        deletedRecords = del.rowCount ?? 0;
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
       deletedFiles = await removeFiles(paths);
       tablesToVacuum.add("attendance");
       details.attendance_deleted = deletedRecords;
@@ -360,14 +370,24 @@ export async function executeStorageCleanup(category: CleanupCategory): Promise<
     }
     case "selfies": {
       const paths = await collectAttendanceImagePaths(SELFIE_WHERE);
-      const update = await pool.query(
-        `UPDATE attendance
-            SET check_in_selfie_path = NULL,
-                site_photo_paths = '[]'::jsonb,
-                updated_at = now()
-          WHERE ${SELFIE_WHERE}`
-      );
-      deletedRecords = update.rowCount ?? 0;
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const update = await client.query(
+          `UPDATE attendance
+              SET check_in_selfie_path = NULL,
+                  site_photo_paths = '[]'::jsonb,
+                  updated_at = now()
+            WHERE ${SELFIE_WHERE}`
+        );
+        deletedRecords = update.rowCount ?? 0;
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
       deletedFiles = await removeFiles(paths);
       tablesToVacuum.add("attendance");
       details.attendance_rows_cleared = deletedRecords;
@@ -375,26 +395,46 @@ export async function executeStorageCleanup(category: CleanupCategory): Promise<
       break;
     }
     case "location_history": {
-      const update = await pool.query(
-        `UPDATE attendance
-            SET check_in_latitude = NULL,
-                check_in_longitude = NULL,
-                check_in_address = NULL,
-                check_out_latitude = NULL,
-                check_out_longitude = NULL,
-                check_out_address = NULL,
-                check_out_gps_accuracy = NULL,
-                updated_at = now()
-          WHERE ${LOCATION_WHERE}`
-      );
-      deletedRecords = update.rowCount ?? 0;
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const update = await client.query(
+          `UPDATE attendance
+              SET check_in_latitude = NULL,
+                  check_in_longitude = NULL,
+                  check_in_address = NULL,
+                  check_out_latitude = NULL,
+                  check_out_longitude = NULL,
+                  check_out_address = NULL,
+                  check_out_gps_accuracy = NULL,
+                  updated_at = now()
+            WHERE ${LOCATION_WHERE}`
+        );
+        deletedRecords = update.rowCount ?? 0;
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
       tablesToVacuum.add("attendance");
       details.location_rows_cleared = deletedRecords;
       break;
     }
     case "audit_logs": {
-      const del = await pool.query(`DELETE FROM audit_logs`);
-      deletedRecords = del.rowCount ?? 0;
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const del = await client.query(`DELETE FROM audit_logs`);
+        deletedRecords = del.rowCount ?? 0;
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
       tablesToVacuum.add("audit_logs");
       details.audit_logs_deleted = deletedRecords;
       break;

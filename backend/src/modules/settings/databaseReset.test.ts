@@ -1,5 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   databaseResetExecuteSchema,
   databaseResetPrepareSchema,
@@ -51,5 +53,17 @@ describe("database reset OTP schemas", () => {
     assert.ok(!REQUESTABLE_OTP_PURPOSES.includes("database_reset_authorization" as never));
     assert.ok(OTP_PURPOSE_LABELS.database_reset_step1.includes("step 1"));
     assert.ok(OTP_PURPOSE_LABELS.database_reset_step2.includes("step 2"));
+  });
+
+  it("preserves System Admin refresh tokens during reset wipe", () => {
+    const source = readFileSync(
+      path.join(__dirname, "settings.databaseReset.ts"),
+      "utf8"
+    );
+    assert.match(source, /DELETE FROM refresh_tokens WHERE employee_id <> \$1/);
+    assert.equal(
+      /RESET_DELETE_TABLES[\s\S]*?\] as const/.exec(source)?.[0]?.includes('"refresh_tokens"'),
+      false
+    );
   });
 });

@@ -148,4 +148,52 @@ describe("email OTP challenge lifecycle", { skip: process.env.SKIP_DB_TESTS === 
       assert.ok(consumed?.consumed_at, `expected ${purpose} challenge to be consumed`);
     }
   });
+
+  it("can validate an OTP without consuming it, then consume exactly once", async () => {
+    const code = generateOtpCode();
+    const challenge = await createOtpChallenge({
+      purpose: "database_reset_step2",
+      code,
+      recipientEmail: "info@ozoneairconhvac.com",
+      actorId,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+    createdIds.push(challenge.id);
+
+    await verifyOtpChallenge({
+      req: fakeReq(),
+      challengeId: challenge.id,
+      code,
+      purpose: "database_reset_step2",
+      actorId,
+      consume: false,
+    });
+
+    const peeked = await findOtpChallengeById(challenge.id);
+    assert.equal(peeked?.consumed_at, null);
+
+    await verifyOtpChallenge({
+      req: fakeReq(),
+      challengeId: challenge.id,
+      code,
+      purpose: "database_reset_step2",
+      actorId,
+      consume: true,
+    });
+
+    const consumed = await findOtpChallengeById(challenge.id);
+    assert.ok(consumed?.consumed_at);
+
+    await assert.rejects(
+      () =>
+        verifyOtpChallenge({
+          req: fakeReq(),
+          challengeId: challenge.id,
+          code,
+          purpose: "database_reset_step2",
+          actorId,
+        }),
+      /already been used/i
+    );
+  });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AlertTriangle, Info, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -22,8 +22,7 @@ type ResetPhase =
   | "confirm1"
   | "otp1"
   | "confirm2"
-  | "otp2"
-  | "running";
+  | "otp2";
 
 export function StorageManagementSection({
   storage,
@@ -35,7 +34,7 @@ export function StorageManagementSection({
   onStorageUpdated: (next: {
     status: DatabaseStatus;
     storage: StorageBreakdown;
-  }) => void;
+  }) => void | Promise<void>;
 }) {
   const reclaimableTipId = useId();
   const [cleanup, setCleanup] = useState<CleanupCenterSummary | null>(null);
@@ -43,6 +42,7 @@ export function StorageManagementSection({
   const [busyCategory, setBusyCategory] = useState<CleanupCategory | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<CleanupCategorySummary | null>(null);
   const [otpOpen, setOtpOpen] = useState(false);
+  const [cleanupExecuting, setCleanupExecuting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [resetPhase, setResetPhase] = useState<ResetPhase>("idle");
@@ -52,19 +52,27 @@ export function StorageManagementSection({
     authorizationToken: string;
   } | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [resetExecuting, setResetExecuting] = useState(false);
 
-  const loadCleanup = useCallback(async () => {
-    setLoading(true);
+  const cleanupInFlightRef = useRef(false);
+  const resetInFlightRef = useRef(false);
+
+  const loadCleanup = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const summary = await settingsApi.fetchCleanupCenter();
       setCleanup(summary);
+      return summary;
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: extractErrorMessage(err, "Failed to load storage cleanup totals."),
-      });
+      if (!opts?.silent) {
+        setMessage({
+          type: "error",
+          text: extractErrorMessage(err, "Failed to load storage cleanup totals."),
+        });
+      }
+      throw err;
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, []);
 
@@ -72,43 +80,75 @@ export function StorageManagementSection({
     void loadCleanup();
   }, [loadCleanup]);
 
+  async function refreshAfterMutation(next: {
+    status: DatabaseStatus;
+    storage: StorageBreakdown;
+    cleanup?: CleanupCenterSummary;
+  }) {
+    if (next.cleanup) setCleanup(next.cleanup);
+    try {
+      await onStorageUpdated({ status: next.status, storage: next.storage });
+    } catch {
+      // Parent refresh must not undo a successful delete/reset.
+    }
+    try {
+      await loadCleanup({ silent: true });
+    } catch {
+      // Response payload already updated local totals when available.
+    }
+  }
+
   async function handleConfirmCleanup() {
-    if (!confirmTarget) return;
+    if (!confirmTarget || cleanupInFlightRef.current) return;
     setOtpOpen(true);
   }
 
   async function handleCleanupOtpVerified(otp: { otpChallengeId: string; otpCode: string }) {
-    if (!confirmTarget) return;
+    if (!confirmTarget || cleanupInFlightRef.current) return;
+    cleanupInFlightRef.current = true;
+    setCleanupExecuting(true);
     setBusyCategory(confirmTarget.id);
     setMessage(null);
+    const label = confirmTarget.label;
     try {
       const result = await settingsApi.runStorageCleanup({
         category: confirmTarget.id,
         confirmation: "DELETE",
         ...otp,
       });
-      onStorageUpdated({ status: result.status, storage: result.storage });
-      setCleanup(result.cleanup);
       setConfirmTarget(null);
       setOtpOpen(false);
-      await loadCleanup();
+      setCleanupExecuting(false);
+      await refreshAfterMutation(result);
       setMessage({
         type: "success",
-        text: `${confirmTarget.label} permanently deleted. ${result.result.deletedRecords.toLocaleString()} record(s) and ${result.result.deletedFiles.toLocaleString()} file(s) removed. Storage permanently freed: database ${formatBytes(result.result.databaseSizeRecoveredBytes)}, files ${formatBytes(result.result.uploadedFilesRecoveredBytes)}.`,
+        text: `${label} permanently deleted. ${result.result.deletedRecords.toLocaleString()} record(s) and ${result.result.deletedFiles.toLocaleString()} file(s) removed. Storage permanently freed: database ${formatBytes(result.result.databaseSizeRecoveredBytes)}, files ${formatBytes(result.result.uploadedFilesRecoveredBytes)}.`,
       });
     } catch (err) {
+      setCleanupExecuting(false);
       throw err;
     } finally {
+      cleanupInFlightRef.current = false;
       setBusyCategory(null);
     }
   }
 
   function closeResetFlow() {
-    if (resetPhase === "running") return;
+    if (resetInFlightRef.current || resetExecuting) return;
     setResetPhase("idle");
     setResetTyped("");
     setResetAuth(null);
     setResetError(null);
+  }
+
+  function restartResetFlow(errorMessage: string) {
+    resetInFlightRef.current = false;
+    setResetExecuting(false);
+    setResetAuth(null);
+    setResetTyped("");
+    setResetPhase("idle");
+    setResetError(errorMessage);
+    setMessage({ type: "error", text: errorMessage });
   }
 
   async function handleResetStep1Otp(otp: { otpChallengeId: string; otpCode: string }) {
@@ -130,34 +170,57 @@ export function StorageManagementSection({
   }
 
   async function handleResetStep2Otp(otp: { otpChallengeId: string; otpCode: string }) {
+    if (resetInFlightRef.current) return;
     if (!resetAuth) {
-      setResetError("First verification expired. Start the reset again.");
-      setResetPhase("confirm1");
-      return;
+      restartResetFlow("First verification expired. Start the reset again.");
+      throw new Error("First verification expired. Start the reset again.");
     }
-    setResetPhase("running");
+
+    resetInFlightRef.current = true;
+    setResetExecuting(true);
     setResetError(null);
     setMessage(null);
+
+    const authSnapshot = resetAuth;
     try {
+      // Keep otp2 open so a wrong code can be corrected without restarting dual-OTP.
       const result = await settingsApi.executeDatabaseReset({
         confirmation: "RESET",
-        authorizationId: resetAuth.authorizationId,
-        authorizationToken: resetAuth.authorizationToken,
+        authorizationId: authSnapshot.authorizationId,
+        authorizationToken: authSnapshot.authorizationToken,
         ...otp,
       });
-      onStorageUpdated({ status: result.status, storage: result.storage });
-      setCleanup(result.cleanup);
-      setResetPhase("idle");
+
       setResetAuth(null);
       setResetTyped("");
-      await loadCleanup();
+      setResetPhase("idle");
+      setResetExecuting(false);
+      resetInFlightRef.current = false;
+
+      await refreshAfterMutation(result);
+
       setMessage({
         type: "success",
         text: `Database reset complete. Preserved System Admin ${result.result.preservedAdminCode}. Permanently removed ${result.result.deletedEmployees.toLocaleString()} account(s), ${result.result.deletedRecords.toLocaleString()} record(s), and ${result.result.deletedFiles.toLocaleString()} file(s). Storage permanently freed: database ${formatBytes(result.result.databaseSizeRecoveredBytes)}, files ${formatBytes(result.result.uploadedFilesRecoveredBytes)}.`,
       });
     } catch (err) {
-      setResetPhase("otp2");
-      setResetError(extractErrorMessage(err, "Database reset failed."));
+      const text = extractErrorMessage(err, "Database reset failed.");
+      // Only wrong/expired step-2 email codes are safe to retry — the authorization
+      // ticket is still intact. Anything else requires a full restart.
+      const retryable =
+        /incorrect verification code/i.test(text) ||
+        /verification code has expired/i.test(text);
+
+      if (retryable) {
+        resetInFlightRef.current = false;
+        setResetExecuting(false);
+        setResetError(text);
+        throw err;
+      }
+
+      restartResetFlow(
+        `${text} Start the reset again from the beginning (both email codes will be re-sent).`
+      );
       throw err;
     }
   }
@@ -178,7 +241,7 @@ export function StorageManagementSection({
     );
   }
 
-  const resetBusy = resetPhase === "running" || busyCategory != null;
+  const resetBusy = resetExecuting || busyCategory != null || cleanupExecuting;
 
   return (
     <div className="space-y-6">
@@ -253,7 +316,10 @@ export function StorageManagementSection({
                   icon={<Trash2 className="h-4 w-4" />}
                   disabled={!category.canDelete || resetBusy}
                   isLoading={busyCategory === category.id}
-                  onClick={() => setConfirmTarget(category)}
+                  onClick={() => {
+                    setMessage(null);
+                    setConfirmTarget(category);
+                  }}
                 >
                   Delete
                 </Button>
@@ -329,7 +395,7 @@ export function StorageManagementSection({
               </div>
             </div>
 
-            {resetPhase === "running" && (
+            {resetExecuting && (
               <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-white px-4 py-3 text-sm text-slate-700">
                 <Loader2 className="h-5 w-5 animate-spin text-red-600" aria-hidden />
                 <div>
@@ -341,7 +407,7 @@ export function StorageManagementSection({
               </div>
             )}
 
-            {resetError && resetPhase !== "running" && (
+            {resetError && !resetExecuting && (
               <div className="rounded-lg border border-red-200 bg-white px-4 py-3 text-sm text-red-800">
                 {resetError}
               </div>
@@ -355,6 +421,7 @@ export function StorageManagementSection({
                 disabled={resetBusy}
                 onClick={() => {
                   setResetError(null);
+                  setMessage(null);
                   setResetTyped("");
                   setResetAuth(null);
                   setResetPhase("confirm1");
@@ -371,7 +438,7 @@ export function StorageManagementSection({
         open={Boolean(confirmTarget) && !otpOpen}
         category={confirmTarget}
         onCancel={() => {
-          if (!busyCategory) setConfirmTarget(null);
+          if (!busyCategory && !cleanupExecuting) setConfirmTarget(null);
         }}
         onConfirm={handleConfirmCleanup}
       />
@@ -379,7 +446,11 @@ export function StorageManagementSection({
       <EmailOtpModal
         open={otpOpen}
         purpose="database_cleanup"
-        onClose={() => setOtpOpen(false)}
+        dismissible={!cleanupExecuting}
+        onClose={() => {
+          if (cleanupExecuting) return;
+          setOtpOpen(false);
+        }}
         onVerified={handleCleanupOtpVerified}
       />
 
@@ -459,8 +530,9 @@ export function StorageManagementSection({
       <EmailOtpModal
         open={resetPhase === "otp2"}
         purpose="database_reset_step2"
+        dismissible={!resetExecuting}
         onClose={() => {
-          if (resetPhase === "running") return;
+          if (resetInFlightRef.current || resetExecuting) return;
           setResetPhase("confirm2");
         }}
         onVerified={handleResetStep2Otp}

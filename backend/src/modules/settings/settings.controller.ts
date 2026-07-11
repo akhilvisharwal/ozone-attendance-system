@@ -68,6 +68,7 @@ import {
   consumeDatabaseResetAuthorization,
   issueDatabaseResetAuthorization,
   requireVerifiedOtp,
+  verifyOtpChallenge,
 } from "../emailVerification/emailVerification.service";
 import { pool } from "../../config/db";
 import bcrypt from "bcryptjs";
@@ -305,43 +306,61 @@ export const getCleanupOptions = asyncHandler(async (_req: Request, res: Respons
   res.json(summary);
 });
 
+/** Prevent duplicate cleanup submissions for the same category. */
+const cleanupInFlight = new Set<string>();
+
 export const cleanupData = asyncHandler(async (req: Request, res: Response) => {
   const input = cleanupConfirmSchema.parse(req.body);
   if (!CLEANUP_TARGETS.includes(input.category)) {
     throw ApiError.badRequest("Unsupported cleanup category");
   }
 
-  await requireVerifiedOtp({
-    req,
-    purpose: "database_cleanup",
-    otpChallengeId: input.otpChallengeId,
-    otpCode: input.otpCode,
-  });
+  const lockKey = `${req.user!.id}:${input.category}`;
+  if (cleanupInFlight.has(lockKey)) {
+    throw ApiError.badRequest(
+      "This cleanup is already running. Wait for it to finish before trying again."
+    );
+  }
 
-  const result = await executeStorageCleanup(input.category);
-  const [status, storage, cleanup] = await Promise.all([
-    backupService.getDatabaseStatus(),
-    getStorageBreakdown(),
-    getCleanupCenterSummary(),
-  ]);
+  cleanupInFlight.add(lockKey);
+  try {
+    await requireVerifiedOtp({
+      req,
+      purpose: "database_cleanup",
+      otpChallengeId: input.otpChallengeId,
+      otpCode: input.otpCode,
+      consume: true,
+    });
 
-  await logAudit(req, "settings.data_cleanup", "settings", undefined, {
-    category: result.category,
-    deletedRecords: result.deletedRecords,
-    deletedFiles: result.deletedFiles,
-    databaseSizeRecoveredBytes: result.databaseSizeRecoveredBytes,
-    uploadedFilesRecoveredBytes: result.uploadedFilesRecoveredBytes,
-    details: result.details,
-  });
+    const result = await executeStorageCleanup(input.category);
 
-  res.json({
-    success: true,
-    result,
-    status,
-    storage,
-    cleanup,
-    backup: getSettings().backup,
-  });
+    const [status, storage, cleanup] = await Promise.all([
+      backupService.getDatabaseStatus(),
+      getStorageBreakdown(),
+      getCleanupCenterSummary(),
+    ]);
+
+    await logAudit(req, "settings.data_cleanup", "settings", undefined, {
+      category: result.category,
+      deletedRecords: result.deletedRecords,
+      deletedFiles: result.deletedFiles,
+      databaseSizeRecoveredBytes: result.databaseSizeRecoveredBytes,
+      uploadedFilesRecoveredBytes: result.uploadedFilesRecoveredBytes,
+      details: result.details,
+    });
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      success: true,
+      result,
+      status,
+      storage,
+      cleanup,
+      backup: getSettings().backup,
+    });
+  } finally {
+    cleanupInFlight.delete(lockKey);
+  }
 });
 
 export const prepareDatabaseReset = asyncHandler(async (req: Request, res: Response) => {
@@ -372,56 +391,92 @@ export const prepareDatabaseReset = asyncHandler(async (req: Request, res: Respo
   });
 });
 
+/** Prevent concurrent full resets on the same process (duplicate clicks / retries). */
+let databaseResetInFlight = false;
+
 export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: Response) => {
   const input = databaseResetExecuteSchema.parse(req.body);
 
-  await consumeDatabaseResetAuthorization({
-    req,
-    authorizationId: input.authorizationId,
-    authorizationToken: input.authorizationToken,
-    actorId: req.user!.id,
-  });
+  if (databaseResetInFlight) {
+    throw ApiError.badRequest(
+      "A database reset is already in progress. Wait for it to finish before trying again."
+    );
+  }
 
-  await requireVerifiedOtp({
-    req,
-    purpose: "database_reset_step2",
-    otpChallengeId: input.otpChallengeId,
-    otpCode: input.otpCode,
-  });
+  databaseResetInFlight = true;
+  try {
+    // Validate step-2 OTP before burning the authorization ticket. Wrong/expired OTP
+    // must not force the user to restart from step 1.
+    await requireVerifiedOtp({
+      req,
+      purpose: "database_reset_step2",
+      otpChallengeId: input.otpChallengeId,
+      otpCode: input.otpCode,
+      consume: false,
+    });
 
-  await logAudit(req, "settings.database_reset_started", "settings", undefined, {
-    phase: "step2_verified_executing",
-    authorizationId: input.authorizationId,
-    verifiedByDualEmailOtp: true,
-  });
+    await verifyOtpChallenge({
+      req,
+      challengeId: input.authorizationId,
+      code: input.authorizationToken,
+      purpose: "database_reset_authorization",
+      actorId: req.user!.id,
+      consume: false,
+    });
 
-  const result = await executeDatabaseReset();
+    // Both credentials are valid — consume exactly once, then wipe.
+    await requireVerifiedOtp({
+      req,
+      purpose: "database_reset_step2",
+      otpChallengeId: input.otpChallengeId,
+      otpCode: input.otpCode,
+      consume: true,
+    });
 
-  const [status, storage, cleanup] = await Promise.all([
-    backupService.getDatabaseStatus(),
-    getStorageBreakdown(),
-    getCleanupCenterSummary(),
-  ]);
+    await consumeDatabaseResetAuthorization({
+      req,
+      authorizationId: input.authorizationId,
+      authorizationToken: input.authorizationToken,
+      actorId: req.user!.id,
+    });
 
-  await logAudit(req, "settings.database_reset_completed", "settings", undefined, {
-    verifiedByDualEmailOtp: true,
-    preservedAdminCode: result.preservedAdminCode,
-    deletedRecords: result.deletedRecords,
-    deletedFiles: result.deletedFiles,
-    deletedEmployees: result.deletedEmployees,
-    databaseSizeRecoveredBytes: result.databaseSizeRecoveredBytes,
-    uploadedFilesRecoveredBytes: result.uploadedFilesRecoveredBytes,
-    tableCounts: result.tableCounts,
-  });
+    await logAudit(req, "settings.database_reset_started", "settings", undefined, {
+      phase: "step2_verified_executing",
+      authorizationId: input.authorizationId,
+      verifiedByDualEmailOtp: true,
+    });
 
-  res.json({
-    success: true,
-    result,
-    status,
-    storage,
-    cleanup,
-    backup: getSettings().backup,
-  });
+    const result = await executeDatabaseReset();
+
+    const [status, storage, cleanup] = await Promise.all([
+      backupService.getDatabaseStatus(),
+      getStorageBreakdown(),
+      getCleanupCenterSummary(),
+    ]);
+
+    await logAudit(req, "settings.database_reset_completed", "settings", undefined, {
+      verifiedByDualEmailOtp: true,
+      preservedAdminCode: result.preservedAdminCode,
+      deletedRecords: result.deletedRecords,
+      deletedFiles: result.deletedFiles,
+      deletedEmployees: result.deletedEmployees,
+      databaseSizeRecoveredBytes: result.databaseSizeRecoveredBytes,
+      uploadedFilesRecoveredBytes: result.uploadedFilesRecoveredBytes,
+      tableCounts: result.tableCounts,
+    });
+
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      success: true,
+      result,
+      status,
+      storage,
+      cleanup,
+      backup: getSettings().backup,
+    });
+  } finally {
+    databaseResetInFlight = false;
+  }
 });
 
 export const runBackupNow = asyncHandler(async (req: Request, res: Response) => {

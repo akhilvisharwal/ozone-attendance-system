@@ -60,7 +60,10 @@ export async function runStorageCleanup(input: {
   otpChallengeId: string;
   otpCode: string;
 }): Promise<CleanupResultResponse> {
-  const res = await apiClient.post<CleanupResultResponse>("/settings/backup/cleanup", input);
+  const res = await apiClient.post<CleanupResultResponse>("/settings/backup/cleanup", input, {
+    timeout: 120_000,
+    headers: { "Cache-Control": "no-store" },
+  });
   return res.data;
 }
 
@@ -97,7 +100,10 @@ export async function prepareDatabaseReset(input: {
   otpChallengeId: string;
   otpCode: string;
 }): Promise<DatabaseResetAuthorization> {
-  const res = await apiClient.post<DatabaseResetAuthorization>("/settings/backup/reset/prepare", input);
+  const res = await apiClient.post<DatabaseResetAuthorization>("/settings/backup/reset/prepare", input, {
+    timeout: 60_000,
+    headers: { "Cache-Control": "no-store" },
+  });
   return res.data;
 }
 
@@ -108,7 +114,10 @@ export async function executeDatabaseReset(input: {
   otpChallengeId: string;
   otpCode: string;
 }): Promise<DatabaseResetResultResponse> {
-  const res = await apiClient.post<DatabaseResetResultResponse>("/settings/backup/reset", input);
+  const res = await apiClient.post<DatabaseResetResultResponse>("/settings/backup/reset", input, {
+    timeout: 180_000,
+    headers: { "Cache-Control": "no-store" },
+  });
   return res.data;
 }
 

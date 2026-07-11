@@ -157,7 +157,11 @@ export function DatabaseSettingsSection() {
   }) {
     setStatus(next.status);
     setStorage(next.storage);
-    await refresh();
+    try {
+      await refresh();
+    } catch {
+      // Successful storage mutations must not be rolled back by a settings refresh failure.
+    }
   }
 
   const capacity = storage?.capacity;

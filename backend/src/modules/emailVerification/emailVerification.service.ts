@@ -128,6 +128,8 @@ export async function verifyOtpChallenge(input: {
   code: string;
   purpose: OtpPurpose;
   actorId: string;
+  /** When false, validates the code but leaves the challenge reusable until consume. Default true. */
+  consume?: boolean;
 }): Promise<Record<string, unknown>> {
   const challenge = await findOtpChallengeById(input.challengeId);
   if (!challenge) {
@@ -217,10 +219,12 @@ export async function verifyOtpChallenge(input: {
     throw ApiError.badRequest("Incorrect verification code.");
   }
 
-  await consumeOtpChallenge(challenge.id);
-  await logAudit(input.req, "email.otp_verified", "email_otp", challenge.id, {
-    purpose: input.purpose,
-  });
+  if (input.consume !== false) {
+    await consumeOtpChallenge(challenge.id);
+    await logAudit(input.req, "email.otp_verified", "email_otp", challenge.id, {
+      purpose: input.purpose,
+    });
+  }
 
   return (challenge.payload ?? {}) as Record<string, unknown>;
 }
@@ -231,6 +235,7 @@ export async function requireVerifiedOtp(input: {
   purpose: OtpPurpose;
   otpChallengeId?: string;
   otpCode?: string;
+  consume?: boolean;
 }): Promise<Record<string, unknown>> {
   if (!input.otpChallengeId?.trim() || !input.otpCode?.trim()) {
     throw ApiError.badRequest(
@@ -243,6 +248,7 @@ export async function requireVerifiedOtp(input: {
     code: input.otpCode.trim(),
     purpose: input.purpose,
     actorId: input.req.user!.id,
+    consume: input.consume,
   });
 }
 
