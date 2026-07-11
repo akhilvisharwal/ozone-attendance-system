@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { motion } from "motion/react";
 import { ChevronLeft, LogOut, Menu, X } from "lucide-react";
@@ -39,6 +39,8 @@ export function AppLayout({
   const { isMasterAdmin } = usePermissions();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const drawerTriggerRef = useRef<HTMLButtonElement>(null);
   const [collapsed, setCollapsed] = useLocalStorageBoolean(SIDEBAR_COLLAPSE_KEY, false);
   const location = useLocation();
   /** Settings uses an internal split-pane scroll; lock the shell scroll on lg+. */
@@ -58,12 +60,26 @@ export function AppLayout({
   }, [location.pathname]);
 
   useEffect(() => {
-    if (drawerOpen) {
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = "";
-      };
+    if (!drawerOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const drawerTrigger = drawerTriggerRef.current;
+    document.body.style.overflow = "hidden";
+    requestAnimationFrame(() => drawerCloseRef.current?.focus());
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDrawerOpen(false);
+      }
     }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+      drawerTrigger?.focus({ preventScroll: true });
+    };
   }, [drawerOpen]);
 
   const brand = <Logo variant="sidebar" onNavigate={closeDrawer} />;
@@ -213,6 +229,7 @@ export function AppLayout({
               drawerOpen ? "opacity-100" : "pointer-events-none opacity-0"
             )}
             aria-hidden={!drawerOpen}
+            onMouseDown={closeDrawer}
           />
           <aside
             className={clsx(
@@ -221,10 +238,13 @@ export function AppLayout({
             )}
             role="dialog"
             aria-modal="true"
+            aria-hidden={!drawerOpen}
+            inert={!drawerOpen}
           >
             <div className="flex shrink-0 min-h-[4rem] items-center gap-2 border-b border-slate-100 px-3 py-3 pt-safe">
               <div className="min-w-0 flex-1 overflow-hidden">{brand}</div>
               <button
+                ref={drawerCloseRef}
                 onClick={closeDrawer}
                 className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 aria-label="Close menu"
@@ -247,6 +267,7 @@ export function AppLayout({
         >
           {!isEmployeeMobile && (
             <button
+              ref={drawerTriggerRef}
               onClick={() => setDrawerOpen(true)}
               className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
               aria-label="Open menu"

@@ -1,0 +1,1 @@
+Disposable Playwright upload fixture. No production data.

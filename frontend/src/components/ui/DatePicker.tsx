@@ -268,7 +268,7 @@ export function DatePicker({
             role="dialog"
             aria-label="Choose date"
             className={clsx(
-              "date-picker-panel absolute left-0 top-full z-40 mt-1 w-full min-w-[280px] max-w-[320px] rounded-xl border border-slate-200 bg-white p-3 shadow-soft-md",
+              "date-picker-panel absolute left-0 top-full z-40 mt-1 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-white p-2 shadow-soft-md sm:p-3",
               panelShown ? "date-picker-panel--open" : "date-picker-panel--closed"
             )}
           >

@@ -281,7 +281,7 @@ export function StorageManagementSection({
                       <span
                         id={reclaimableTipId}
                         role="tooltip"
-                        className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-64 -translate-x-1/2 rounded-lg bg-slate-900 px-3 py-2 text-left text-xs font-normal normal-case tracking-normal text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                        className="pointer-events-none absolute bottom-full right-0 z-20 mb-2 w-[min(15rem,calc(100vw-2rem))] rounded-lg bg-slate-900 px-3 py-2 text-left text-xs font-normal normal-case tracking-normal text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 sm:left-1/2 sm:right-auto sm:w-64 sm:-translate-x-1/2"
                       >
                         Estimated database and file space that will be permanently freed after
                         deletion. Deleted data cannot be recovered.

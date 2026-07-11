@@ -231,7 +231,7 @@ export function Combobox({
         {open && (
           <div
             className={clsx(
-              "absolute top-full z-30 mt-1 w-full min-w-[240px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-soft-md",
+              "absolute top-full z-30 mt-1 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-soft-md",
               "combobox-panel-open"
             )}
           >

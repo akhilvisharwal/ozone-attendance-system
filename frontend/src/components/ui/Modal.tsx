@@ -20,7 +20,7 @@ export function ModalFooterActions({
   return (
     <div
       className={clsx(
-        "flex min-h-11 w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-3",
+        "flex min-h-11 w-full flex-col-reverse gap-2 [&>button]:w-full sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:[&>button]:w-auto",
         className
       )}
     >
@@ -61,10 +61,13 @@ export function Modal({
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
 
+    previouslyFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
     const prevOverflow = document.body.style.overflow;
     const prevPaddingRight = document.body.style.paddingRight;
@@ -77,6 +80,8 @@ export function Modal({
     return () => {
       document.body.style.overflow = prevOverflow;
       document.body.style.paddingRight = prevPaddingRight;
+      previouslyFocusedRef.current?.focus({ preventScroll: true });
+      previouslyFocusedRef.current = null;
     };
   }, [open]);
 
@@ -126,7 +131,7 @@ export function Modal({
   }, [open, onClose]);
 
   const hasFooter = Boolean(footer);
-  const padX = compact ? "px-5" : "px-6";
+  const padX = compact ? "px-4 sm:px-5" : "px-4 sm:px-6";
   const headerPad = compact ? `${padX} py-4` : `${padX} pt-5 pb-3.5`;
 
   const bodyPad =
@@ -161,7 +166,7 @@ export function Modal({
         >
           <div
             className={clsx(
-              "pointer-events-none flex min-h-full justify-center px-4 py-6 sm:px-6 sm:py-10",
+              "pointer-events-none flex min-h-full justify-center px-3 py-3 sm:px-6 sm:py-10",
               layout === "sheet" ? "items-end sm:items-center" : "items-center"
             )}
           >
@@ -172,7 +177,7 @@ export function Modal({
               animate="animate"
               exit="exit"
               className={clsx(
-                "pointer-events-auto relative flex w-full max-h-[min(90vh,calc(100dvh-3rem))] flex-col overflow-hidden bg-white outline-none",
+                "pointer-events-auto relative flex w-full max-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden bg-white outline-none sm:max-h-[min(90vh,calc(100dvh-3rem))]",
                 "shadow-soft-lg ring-1 ring-slate-900/5",
                 layout === "centered" ? "rounded-2xl" : "rounded-t-2xl sm:rounded-2xl",
                 widthClassName

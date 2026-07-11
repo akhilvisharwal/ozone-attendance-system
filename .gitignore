@@ -10,6 +10,7 @@ build/
 .env
 .env.*
 !.env.example
+!qa/.env.qa.example
 
 # Logs
 *.log
@@ -54,6 +55,9 @@ pgdata/
 coverage/
 .nyc_output/
 backend/test-output/
+test-results/
+playwright-report/
+playwright/.cache/
 
 # Cursor / agent assets (local only)
 .cursor/

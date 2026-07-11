@@ -84,6 +84,15 @@ body {
   padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
 }
 
+/* Public authentication shells stay clear of browser chrome and device cutouts. */
+.auth-screen {
+  min-height: 100dvh;
+  padding-top: max(1.5rem, env(safe-area-inset-top, 0px));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+}
+
 /*
  * Employee mobile shell: clear the fixed bottom tab bar + iOS home indicator.
  * Do not combine with a conflicting Tailwind pb-* utility — that can override this.
@@ -272,6 +281,8 @@ body {
 
 .bottom-nav-animate {
   animation: bottom-nav-in 0.22s var(--ease-standard) forwards;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /* ── Interactive surface lift (cards, list rows) ── */

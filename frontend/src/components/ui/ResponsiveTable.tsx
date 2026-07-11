@@ -45,7 +45,7 @@ export function ResponsiveTable<T>({
     <>
       {/* Desktop / tablet: real table with horizontal scroll fallback */}
       <div className="hidden overflow-x-auto md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full min-w-max text-left text-sm">
           <thead className="border-b border-slate-100 text-xs font-medium uppercase tracking-wide text-slate-500">
             <tr>
               {columns.map((col, i) => (
@@ -53,7 +53,11 @@ export function ResponsiveTable<T>({
                   {col.header}
                 </th>
               ))}
-              {actions && <th className="px-4 py-3 text-right lg:px-5">Actions</th>}
+              {actions && (
+                <th className="sticky right-0 z-10 bg-white px-4 py-3 text-right shadow-[-8px_0_12px_-12px_rgb(15_23_42/0.35)] lg:px-5">
+                  Actions
+                </th>
+              )}
             </tr>
           </thead>
           <motion.tbody
@@ -67,6 +71,18 @@ export function ResponsiveTable<T>({
                 key={rowKey(row, index)}
                 variants={staggerItem}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onKeyDown={
+                  onRowClick && !actions
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onRowClick(row);
+                        }
+                      }
+                    : undefined
+                }
+                role={clickable && !actions ? "button" : undefined}
+                tabIndex={clickable && !actions ? 0 : undefined}
                 className={clsx("transition-colors", clickable && "cursor-pointer hover:bg-slate-50/80")}
               >
                 {columns.map((col, i) => (
@@ -82,7 +98,10 @@ export function ResponsiveTable<T>({
                   </td>
                 ))}
                 {actions && (
-                  <td className="px-4 py-3 text-right lg:px-5" onClick={(e) => e.stopPropagation()}>
+                  <td
+                    className="sticky right-0 bg-white px-4 py-3 text-right shadow-[-8px_0_12px_-12px_rgb(15_23_42/0.35)] lg:px-5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <div className="flex justify-end">{actions(row)}</div>
                   </td>
                 )}
@@ -107,6 +126,18 @@ export function ResponsiveTable<T>({
               key={rowKey(row, index)}
               variants={staggerItem}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
+              onKeyDown={
+                onRowClick && !actions
+                  ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onRowClick(row);
+                      }
+                    }
+                  : undefined
+              }
+              role={clickable && !actions ? "button" : undefined}
+              tabIndex={clickable && !actions ? 0 : undefined}
               className={clsx(
                 "flex flex-col gap-2 px-4 py-4 transition-colors",
                 clickable && "cursor-pointer active:bg-slate-50"
@@ -135,7 +166,7 @@ export function ResponsiveTable<T>({
                     <dt className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
                       {col.header}
                     </dt>
-                    <dd className="truncate text-sm text-slate-700">{col.cell(row)}</dd>
+                    <dd className="break-words text-sm text-slate-700">{col.cell(row)}</dd>
                   </div>
                 ))}
               </dl>

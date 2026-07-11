@@ -55,12 +55,12 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100 px-4">
+    <div className="auth-screen flex items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white p-8 shadow-soft-lg"
+        className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white p-5 shadow-soft-lg sm:p-8"
       >
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <Logo variant="hero" interactive={false} />
@@ -106,7 +106,10 @@ export function ResetPasswordPage() {
         )}
 
         <p className="mt-4 text-center text-sm text-slate-500">
-          <Link to="/login" className="font-medium text-brand-700 hover:underline">
+          <Link
+            to="/login"
+            className="inline-flex min-h-11 items-center font-medium text-brand-700 hover:underline sm:min-h-0"
+          >
             Back to sign in
           </Link>
         </p>

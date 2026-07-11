@@ -203,11 +203,11 @@ export function TimePickerField({
             role="dialog"
             aria-label="Choose time"
             className={clsx(
-              "time-picker-panel absolute left-0 top-full z-40 mt-1 w-full min-w-[300px] max-w-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft-lg ring-1 ring-slate-900/5",
+              "time-picker-panel absolute left-0 top-full z-40 mt-1 w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft-lg ring-1 ring-slate-900/5",
               panelShown ? "time-picker-panel--open" : "time-picker-panel--closed"
             )}
           >
-            <div className="bg-gradient-to-br from-brand-600 to-brand-700 px-5 pb-5 pt-4 text-white">
+            <div className="bg-gradient-to-br from-brand-600 to-brand-700 px-3 pb-5 pt-4 text-white sm:px-5">
               <p className="text-xs font-medium uppercase tracking-wide text-brand-100">Select time</p>
               <div className="mt-3 flex items-end justify-between gap-3">
                 <div className="flex items-end gap-1">
@@ -215,18 +215,18 @@ export function TimePickerField({
                     type="button"
                     onClick={() => setMode("hour")}
                     className={clsx(
-                      "rounded-lg px-2 py-1 text-4xl font-semibold tabular-nums transition-all duration-200",
+                      "rounded-lg px-1.5 py-1 text-3xl font-semibold tabular-nums transition-all duration-200 sm:px-2 sm:text-4xl",
                       mode === "hour" ? "bg-white/15" : "opacity-80 hover:opacity-100"
                     )}
                   >
                     {String(hour12).padStart(2, "0")}
                   </button>
-                  <span className="pb-1 text-3xl font-light opacity-80">:</span>
+                  <span className="pb-1 text-2xl font-light opacity-80 sm:text-3xl">:</span>
                   <button
                     type="button"
                     onClick={() => setMode("minute")}
                     className={clsx(
-                      "rounded-lg px-2 py-1 text-4xl font-semibold tabular-nums transition-all duration-200",
+                      "rounded-lg px-1.5 py-1 text-3xl font-semibold tabular-nums transition-all duration-200 sm:px-2 sm:text-4xl",
                       mode === "minute" ? "bg-white/15" : "opacity-80 hover:opacity-100"
                     )}
                   >
@@ -241,7 +241,7 @@ export function TimePickerField({
                       type="button"
                       onClick={() => setPeriod(value)}
                       className={clsx(
-                        "min-w-[3rem] rounded-md px-3 py-1.5 text-xs font-semibold transition-all duration-200",
+                        "min-w-10 rounded-md px-2 py-1.5 text-xs font-semibold transition-all duration-200 sm:min-w-[3rem] sm:px-3",
                         period === value ? "bg-white text-brand-700 shadow-sm" : "text-white/90 hover:bg-white/10"
                       )}
                     >

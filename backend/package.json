@@ -17,7 +17,8 @@
     "seed": "tsx src/db/seed.ts",
     "reset-admin-password": "node scripts/reset-admin-password.js",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test src/**/*.test.ts",
+    "test:http": "tsx --test src/qa/http.integration.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

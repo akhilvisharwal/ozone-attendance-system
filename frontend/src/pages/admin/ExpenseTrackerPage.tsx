@@ -419,7 +419,7 @@ export function ExpenseTrackerPage() {
             type="button"
             onClick={() => setTab(item.id)}
             className={clsx(
-              "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+              "min-h-11 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:min-h-0",
               tab === item.id
                 ? "bg-brand-50 text-brand-700"
                 : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"

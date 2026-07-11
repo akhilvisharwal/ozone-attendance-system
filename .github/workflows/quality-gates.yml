@@ -1,0 +1,97 @@
+name: Quality gates
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ozone
+          POSTGRES_PASSWORD: ozone_test_password
+          POSTGRES_DB: ozone_attendance_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ozone -d ozone_attendance_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://ozone:ozone_test_password@127.0.0.1:5432/ozone_attendance_test
+      DATABASE_SSL: "false"
+      JWT_ACCESS_SECRET: qa-only-access-secret-not-for-production
+      JWT_REFRESH_SECRET: qa-only-refresh-secret-not-for-production
+      CLIENT_URL: http://127.0.0.1:5173
+      APP_URL: http://127.0.0.1:5173
+      ADMIN_EMPLOYEE_ID: QACIADMIN
+      ADMIN_PASSWORD: Qa-CI-Only-Password-123!
+      ADMIN_EMAIL: qa-admin@example.test
+      QA_ALLOW_DB_MUTATION: "1"
+      QA_BASE_URL: http://127.0.0.1:5173
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix backend ci
+          npm --prefix frontend ci
+
+      - name: Apply migrations and seed disposable admin
+        run: |
+          npm run qa:migrate
+          npm --prefix backend run seed
+
+      - name: Lint and typecheck
+        run: npm run qa:lint
+
+      - name: Unit tests
+        env:
+          SKIP_DB_TESTS: "1"
+        run: npm run qa:test
+
+      - name: Isolated HTTP integration tests
+        run: npm run qa:test:http
+
+      - name: Production builds
+        run: npm run qa:build
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Safe browser smoke
+        run: npm run qa:e2e:smoke
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-evidence
+          path: |
+            playwright-report/
+            test-results/playwright/
+          if-no-files-found: ignore
+          retention-days: 14

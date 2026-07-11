@@ -35,13 +35,13 @@ export function PhoneNumberField({
 
   return (
     <FieldWrapper label={label} required={required} hint={hint} error={error}>
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <PhoneCountryCombobox
           dialCode={selectedDialCode}
           onDialCodeChange={onDialCodeChange}
           error={hasError}
           ariaLabel={`${label} country code`}
-          className="w-[11.5rem] shrink-0 sm:w-[13rem]"
+          className="w-full shrink-0 sm:w-[13rem]"
         />
         <input
           type="tel"

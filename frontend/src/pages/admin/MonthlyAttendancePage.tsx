@@ -223,10 +223,10 @@ export function MonthlyAttendancePage() {
           <EmptyState title="No active employees found for this month" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
+            <table className="w-full min-w-max border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold text-slate-600">
+                  <th className="sticky left-0 z-20 min-w-40 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold text-slate-600 shadow-[8px_0_12px_-12px_rgb(15_23_42/0.35)]">
                     Employee
                   </th>
                   {dayNumbers.map((day) => {
@@ -245,7 +245,7 @@ export function MonthlyAttendancePage() {
                               ? "bg-slate-100 text-slate-500"
                               : "bg-slate-50 text-slate-500"
                         )}
-                        style={{ minWidth: 30 }}
+                        style={{ minWidth: 38 }}
                       >
                         <button
                           type="button"
@@ -280,7 +280,7 @@ export function MonthlyAttendancePage() {
               <tbody>
                 {grid.employees.map((emp) => (
                   <tr key={emp.employeeId} className="hover:bg-slate-50/60">
-                    <td className="sticky left-0 z-10 whitespace-nowrap border-b border-slate-100 bg-white px-3 py-2">
+                    <td className="sticky left-0 z-10 min-w-40 whitespace-nowrap border-b border-r border-slate-100 bg-white px-3 py-2 shadow-[8px_0_12px_-12px_rgb(15_23_42/0.35)]">
                       <p className="font-medium text-slate-900">{emp.name}</p>
                       <p className="text-xs text-slate-400">{emp.employeeCode}</p>
                       {emp.designation && (
@@ -315,7 +315,7 @@ export function MonthlyAttendancePage() {
                               });
                             }}
                             className={clsx(
-                              "relative mx-auto flex h-7 w-7 items-center justify-center rounded text-[10px] font-semibold transition",
+                              "relative mx-auto flex h-9 w-9 items-center justify-center rounded text-[10px] font-semibold transition sm:h-8 sm:w-8",
                               canEditCell && "cursor-pointer hover:ring-2 hover:ring-brand-300 hover:scale-105",
                               !canEditCell && "cursor-default",
                               meta.cell,
@@ -349,10 +349,12 @@ export function MonthlyAttendancePage() {
           <EmptyState title="No summary available" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-max text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-3 py-2">Employee</th>
+                  <th className="sticky left-0 z-10 min-w-40 bg-slate-50 px-3 py-2 shadow-[8px_0_12px_-12px_rgb(15_23_42/0.35)]">
+                    Employee
+                  </th>
                   <th className="px-3 py-2 text-center">Present</th>
                   <th className="px-3 py-2 text-center">Half</th>
                   <th className="px-3 py-2 text-center">Absent</th>
@@ -372,7 +374,7 @@ export function MonthlyAttendancePage() {
                   const s = emp.summary;
                   return (
                     <tr key={emp.employeeId} className="border-b border-slate-100 hover:bg-slate-50/60">
-                      <td className="px-3 py-2">
+                      <td className="sticky left-0 bg-white px-3 py-2 shadow-[8px_0_12px_-12px_rgb(15_23_42/0.35)]">
                         <p className="font-medium text-slate-900">{emp.name}</p>
                         <p className="text-xs text-slate-400">{emp.employeeCode}</p>
                         {emp.designation && (

@@ -1,0 +1,22 @@
+{
+  "name": "ozone-attendance-system",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "qa:lint": "node qa/run.mjs lint",
+    "qa:typecheck": "node qa/run.mjs typecheck",
+    "qa:test": "node qa/run.mjs test",
+    "qa:test:http": "node qa/run.mjs test:http",
+    "qa:build": "node qa/run.mjs build",
+    "qa:migrate": "node qa/run.mjs migrate",
+    "qa:e2e": "node qa/run.mjs e2e",
+    "qa:e2e:smoke": "node qa/run.mjs e2e:smoke",
+    "qa:gate": "node qa/run.mjs gate"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "dotenv": "^17.4.2"
+  }
+}
