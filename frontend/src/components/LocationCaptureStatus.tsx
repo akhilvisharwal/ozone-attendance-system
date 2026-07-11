@@ -3,19 +3,62 @@ import { MapPin } from "lucide-react";
 export function LocationCaptureStatus({
   loading,
   captured,
+  accuracyOk = true,
+  accuracyMeters,
+  accuracyThresholdMeters,
   error,
   onRetry,
   successLabel = "Location captured successfully",
 }: {
   loading: boolean;
   captured: boolean;
+  /** False when a fix exists but is weaker than the allowed threshold. */
+  accuracyOk?: boolean;
+  accuracyMeters?: number | null;
+  accuracyThresholdMeters?: number;
   error: string | null;
   onRetry?: () => void;
   successLabel?: string;
 }) {
-  if (captured) {
+  const accuracyLabel =
+    typeof accuracyMeters === "number" && Number.isFinite(accuracyMeters)
+      ? `${Math.round(accuracyMeters)}m`
+      : null;
+
+  if (captured && accuracyOk) {
     return (
-      <p className="text-center text-sm font-medium text-emerald-600">{successLabel}</p>
+      <p className="text-center text-sm font-medium text-emerald-600">
+        {successLabel}
+        {accuracyLabel ? ` (${accuracyLabel})` : ""}
+      </p>
+    );
+  }
+
+  if (captured && !accuracyOk) {
+    return (
+      <p className="flex flex-wrap items-center justify-center gap-2 text-center text-sm text-amber-700">
+        <span className="inline-flex items-center gap-1.5">
+          <MapPin className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+          GPS signal is too weak
+          {accuracyLabel ? ` (${accuracyLabel}` : ""}
+          {accuracyLabel && accuracyThresholdMeters
+            ? ` / need ≤ ${accuracyThresholdMeters}m)`
+            : accuracyLabel
+              ? ")"
+              : ""}
+          . Move outdoors and retry.
+        </span>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={loading}
+            className="font-medium underline disabled:opacity-50"
+          >
+            Retry
+          </button>
+        )}
+      </p>
     );
   }
 

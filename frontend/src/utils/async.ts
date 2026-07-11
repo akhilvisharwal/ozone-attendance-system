@@ -21,7 +21,7 @@ export function withTimeout<T>(
   });
 }
 
-export const GPS_TIMEOUT_MS = 10_000;
+export const GPS_TIMEOUT_MS = 20_000;
 export const CHECK_IN_API_TIMEOUT_MS = 60_000;
 
 export const GPS_TIMEOUT_MESSAGE =

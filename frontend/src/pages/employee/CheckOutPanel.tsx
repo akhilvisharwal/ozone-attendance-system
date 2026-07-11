@@ -10,7 +10,7 @@ import * as attendanceApi from "@/api/attendance";
 import { extractErrorMessage } from "@/api/client";
 import { usePublicSettings } from "@/contexts/SettingsContext";
 import { useCamera } from "@/hooks/useCamera";
-import { getCurrentPosition } from "@/hooks/useGeolocation";
+import { getCurrentPosition, isGpsAccuracyAcceptable } from "@/hooks/useGeolocation";
 import type { Coordinates } from "@/hooks/useGeolocation";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import {
@@ -24,7 +24,7 @@ import {
   GPS_WEAK_MESSAGE,
   LocationCaptureStatus,
 } from "@/components/LocationCaptureStatus";
-import { withTimeout } from "@/utils/async";
+import { GPS_TIMEOUT_MS, withTimeout } from "@/utils/async";
 
 const CAMERA_CAPTURE_TIMEOUT_MS = 10_000;
 
@@ -76,14 +76,17 @@ export function CheckOutPanel({
     setLocationError(null);
     setLocation(null);
     try {
-      const coords = await getCurrentPosition();
+      const coords = await getCurrentPosition({
+        timeoutMs: GPS_TIMEOUT_MS,
+        targetAccuracyMeters: gpsThreshold,
+      });
       setLocation(coords);
     } catch (err) {
       setLocationError((err as Error).message || GPS_REQUIRED_MESSAGE);
     } finally {
       setLocating(false);
     }
-  }, [gpsRequired]);
+  }, [gpsRequired, gpsThreshold]);
 
   useEffect(() => {
     if (selfieRequired) {
@@ -111,12 +114,24 @@ export function CheckOutPanel({
     setPreviews((prev) => prev.filter((_, i) => i !== index));
   }
 
+  const locationAccurate = Boolean(
+    location && isGpsAccuracyAcceptable(location.accuracy, gpsThreshold)
+  );
+
   const readyToSubmit = useMemo(() => {
     if (desktopBlocked) return false;
-    if (gpsRequired && (!location || locating || location.accuracy > gpsThreshold)) return false;
+    if (gpsRequired && (!locationAccurate || locating)) return false;
     if (selfieRequired && !capturedBlob && !camera.isActive) return false;
     return true;
-  }, [camera.isActive, capturedBlob, desktopBlocked, gpsRequired, gpsThreshold, locating, location, selfieRequired]);
+  }, [
+    camera.isActive,
+    capturedBlob,
+    desktopBlocked,
+    gpsRequired,
+    locating,
+    locationAccurate,
+    selfieRequired,
+  ]);
 
   async function captureSelfieIfNeeded(): Promise<Blob | null> {
     if (!selfieRequired) return null;
@@ -163,7 +178,7 @@ export function CheckOutPanel({
           setError(locationError ?? GPS_REQUIRED_MESSAGE);
           return;
         }
-        if (position.accuracy > gpsThreshold) {
+        if (!isGpsAccuracyAcceptable(position.accuracy, gpsThreshold)) {
           setError(GPS_WEAK_MESSAGE);
           return;
         }
@@ -277,6 +292,9 @@ export function CheckOutPanel({
             <LocationCaptureStatus
               loading={locating}
               captured={Boolean(location)}
+              accuracyOk={!location || locationAccurate}
+              accuracyMeters={location?.accuracy ?? null}
+              accuracyThresholdMeters={gpsThreshold}
               error={locationError}
               onRetry={() => void fetchLocation()}
               successLabel="✓ Location captured"

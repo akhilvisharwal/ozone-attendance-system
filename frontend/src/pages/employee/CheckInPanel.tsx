@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { CheckCircle2, SwitchCamera } from "lucide-react";
 import { useCamera } from "@/hooks/useCamera";
-import { getCurrentPosition } from "@/hooks/useGeolocation";
+import { getCurrentPosition, isGpsAccuracyAcceptable } from "@/hooks/useGeolocation";
 import type { Coordinates } from "@/hooks/useGeolocation";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
@@ -160,8 +160,14 @@ export function CheckInPanel({ onCheckedIn }: { onCheckedIn: () => void }) {
     setLocationError(null);
     setLocation(null);
     try {
-      const coords = await getCurrentPosition({ timeoutMs: GPS_TIMEOUT_MS });
+      const coords = await getCurrentPosition({
+        timeoutMs: GPS_TIMEOUT_MS,
+        targetAccuracyMeters: gpsThreshold,
+      });
       setLocation(coords);
+      if (!isGpsAccuracyAcceptable(coords.accuracy, gpsThreshold)) {
+        setLocationError(null);
+      }
     } catch (err) {
       console.error("[CheckInPanel] location fetch failed:", err);
       setLocationError(
@@ -170,7 +176,7 @@ export function CheckInPanel({ onCheckedIn }: { onCheckedIn: () => void }) {
     } finally {
       setLocationLoading(false);
     }
-  }, []);
+  }, [gpsThreshold]);
 
   useEffect(() => {
     if (selfieRequired) {
@@ -205,7 +211,7 @@ export function CheckInPanel({ onCheckedIn }: { onCheckedIn: () => void }) {
       if (gpsRequired && !location) {
         return locationError ?? GPS_REQUIRED_MESSAGE;
       }
-      if (location && location.accuracy > gpsThreshold) {
+      if (location && !isGpsAccuracyAcceptable(location.accuracy, gpsThreshold)) {
         return GPS_WEAK_MESSAGE;
       }
       if (!siteId) {
@@ -347,12 +353,35 @@ export function CheckInPanel({ onCheckedIn }: { onCheckedIn: () => void }) {
     setShowOffDayConfirm(false);
   }, [submitting]);
 
-  const readyToCheckIn = Boolean(
-    siteId &&
-    !loadingSites &&
-    !missingProfilePhoto &&
-    (!gpsRequired || (location && !locationLoading && location.accuracy <= gpsThreshold))
+  const locationAccurate = Boolean(
+    location && isGpsAccuracyAcceptable(location.accuracy, gpsThreshold)
   );
+  const cameraReady = !selfieRequired || Boolean(capturedBlob) || camera.isActive;
+  const siteReady = Boolean(siteId) && !loadingSites;
+
+  const readyToCheckIn = Boolean(
+    siteReady &&
+    !missingProfilePhoto &&
+    cameraReady &&
+    (!gpsRequired || (locationAccurate && !locationLoading))
+  );
+
+  const readinessHint = (() => {
+    if (desktopBlocked || missingProfilePhoto || submitting) return null;
+    if (loadingSites) return "Loading sites…";
+    if (sites.length === 0) return "No site available. Contact your administrator.";
+    if (!siteId && sites.length > 1) return "Select a project/site to enable Check In.";
+    if (selfieRequired && !capturedBlob && !camera.isActive && !camera.error) {
+      return "Waiting for camera…";
+    }
+    if (gpsRequired && locationLoading) return "Waiting for an accurate GPS fix…";
+    if (gpsRequired && location && !locationAccurate) {
+      return "GPS is too weak for check-in. Move outdoors and retry location.";
+    }
+    if (gpsRequired && !location && locationError) return null;
+    if (gpsRequired && !location) return "Waiting for location…";
+    return null;
+  })();
 
   const singleSite = sites.length === 1 ? sites[0] : null;
   const mirror = camera.facingMode === "user";
@@ -435,6 +464,9 @@ export function CheckInPanel({ onCheckedIn }: { onCheckedIn: () => void }) {
             <LocationCaptureStatus
               loading={locationLoading}
               captured={Boolean(location)}
+              accuracyOk={!location || locationAccurate}
+              accuracyMeters={location?.accuracy ?? null}
+              accuracyThresholdMeters={gpsThreshold}
               error={locationError}
               onRetry={() => void fetchLocation()}
               successLabel="✓ Location captured"
@@ -463,6 +495,10 @@ export function CheckInPanel({ onCheckedIn }: { onCheckedIn: () => void }) {
             <p className="text-center text-sm text-slate-500">
               Site: <span className="font-medium text-slate-700">{singleSite.name}</span>
             </p>
+          )}
+
+          {readinessHint && (
+            <p className="text-center text-sm text-slate-500">{readinessHint}</p>
           )}
 
           <Button
