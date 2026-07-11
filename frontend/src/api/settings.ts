@@ -88,6 +88,13 @@ export type DatabaseResetResultResponse = {
     uploadedFilesBeforeBytes: number;
     uploadedFilesAfterBytes: number;
     uploadedFilesRecoveredBytes: number;
+    physicalDatabaseBytes: number;
+    liveDataBytes: number;
+    reclaimableBytes: number;
+    vacuumedTables: string[];
+    vacuumFullTables: string[];
+    remainingOperationalRows: Record<string, number>;
+    remainingUploadFiles: number;
     tableCounts: Record<string, number>;
   };
   status: DatabaseStatus;

@@ -333,8 +333,18 @@ export interface StorageCapacity {
 export interface StorageBreakdown {
   databaseSizeBytes: number;
   databaseSizeLabel: string;
+  physicalDatabaseBytes: number;
+  physicalDatabaseLabel: string;
+  liveDataBytes: number;
+  liveDataLabel: string;
+  reclaimableBytes: number;
+  reclaimableLabel: string;
+  reclaimableExplanation: string;
   uploadedFilesBytes: number;
   uploadedFilesLabel: string;
+  orphanedUploadFilesBytes: number;
+  orphanedUploadFilesLabel: string;
+  orphanedUploadFileCount: number;
   totalStorageUsedBytes: number;
   totalStorageUsedLabel: string;
   applicationDataBytes: number;

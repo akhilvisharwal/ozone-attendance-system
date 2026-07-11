@@ -2,12 +2,15 @@ import type { PoolClient } from "pg";
 import { pool } from "../../config/db";
 import { env } from "../../config/env";
 import { ApiError } from "../../utils/errors";
-import { storage } from "../../services/storage";
 import {
   collectReferencedFilePaths,
+  maintainDatabaseAfterWipe,
   measureUploadDirectoryBytes,
   normalizeRelativePath,
+  purgeUploadFilesExcept,
   queryDatabaseSizeBytes,
+  queryDatabaseSpaceBreakdown,
+  queryExactTableStats,
 } from "../../utils/storageAnalytics";
 import { getSettings, refreshSettingsCache } from "./settings.cache";
 
@@ -37,6 +40,15 @@ const RESET_DELETE_TABLES = [
   "sites",
 ] as const;
 
+const MAINTENANCE_TABLES = [
+  ...RESET_DELETE_TABLES,
+  "employees",
+  "refresh_tokens",
+  "email_otp_challenges",
+  "password_reset_tokens",
+  "audit_logs",
+] as const;
+
 export interface DatabaseResetResult {
   deletedRecords: number;
   deletedFiles: number;
@@ -48,6 +60,13 @@ export interface DatabaseResetResult {
   uploadedFilesBeforeBytes: number;
   uploadedFilesAfterBytes: number;
   uploadedFilesRecoveredBytes: number;
+  physicalDatabaseBytes: number;
+  liveDataBytes: number;
+  reclaimableBytes: number;
+  vacuumedTables: string[];
+  vacuumFullTables: string[];
+  remainingOperationalRows: Record<string, number>;
+  remainingUploadFiles: number;
   tableCounts: Record<string, number>;
 }
 
@@ -68,29 +87,12 @@ async function countTable(client: PoolClient | typeof pool, table: string): Prom
   return parseInt(res.rows[0]?.count ?? "0", 10);
 }
 
-async function removeFiles(paths: string[]): Promise<number> {
-  let removed = 0;
-  for (const relativePath of paths) {
-    try {
-      await storage.remove(relativePath);
-      removed += 1;
-    } catch (err) {
-      console.warn(
-        `[database-reset] file remove failed for ${relativePath}:`,
-        err instanceof Error ? err.message : err
-      );
-    }
-  }
-  return removed;
-}
-
 /**
  * Re-point or clear FK columns that would block deleting non-admin employees.
  * Managed Postgres (Neon/Render) often forbids session_replication_role=replica,
  * so we must satisfy constraints explicitly.
  */
 async function clearEmployeeForeignKeys(client: PoolClient, adminId: string): Promise<void> {
-  // Preserved audit trail must not reference employees we are about to delete.
   const audit = await client.query(
     `UPDATE audit_logs
         SET actor_id = $1
@@ -121,7 +123,6 @@ async function clearEmployeeForeignKeys(client: PoolClient, adminId: string): Pr
     rows: designations.rowCount ?? 0,
   });
 
-  // Break self-references among employees about to be deleted / keep admin clean.
   const selfRefs = await client.query(
     `UPDATE employees SET created_by = NULL WHERE created_by IS NOT NULL`
   );
@@ -135,9 +136,7 @@ async function clearEmployeeForeignKeys(client: PoolClient, adminId: string): Pr
  * - employee_designations catalog
  * - Company logo file and admin profile photo (if any)
  * - audit_logs (security trail)
- *
- * OTP challenge rows are deleted only inside the successful transaction so a
- * failed wipe leaves both codes reusable until they expire.
+ * - uploads/backups/ (admin backup downloads)
  */
 export async function executeDatabaseReset(
   otpHandles?: DatabaseResetOtpHandles
@@ -169,10 +168,17 @@ export async function executeDatabaseReset(
   if (adminPhoto) preservedPaths.add(adminPhoto);
 
   logReset("System Admin resolved", { adminId: admin.id, adminCode });
+  logReset("Preserved upload paths", { paths: [...preservedPaths] });
 
   const referencedBefore = await collectReferencedFilePaths();
   const filesBefore = await measureUploadDirectoryBytes(referencedBefore.allReferenced);
   const databaseSizeBeforeBytes = await queryDatabaseSizeBytes();
+  logReset("Pre-reset storage snapshot", {
+    databaseSizeBeforeBytes,
+    uploadedFilesBeforeBytes: filesBefore.totalBytes,
+    orphanedUploadBytes: filesBefore.unreferencedBytes,
+    orphanedUploadCount: filesBefore.unreferencedCount,
+  });
 
   const tableCounts: Record<string, number> = {};
   for (const table of RESET_DELETE_TABLES) {
@@ -200,7 +206,6 @@ export async function executeDatabaseReset(
       logReset(`Table deleted: ${table}`, { rows: del.rowCount ?? 0 });
     }
 
-    // Drop other users' sessions; keep the System Admin's refresh tokens.
     const tokens = await client.query(`DELETE FROM refresh_tokens WHERE employee_id <> $1`, [
       admin.id,
     ]);
@@ -221,7 +226,6 @@ export async function executeDatabaseReset(
     );
     logReset("System Admin reactivated");
 
-    // Clear auth/OTP material only after the wipe succeeded in this transaction.
     const otpDel = await client.query(`DELETE FROM email_otp_challenges`);
     logReset("Table deleted: email_otp_challenges", { rows: otpDel.rowCount ?? 0 });
     const resetDel = await client.query(`DELETE FROM password_reset_tokens`);
@@ -250,57 +254,73 @@ export async function executeDatabaseReset(
     client.release();
   }
 
-  const referencedAfter = await collectReferencedFilePaths();
-  const pathsToRemove = [...referencedBefore.allReferenced].filter(
-    (p) => !referencedAfter.allReferenced.has(p) && !preservedPaths.has(p)
-  );
-  logReset("Removing orphaned upload files", { count: pathsToRemove.length });
-  const deletedFiles = await removeFiles(pathsToRemove);
-  logReset("Files removed", { deletedFiles });
-
-  for (const table of [
-    "attendance",
-    "employees",
-    "sites",
-    "tasks",
-    "expenses",
-    "audit_logs",
-    "leave_requests",
-  ]) {
-    try {
-      await pool.query(`VACUUM ANALYZE ${table}`);
-      logReset(`VACUUM ANALYZE ${table}`);
-    } catch (err) {
-      console.warn(
-        `[database-reset] VACUUM skipped for ${table}:`,
-        err instanceof Error ? err.message : err
-      );
-    }
+  // Verify operational tables are empty (except protected ones).
+  const remainingOperationalRows: Record<string, number> = {};
+  for (const table of RESET_DELETE_TABLES) {
+    remainingOperationalRows[table] = await countTable(pool, table);
   }
+  remainingOperationalRows.employees = await countTable(pool, "employees");
+  remainingOperationalRows.email_otp_challenges = await countTable(pool, "email_otp_challenges");
+  remainingOperationalRows.password_reset_tokens = await countTable(pool, "password_reset_tokens");
+  logReset("Post-commit row verification", remainingOperationalRows);
+
+  const unexpected = Object.entries(remainingOperationalRows).filter(([table, count]) => {
+    if (table === "employees") return count !== 1;
+    return count !== 0;
+  });
+  if (unexpected.length > 0) {
+    console.error("[database-reset] Unexpected remaining rows after wipe", unexpected);
+  }
+
+  logReset("Purging upload files (except logo, admin photo, backups/)");
+  const purge = await purgeUploadFilesExcept(preservedPaths);
+  logReset("Files removed", {
+    deletedFiles: purge.deletedFiles,
+    recoveredBytes: purge.recoveredBytes,
+    remainingFiles: purge.remainingFiles,
+  });
+
+  logReset("Running database maintenance (VACUUM ANALYZE + VACUUM FULL on empty tables)");
+  const maintenance = await maintainDatabaseAfterWipe([...MAINTENANCE_TABLES]);
+  logReset("Database maintenance complete", {
+    vacuumed: maintenance.vacuumed,
+    vacuumFull: maintenance.vacuumFull,
+    skipped: maintenance.skipped,
+  });
 
   await refreshSettingsCache();
   logReset("Settings cache refreshed");
 
-  const databaseSizeAfterBytes = await queryDatabaseSizeBytes();
+  const exactTables = await queryExactTableStats();
+  const space = await queryDatabaseSpaceBreakdown(exactTables);
   const referencedFinal = await collectReferencedFilePaths();
   for (const p of preservedPaths) referencedFinal.allReferenced.add(p);
   const filesAfter = await measureUploadDirectoryBytes(referencedFinal.allReferenced);
+  const databaseSizeAfterBytes = space.physicalDatabaseBytes;
 
   const deletedRecords =
     Object.entries(tableCounts)
       .filter(([key]) => key !== "employees_non_admin")
       .reduce((sum, [, count]) => sum + count, 0) + deletedEmployees;
 
+  logReset("Storage recalculated", {
+    physicalDatabaseBytes: space.physicalDatabaseBytes,
+    liveDataBytes: space.liveDataBytes,
+    reclaimableBytes: space.reclaimableBytes,
+    uploadedFilesAfterBytes: filesAfter.totalBytes,
+    orphanedUploadBytes: filesAfter.unreferencedBytes,
+  });
+
   logReset("Reset complete", {
     deletedRecords,
-    deletedFiles,
+    deletedFiles: purge.deletedFiles,
     deletedEmployees,
     preservedAdminCode: adminCode,
   });
 
   return {
     deletedRecords,
-    deletedFiles,
+    deletedFiles: purge.deletedFiles,
     deletedEmployees,
     preservedAdminCode: adminCode,
     databaseSizeBeforeBytes,
@@ -309,6 +329,13 @@ export async function executeDatabaseReset(
     uploadedFilesBeforeBytes: filesBefore.totalBytes,
     uploadedFilesAfterBytes: filesAfter.totalBytes,
     uploadedFilesRecoveredBytes: Math.max(0, filesBefore.totalBytes - filesAfter.totalBytes),
+    physicalDatabaseBytes: space.physicalDatabaseBytes,
+    liveDataBytes: space.liveDataBytes,
+    reclaimableBytes: space.reclaimableBytes,
+    vacuumedTables: maintenance.vacuumed,
+    vacuumFullTables: maintenance.vacuumFull,
+    remainingOperationalRows,
+    remainingUploadFiles: purge.remainingFiles,
     tableCounts,
   };
 }

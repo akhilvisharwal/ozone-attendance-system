@@ -201,7 +201,7 @@ export function StorageManagementSection({
 
       setMessage({
         type: "success",
-        text: `Database reset complete. Preserved System Admin ${result.result.preservedAdminCode}. Permanently removed ${result.result.deletedEmployees.toLocaleString()} account(s), ${result.result.deletedRecords.toLocaleString()} record(s), and ${result.result.deletedFiles.toLocaleString()} file(s). Storage permanently freed: database ${formatBytes(result.result.databaseSizeRecoveredBytes)}, files ${formatBytes(result.result.uploadedFilesRecoveredBytes)}.`,
+        text: `Database reset complete. Preserved System Admin ${result.result.preservedAdminCode}. Permanently removed ${result.result.deletedEmployees.toLocaleString()} account(s), ${result.result.deletedRecords.toLocaleString()} record(s), and ${result.result.deletedFiles.toLocaleString()} file(s). Files freed: ${formatBytes(result.result.uploadedFilesRecoveredBytes)}. Physical DB: ${formatBytes(result.result.physicalDatabaseBytes)}; live data: ${formatBytes(result.result.liveDataBytes)}; reclaimable: ${formatBytes(result.result.reclaimableBytes)}.`,
       });
     } catch (err) {
       const text = extractErrorMessage(err, "Database reset failed.");

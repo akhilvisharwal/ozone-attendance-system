@@ -12,6 +12,8 @@ import {
   measureUploadDirectoryBytes,
   queryAllTableStats,
   queryDatabaseSizeBytes,
+  queryDatabaseSpaceBreakdown,
+  queryExactTableStats,
 } from "../../utils/storageAnalytics";
 
 export type StorageKind = "postgresql" | "files";
@@ -30,8 +32,21 @@ export interface StorageCategory {
 export interface StorageBreakdown {
   databaseSizeBytes: number;
   databaseSizeLabel: string;
+  /** Alias of databaseSizeBytes — physical Postgres size (pg_database_size). */
+  physicalDatabaseBytes: number;
+  physicalDatabaseLabel: string;
+  /** Bytes attributed to tables that still contain rows. */
+  liveDataBytes: number;
+  liveDataLabel: string;
+  /** Empty cleared tables still occupying disk until VACUUM FULL / provider reclaim. */
+  reclaimableBytes: number;
+  reclaimableLabel: string;
+  reclaimableExplanation: string;
   uploadedFilesBytes: number;
   uploadedFilesLabel: string;
+  orphanedUploadFilesBytes: number;
+  orphanedUploadFilesLabel: string;
+  orphanedUploadFileCount: number;
   totalStorageUsedBytes: number;
   totalStorageUsedLabel: string;
   applicationDataBytes: number;
@@ -54,11 +69,16 @@ export interface StorageBreakdown {
   }>;
 }
 
-export async function getStorageBreakdown(): Promise<StorageBreakdown> {
-  const [databaseSizeBytes, tables, referenced] = await Promise.all([
+export async function getStorageBreakdown(options?: {
+  /** Use exact COUNT(*) — slower but accurate after wipe/cleanup. */
+  exactCounts?: boolean;
+}): Promise<StorageBreakdown> {
+  const tables = options?.exactCounts ? await queryExactTableStats() : await queryAllTableStats();
+
+  const [databaseSizeBytes, referenced, space] = await Promise.all([
     queryDatabaseSizeBytes(),
-    queryAllTableStats(),
     collectReferencedFilePaths(),
+    queryDatabaseSpaceBreakdown(tables),
   ]);
 
   const [postgresCategories, fileCategories, disk] = await Promise.all([
@@ -91,8 +111,18 @@ export async function getStorageBreakdown(): Promise<StorageBreakdown> {
   return {
     databaseSizeBytes,
     databaseSizeLabel: formatDatabaseSize(databaseSizeBytes),
+    physicalDatabaseBytes: space.physicalDatabaseBytes,
+    physicalDatabaseLabel: formatDatabaseSize(space.physicalDatabaseBytes),
+    liveDataBytes: space.liveDataBytes,
+    liveDataLabel: formatDatabaseSize(space.liveDataBytes),
+    reclaimableBytes: space.reclaimableBytes,
+    reclaimableLabel: formatDatabaseSize(space.reclaimableBytes),
+    reclaimableExplanation: space.explanation,
     uploadedFilesBytes,
     uploadedFilesLabel: formatDatabaseSize(uploadedFilesBytes),
+    orphanedUploadFilesBytes: disk.unreferencedBytes,
+    orphanedUploadFilesLabel: formatDatabaseSize(disk.unreferencedBytes),
+    orphanedUploadFileCount: disk.unreferencedCount,
     totalStorageUsedBytes,
     totalStorageUsedLabel: formatDatabaseSize(totalStorageUsedBytes),
     applicationDataBytes,

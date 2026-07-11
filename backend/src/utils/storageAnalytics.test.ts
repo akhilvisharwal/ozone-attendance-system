@@ -101,4 +101,18 @@ describe("storage analytics helpers", () => {
     assert.equal(categories[0]?.percentOfTotalCapacity, 14);
     assert.equal(categories[1]?.percentOfTotalCapacity, 6);
   });
+
+  it("computes reclaimable space from empty table relation sizes", () => {
+    const tables = [
+      { name: "attendance", recordCount: 0, sizeBytes: 120_000 },
+      { name: "employees", recordCount: 1, sizeBytes: 48_000 },
+      { name: "sites", recordCount: 0, sizeBytes: 16_000 },
+    ];
+    const live = tables.filter((t) => t.recordCount > 0).reduce((s, t) => s + t.sizeBytes, 0);
+    const reclaimable = tables
+      .filter((t) => t.recordCount === 0)
+      .reduce((s, t) => s + t.sizeBytes, 0);
+    assert.equal(live, 48_000);
+    assert.equal(reclaimable, 136_000);
+  });
 });

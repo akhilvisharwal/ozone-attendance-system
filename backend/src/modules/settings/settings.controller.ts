@@ -335,7 +335,7 @@ export const cleanupData = asyncHandler(async (req: Request, res: Response) => {
 
     const [status, storage, cleanup] = await Promise.all([
       backupService.getDatabaseStatus(),
-      getStorageBreakdown(),
+      getStorageBreakdown({ exactCounts: true }),
       getCleanupCenterSummary(),
     ]);
 
@@ -449,7 +449,7 @@ export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: R
     console.info("[database-reset] Gathering post-reset status/storage/cleanup");
     const [status, storage, cleanup] = await Promise.all([
       backupService.getDatabaseStatus(),
-      getStorageBreakdown(),
+      getStorageBreakdown({ exactCounts: true }),
       getCleanupCenterSummary(),
     ]);
 
@@ -461,9 +461,23 @@ export const executeFullDatabaseReset = asyncHandler(async (req: Request, res: R
       deletedEmployees: result.deletedEmployees,
       databaseSizeRecoveredBytes: result.databaseSizeRecoveredBytes,
       uploadedFilesRecoveredBytes: result.uploadedFilesRecoveredBytes,
+      physicalDatabaseBytes: result.physicalDatabaseBytes,
+      liveDataBytes: result.liveDataBytes,
+      reclaimableBytes: result.reclaimableBytes,
+      vacuumFullTables: result.vacuumFullTables,
+      remainingOperationalRows: result.remainingOperationalRows,
+      remainingUploadFiles: result.remainingUploadFiles,
       tableCounts: result.tableCounts,
     });
     console.info("[database-reset] Audit log written: database_reset_completed");
+    console.info("[database-reset] Post-reset storage", {
+      physical: storage.physicalDatabaseLabel,
+      live: storage.liveDataLabel,
+      reclaimable: storage.reclaimableLabel,
+      uploads: storage.uploadedFilesLabel,
+      employees: status.totalEmployees,
+      attendance: status.totalAttendanceRecords,
+    });
 
     res.setHeader("Cache-Control", "no-store");
     res.json({

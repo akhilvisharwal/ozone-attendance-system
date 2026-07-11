@@ -7,10 +7,13 @@ import { storage } from "../../services/storage";
 import { formatDatabaseSize } from "../../utils/backupHelpers";
 import {
   collectReferencedFilePaths,
+  maintainDatabaseAfterWipe,
   measureUploadDirectoryBytes,
   normalizeRelativePath,
+  purgeUploadFilesExcept,
   queryDatabaseSizeBytes,
 } from "../../utils/storageAnalytics";
+import { getSettings } from "./settings.cache";
 
 export type CleanupCategory =
   | "attendance_records"
@@ -191,13 +194,29 @@ async function removeFiles(paths: string[]): Promise<number> {
 }
 
 async function vacuumTables(tables: string[]): Promise<void> {
-  for (const table of tables) {
-    try {
-      await pool.query(`VACUUM ANALYZE ${table}`);
-    } catch {
-      // managed providers may restrict VACUUM; autovacuum still reclaims space
-    }
-  }
+  await maintainDatabaseAfterWipe(tables);
+}
+
+async function purgeOrphanUploadsPreservingSystemFiles(): Promise<number> {
+  const settings = getSettings();
+  const preserved = new Set<string>();
+  const logo = normalizeRelativePath(settings.company.logoPath);
+  if (logo) preserved.add(logo);
+
+  const admin = await pool.query<{ profile_photo_path: string | null }>(
+    `SELECT profile_photo_path FROM employees
+      WHERE role = 'admin' AND deleted_at IS NULL
+      ORDER BY created_at ASC LIMIT 1`
+  );
+  const photo = normalizeRelativePath(admin.rows[0]?.profile_photo_path);
+  if (photo) preserved.add(photo);
+
+  // Keep every path still referenced by live rows — only true orphans are removed.
+  const referenced = await collectReferencedFilePaths();
+  for (const path of referenced.allReferenced) preserved.add(path);
+
+  const purge = await purgeUploadFilesExcept(preserved);
+  return purge.deletedFiles;
 }
 
 function toSummary(
@@ -363,6 +382,8 @@ export async function executeStorageCleanup(category: CleanupCategory): Promise<
         client.release();
       }
       deletedFiles = await removeFiles(paths);
+      // Remove any leftover orphaned upload files (selfies/site photos no longer referenced).
+      deletedFiles += await purgeOrphanUploadsPreservingSystemFiles();
       tablesToVacuum.add("attendance");
       details.attendance_deleted = deletedRecords;
       details.image_files_removed = deletedFiles;
@@ -389,6 +410,7 @@ export async function executeStorageCleanup(category: CleanupCategory): Promise<
         client.release();
       }
       deletedFiles = await removeFiles(paths);
+      deletedFiles += await purgeOrphanUploadsPreservingSystemFiles();
       tablesToVacuum.add("attendance");
       details.attendance_rows_cleared = deletedRecords;
       details.image_files_removed = deletedFiles;

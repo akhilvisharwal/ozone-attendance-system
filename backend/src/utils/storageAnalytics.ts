@@ -415,6 +415,198 @@ export async function measureUploadDirectoryBytes(
   return { totalBytes, unreferencedBytes, unreferencedCount };
 }
 
+/** List every relative upload path currently on disk under the uploads root. */
+export async function listUploadRelativePaths(): Promise<string[]> {
+  const diskFiles = await walkUploadFiles(UPLOAD_ROOT);
+  const paths: string[] = [];
+  for (const fullPath of diskFiles) {
+    if (!fullPath.startsWith(UPLOAD_ROOT)) continue;
+    const relative = normalizeRelativePath(
+      path.relative(UPLOAD_ROOT, fullPath).split(path.sep).join("/")
+    );
+    if (relative) paths.push(relative);
+  }
+  return paths;
+}
+
+/**
+ * Permanently delete upload files that are not explicitly preserved.
+ * Always keeps `backups/` (admin backup downloads) and any paths in `preserved`.
+ */
+export async function purgeUploadFilesExcept(
+  preserved: Set<string>
+): Promise<{ deletedFiles: number; recoveredBytes: number; remainingFiles: number }> {
+  const diskFiles = await walkUploadFiles(UPLOAD_ROOT);
+  let deletedFiles = 0;
+  let recoveredBytes = 0;
+  let remainingFiles = 0;
+
+  for (const fullPath of diskFiles) {
+    if (!fullPath.startsWith(UPLOAD_ROOT)) continue;
+    const relative = normalizeRelativePath(
+      path.relative(UPLOAD_ROOT, fullPath).split(path.sep).join("/")
+    );
+    if (!relative) continue;
+
+    const keep =
+      preserved.has(relative) ||
+      relative === "backups" ||
+      relative.startsWith("backups/");
+    if (keep) {
+      remainingFiles += 1;
+      continue;
+    }
+
+    let size = 0;
+    try {
+      size = (await fs.promises.stat(fullPath)).size;
+    } catch {
+      size = 0;
+    }
+
+    try {
+      await storage.remove(relative);
+      deletedFiles += 1;
+      recoveredBytes += size;
+    } catch (err) {
+      console.warn(
+        `[storage] failed to purge ${relative}:`,
+        err instanceof Error ? err.message : err
+      );
+      remainingFiles += 1;
+    }
+  }
+
+  return { deletedFiles, recoveredBytes, remainingFiles };
+}
+
+export interface DatabaseSpaceBreakdown {
+  /** pg_database_size — physical bytes billed / reported by Postgres. */
+  physicalDatabaseBytes: number;
+  /** Sum of pg_total_relation_size for tables that still have rows. */
+  liveDataBytes: number;
+  /** Empty/cleared table files still occupying disk until VACUUM FULL (or provider reclaim). */
+  reclaimableBytes: number;
+  /** Catalogs / free space map / other DB overhead not attributed to application tables. */
+  internalOverheadBytes: number;
+  explanation: string;
+}
+
+/**
+ * Exact row counts (COUNT(*)) plus relation sizes — used after wipe/cleanup so UI
+ * does not show stale n_live_tup estimates.
+ */
+export async function queryExactTableStats(): Promise<TableStat[]> {
+  const names = await pool.query<{ name: string }>(
+    `SELECT c.relname AS name
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relkind = 'r'
+      ORDER BY c.relname ASC`
+  );
+
+  const stats: TableStat[] = [];
+  for (const { name } of names.rows) {
+    const [countRes, sizeRes] = await Promise.all([
+      pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM ${quoteIdent(name)}`),
+      pool.query<{ bytes: string }>(
+        `SELECT COALESCE(pg_total_relation_size($1::regclass), 0)::text AS bytes`,
+        [name]
+      ),
+    ]);
+    stats.push({
+      name,
+      recordCount: parseInt(countRes.rows[0]?.count ?? "0", 10),
+      sizeBytes: parseInt(sizeRes.rows[0]?.bytes ?? "0", 10),
+    });
+  }
+  return stats;
+}
+
+function quoteIdent(name: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(name)) {
+    throw new Error(`Unsafe table name: ${name}`);
+  }
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+export async function queryDatabaseSpaceBreakdown(
+  tables?: TableStat[]
+): Promise<DatabaseSpaceBreakdown> {
+  const [physicalDatabaseBytes, tableStats] = await Promise.all([
+    queryDatabaseSizeBytes(),
+    tables ? Promise.resolve(tables) : queryExactTableStats(),
+  ]);
+
+  const liveDataBytes = tableStats
+    .filter((t) => t.recordCount > 0)
+    .reduce((sum, t) => sum + t.sizeBytes, 0);
+  const emptyTableBytes = tableStats
+    .filter((t) => t.recordCount === 0)
+    .reduce((sum, t) => sum + t.sizeBytes, 0);
+  const relationsTotal = tableStats.reduce((sum, t) => sum + t.sizeBytes, 0);
+  const internalOverheadBytes = Math.max(0, physicalDatabaseBytes - relationsTotal);
+  const reclaimableBytes = emptyTableBytes;
+
+  const explanation =
+    reclaimableBytes > 0
+      ? "PostgreSQL keeps empty table files after DELETE. Regular VACUUM marks space reusable for new data; physical size may not shrink until VACUUM FULL (when allowed) or provider storage reclaim. Live data size reflects tables that still contain rows."
+      : "Physical database size matches live application tables plus normal PostgreSQL catalog overhead.";
+
+  return {
+    physicalDatabaseBytes,
+    liveDataBytes,
+    reclaimableBytes,
+    internalOverheadBytes,
+    explanation,
+  };
+}
+
+/** VACUUM ANALYZE (safe) then best-effort VACUUM FULL on empty tables to shrink files. */
+export async function maintainDatabaseAfterWipe(tableNames: string[]): Promise<{
+  vacuumed: string[];
+  vacuumFull: string[];
+  skipped: Array<{ table: string; reason: string }>;
+}> {
+  const vacuumed: string[] = [];
+  const vacuumFull: string[] = [];
+  const skipped: Array<{ table: string; reason: string }> = [];
+
+  for (const table of tableNames) {
+    if (!/^[a-z_][a-z0-9_]*$/i.test(table)) {
+      skipped.push({ table, reason: "unsafe_name" });
+      continue;
+    }
+    try {
+      await pool.query(`VACUUM ANALYZE ${quoteIdent(table)}`);
+      vacuumed.push(table);
+    } catch (err) {
+      skipped.push({
+        table,
+        reason: `VACUUM ANALYZE: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      continue;
+    }
+
+    try {
+      const countRes = await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM ${quoteIdent(table)}`
+      );
+      if (parseInt(countRes.rows[0]?.count ?? "0", 10) > 0) continue;
+      await pool.query(`VACUUM FULL ANALYZE ${quoteIdent(table)}`);
+      vacuumFull.push(table);
+    } catch (err) {
+      skipped.push({
+        table,
+        reason: `VACUUM FULL: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  return { vacuumed, vacuumFull, skipped };
+}
+
 export function buildPostgresCategories(tables: TableStat[]): StorageCategoryDraft[] {
   const grouped = new Map<string, { sizeBytes: number; recordCount: number }>();
 

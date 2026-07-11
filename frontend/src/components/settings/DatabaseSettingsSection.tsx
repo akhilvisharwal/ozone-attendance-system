@@ -232,11 +232,26 @@ export function DatabaseSettingsSection() {
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <StatCard
-              label="Used"
-              value={capacity.usedLabel}
+              label="Physical database size"
+              value={storage.physicalDatabaseLabel ?? capacity.usedLabel}
               tone={capacityTone}
-              hint="Live PostgreSQL database size"
+              hint="pg_database_size — bytes Postgres still reports on disk"
             />
+            <StatCard
+              label="Actual live data"
+              value={storage.liveDataLabel ?? storage.applicationPostgresLabel}
+              tone="success"
+              hint="Tables that still contain rows"
+            />
+            <StatCard
+              label="Reclaimable space"
+              value={storage.reclaimableLabel ?? "0 B"}
+              tone={(storage.reclaimableBytes ?? 0) > 0 ? "warning" : "default"}
+              hint="Empty table files kept until VACUUM FULL / provider reclaim"
+            />
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <StatCard
               label="Available"
               value={capacity.remainingLabel}
@@ -252,6 +267,15 @@ export function DatabaseSettingsSection() {
               value={capacity.maxLabel}
               hint={capacitySourceLabel(capacity.limitSource)}
             />
+            <StatCard
+              label="Uploaded files"
+              value={storage.uploadedFilesLabel}
+              hint={
+                (storage.orphanedUploadFileCount ?? 0) > 0
+                  ? `${storage.orphanedUploadFileCount} orphaned file(s) · ${storage.orphanedUploadFilesLabel}`
+                  : "On-disk upload storage"
+              }
+            />
           </div>
 
           <OverallStorageBar
@@ -262,12 +286,18 @@ export function DatabaseSettingsSection() {
             level={capacity.warningLevel}
           />
 
+          {storage.reclaimableBytes > 0 && (
+            <Alert variant="info" className="mt-4">
+              {storage.reclaimableExplanation}
+            </Alert>
+          )}
+
           <p className="mt-4 text-xs text-slate-500">
-            Uploaded files on disk:{" "}
-            <span className="font-medium text-slate-700">{storage.uploadedFilesLabel}</span>
-            {" · "}
-            Combined footprint (database + uploads):{" "}
+            Combined footprint (physical database + uploads):{" "}
             <span className="font-medium text-slate-700">{storage.totalStorageUsedLabel}</span>
+            {" · "}
+            Application data (live tables + referenced files):{" "}
+            <span className="font-medium text-slate-700">{storage.applicationDataLabel}</span>
           </p>
         </div>
       </SettingsSection>
