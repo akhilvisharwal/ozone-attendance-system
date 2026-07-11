@@ -109,3 +109,50 @@ export const manualAttendanceDeleteSchema = z.object({
   employeeId: z.string().uuid(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
+
+const manualAttendanceFieldsSchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    status: z.enum([
+      "present",
+      "half_day",
+      "absent",
+      "leave",
+      "holiday",
+      "weekly_off",
+      "holiday_worked",
+      "weekly_off_worked",
+      "not_applicable",
+    ]),
+    reason: z.string().trim().min(1, "Reason is required").max(500),
+    approvedById: z.string().uuid().optional(),
+    checkInTime: timeStringSchema.optional().nullable(),
+    checkOutTime: timeStringSchema.optional().nullable(),
+    totalMinutes: z.coerce.number().int().min(0).max(24 * 60).optional().nullable(),
+    override: z.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const needsTimes =
+      value.status === "present" ||
+      value.status === "half_day" ||
+      value.status === "holiday_worked" ||
+      value.status === "weekly_off_worked";
+    if (needsTimes) {
+      if (!value.checkInTime) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Check-in time is required", path: ["checkInTime"] });
+      }
+      if (!value.checkOutTime) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Check-out time is required", path: ["checkOutTime"] });
+      }
+    }
+  });
+
+/** Apply the same manual attendance entry to multiple employees in one transaction. */
+export const bulkManualAttendanceSchema = manualAttendanceFieldsSchema.and(
+  z.object({
+    employeeIds: z
+      .array(z.string().uuid())
+      .min(1, "Select at least one employee")
+      .max(500, "Too many employees selected"),
+  })
+);

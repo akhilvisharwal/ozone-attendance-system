@@ -21,6 +21,18 @@ export interface ManualAttendancePayload {
   override?: boolean;
 }
 
+export interface BulkManualAttendancePayload {
+  employeeIds: string[];
+  date: string;
+  status: ManualAttendanceStatus;
+  reason: string;
+  approvedById?: string;
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
+  totalMinutes?: number | null;
+  override?: boolean;
+}
+
 export type Role = "admin" | "junior_admin" | "employee";
 
 export type AdminPermission =

@@ -19,6 +19,7 @@ import {
   monthlyExportQuerySchema,
   manualAttendanceSchema,
   manualAttendanceDeleteSchema,
+  bulkManualAttendanceSchema,
 } from "./attendance.validators";
 import * as repo from "./attendance.repository";
 import * as sitesRepo from "../sites/sites.repository";
@@ -33,6 +34,7 @@ import { resolveOffDayContext } from "./attendance.offDay";
 import { logAudit } from "../audit/audit.repository";
 import { sendManualAttendanceReminder } from "../../services/notifications.service";
 import { listEmployeesEligibleForAttendanceReminder } from "./attendance.reminders";
+import { withTransaction } from "../../config/db";
 
 export const checkIn = asyncHandler(async (req: Request, res: Response) => {
   const input = checkInSchema.parse(req.body);
@@ -387,6 +389,41 @@ async function ensureCanMark(
   return existing;
 }
 
+async function resolveManualTotalMinutes(input: {
+  employeeId: string;
+  date: string;
+  status: string;
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
+  totalMinutes?: number | null;
+}): Promise<number | null> {
+  let totalMinutes = input.totalMinutes ?? null;
+  const needsTimes =
+    input.status === "present" ||
+    input.status === "half_day" ||
+    input.status === "holiday_worked" ||
+    input.status === "weekly_off_worked";
+  if (needsTimes && totalMinutes == null) {
+    const { settings: effectiveRules } = await getEffectiveAttendanceRules(input.date, input.employeeId);
+    totalMinutes =
+      input.status === "half_day"
+        ? Math.round(effectiveRules.minHoursHalfDay * 60)
+        : Math.round(effectiveRules.minHoursPresent * 60);
+    if (input.checkInTime && input.checkOutTime) {
+      const computed = Math.max(
+        0,
+        Math.round(
+          (new Date(`${input.date}T${input.checkOutTime}:00`).getTime() -
+            new Date(`${input.date}T${input.checkInTime}:00`).getTime()) /
+            60000
+        )
+      );
+      if (computed > 0) totalMinutes = computed;
+    }
+  }
+  return totalMinutes;
+}
+
 export const adminMarkPresent = asyncHandler(async (req: Request, res: Response) => {
   if (!getSettings().attendance.allowManualOverride) {
     throw ApiError.forbidden("Manual attendance override is disabled in system settings");
@@ -474,31 +511,7 @@ export const saveManualAttendance = asyncHandler(async (req: Request, res: Respo
 
   const input = manualAttendanceSchema.parse(req.body);
   const existing = await ensureCanMark(input.employeeId, input.date, input.override ?? true);
-
-  let totalMinutes = input.totalMinutes ?? null;
-  const needsTimes =
-    input.status === "present" ||
-    input.status === "half_day" ||
-    input.status === "holiday_worked" ||
-    input.status === "weekly_off_worked";
-  if (needsTimes && totalMinutes == null) {
-    const { settings: effectiveRules } = await getEffectiveAttendanceRules(input.date, input.employeeId);
-    totalMinutes =
-      input.status === "half_day"
-        ? Math.round(effectiveRules.minHoursHalfDay * 60)
-        : Math.round(effectiveRules.minHoursPresent * 60);
-    if (input.checkInTime && input.checkOutTime) {
-      const computed = Math.max(
-        0,
-        Math.round(
-          (new Date(`${input.date}T${input.checkOutTime}:00`).getTime() -
-            new Date(`${input.date}T${input.checkInTime}:00`).getTime()) /
-            60000
-        )
-      );
-      if (computed > 0) totalMinutes = computed;
-    }
-  }
+  const totalMinutes = await resolveManualTotalMinutes(input);
 
   const record = await repo.upsertManualAttendance({
     employeeId: input.employeeId,
@@ -523,6 +536,71 @@ export const saveManualAttendance = asyncHandler(async (req: Request, res: Respo
 
   const enriched = await repo.findAttendanceWithEmployeeByDate(input.employeeId, input.date);
   res.status(existing ? 200 : 201).json({ attendance: enriched ?? record });
+});
+
+export const saveBulkManualAttendance = asyncHandler(async (req: Request, res: Response) => {
+  if (!getSettings().attendance.allowManualOverride) {
+    throw ApiError.forbidden("Manual attendance override is disabled in system settings");
+  }
+
+  const input = bulkManualAttendanceSchema.parse(req.body);
+  const employeeIds = Array.from(new Set(input.employeeIds));
+  const validIds = await repo.listValidEmployeeIdsForManualAttendance(employeeIds);
+  if (validIds.length !== employeeIds.length) {
+    throw ApiError.badRequest("One or more selected employees are invalid or inactive");
+  }
+
+  const override = input.override ?? true;
+  for (const employeeId of employeeIds) {
+    await ensureCanMark(employeeId, input.date, override);
+  }
+
+  const totalMinutes = await resolveManualTotalMinutes({
+    employeeId: employeeIds[0],
+    date: input.date,
+    status: input.status,
+    checkInTime: input.checkInTime,
+    checkOutTime: input.checkOutTime,
+    totalMinutes: input.totalMinutes,
+  });
+
+  const approvedById = input.approvedById ?? req.user!.id;
+  const records = await withTransaction(async (client) => {
+    const saved = [];
+    for (const employeeId of employeeIds) {
+      saved.push(
+        await repo.upsertManualAttendance(
+          {
+            employeeId,
+            date: input.date,
+            status: input.status,
+            adminId: req.user!.id,
+            approvedById,
+            reason: input.reason,
+            checkInTime: input.checkInTime ?? null,
+            checkOutTime: input.checkOutTime ?? null,
+            totalMinutes,
+          },
+          client
+        )
+      );
+    }
+    return saved;
+  });
+
+  await logAudit(req, "attendance.manual_save_bulk", "attendance", undefined, {
+    date: input.date,
+    status: input.status,
+    reason: input.reason,
+    approvedById,
+    employeeIds,
+    saved: records.length,
+  });
+
+  res.status(200).json({
+    saved: records.length,
+    attendance: records,
+  });
 });
 
 export const deleteManualAttendance = asyncHandler(async (req: Request, res: Response) => {

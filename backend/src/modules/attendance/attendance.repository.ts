@@ -1,7 +1,10 @@
+import type { PoolClient } from "pg";
 import { pool } from "../../config/db";
 import { AttendanceRecord, CheckInStatus, CheckOutStatus, DayStatus, SpecialDayStatus, WorkStatus } from "../../types";
 import type { ManualAttendanceInput } from "./manualAttendance.types";
 import { combineDateAndTime, minutesBetweenTimes } from "./manualAttendance.types";
+
+type Queryable = Pick<typeof pool, "query"> | PoolClient;
 
 const ADMIN_LIST_SELECT = `
   a.*,
@@ -696,10 +699,13 @@ function buildManualAttendanceFields(input: ManualAttendanceInput): {
 }
 
 /** Upserts a fully manual attendance record that overrides automatic calculations for the date. */
-export async function upsertManualAttendance(input: ManualAttendanceInput): Promise<AttendanceRecord> {
+export async function upsertManualAttendance(
+  input: ManualAttendanceInput,
+  db: Queryable = pool
+): Promise<AttendanceRecord> {
   const fields = buildManualAttendanceFields(input);
 
-  const result = await pool.query<AttendanceRecord>(
+  const result = await db.query<AttendanceRecord>(
     `INSERT INTO attendance (
        employee_id, attendance_date,
        check_in_time, check_out_time,
@@ -773,6 +779,23 @@ export async function upsertManualAttendance(input: ManualAttendanceInput): Prom
     ]
   );
   return result.rows[0];
+}
+
+/** Active employee IDs that exist for bulk manual attendance. */
+export async function listValidEmployeeIdsForManualAttendance(
+  employeeIds: string[]
+): Promise<string[]> {
+  if (employeeIds.length === 0) return [];
+  const result = await pool.query<{ id: string }>(
+    `SELECT id
+       FROM employees
+      WHERE id = ANY($1::uuid[])
+        AND role = 'employee'
+        AND deleted_at IS NULL
+        AND is_active = true`,
+    [employeeIds]
+  );
+  return result.rows.map((row) => row.id);
 }
 
 export async function deleteManualAttendance(employeeId: string, date: string): Promise<boolean> {

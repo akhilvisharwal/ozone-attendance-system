@@ -66,6 +66,12 @@ router.post(
   requireAnyPermission("manualAttendance", "editAttendance"),
   controller.saveManualAttendance
 );
+router.post(
+  "/admin/manual-attendance/bulk",
+  requireAdminPanel(),
+  requireAnyPermission("manualAttendance", "editAttendance"),
+  controller.saveBulkManualAttendance
+);
 router.delete(
   "/admin/manual-attendance",
   requireAdminPanel(),

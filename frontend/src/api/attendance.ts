@@ -14,6 +14,7 @@ import type {
   SpecialDayStatus,
   AttendanceOverrideNotice,
   ManualAttendancePayload,
+  BulkManualAttendancePayload,
 } from "../types";
 
 export interface CheckInInput {
@@ -295,6 +296,16 @@ export async function saveManualAttendance(payload: ManualAttendancePayload): Pr
     payload
   );
   return data.attendance;
+}
+
+export async function saveBulkManualAttendance(
+  payload: BulkManualAttendancePayload
+): Promise<{ saved: number }> {
+  const { data } = await apiClient.post<{ saved: number; attendance: AdminAttendanceRow[] }>(
+    "/attendance/admin/manual-attendance/bulk",
+    payload
+  );
+  return { saved: data.saved };
 }
 
 export async function deleteManualAttendance(payload: {
