@@ -3,6 +3,7 @@ import { pool } from "../../config/db";
 import { AttendanceRecord, CheckInStatus, CheckOutStatus, DayStatus, SpecialDayStatus, WorkStatus } from "../../types";
 import type { ManualAttendanceInput } from "./manualAttendance.types";
 import { combineDateAndTime, minutesBetweenTimes } from "./manualAttendance.types";
+import { ABSENT_SANDWICH_REASON } from "./attendanceCalculation.service";
 
 type Queryable = Pick<typeof pool, "query"> | PoolClient;
 
@@ -807,4 +808,68 @@ export async function deleteManualAttendance(employeeId: string, date: string): 
     [employeeId, date]
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+/** Upserts absent rows created by the Absent Sandwich Rule (never overwrites admin-marked or worked days). */
+export async function upsertSandwichAbsentRecords(
+  employeeId: string,
+  dates: string[]
+): Promise<number> {
+  if (dates.length === 0) return 0;
+
+  const result = await pool.query(
+    `INSERT INTO attendance (
+       employee_id, attendance_date,
+       status, day_status, is_admin_marked, admin_mark_reason
+     )
+     SELECT $1, d::date, 'absent', 'absent', false, $3
+       FROM unnest($2::text[]) AS d
+     ON CONFLICT (employee_id, attendance_date) DO UPDATE SET
+       status = 'absent',
+       day_status = 'absent',
+       is_admin_marked = false,
+       admin_mark_reason = EXCLUDED.admin_mark_reason,
+       check_in_time = NULL,
+       check_out_time = NULL,
+       check_in_status = NULL,
+       is_half_day = false,
+       check_out_status = NULL,
+       total_minutes = NULL,
+       special_day_status = NULL,
+       admin_mark_status = NULL,
+       admin_marked_by = NULL,
+       admin_approved_by = NULL,
+       updated_at = now()
+     WHERE attendance.is_admin_marked = false
+       AND (
+         attendance.admin_mark_reason = $3
+         OR (
+           attendance.status = 'absent'
+           AND attendance.check_in_time IS NULL
+         )
+       )
+       AND COALESCE(attendance.special_day_status, '') NOT IN ('holiday_worked', 'weekly_off_worked')`,
+    [employeeId, dates, ABSENT_SANDWICH_REASON]
+  );
+  return result.rowCount ?? 0;
+}
+
+/** Removes sandwich absents in range that are no longer required by the rule. */
+export async function deleteStaleSandwichAbsentRecords(
+  employeeId: string,
+  from: string,
+  to: string,
+  keepDates: string[]
+): Promise<number> {
+  const result = await pool.query(
+    `DELETE FROM attendance
+      WHERE employee_id = $1
+        AND attendance_date >= $2
+        AND attendance_date <= $3
+        AND is_admin_marked = false
+        AND admin_mark_reason = $4
+        AND NOT (attendance_date = ANY($5::date[]))`,
+    [employeeId, from, to, ABSENT_SANDWICH_REASON, keepDates]
+  );
+  return result.rowCount ?? 0;
 }

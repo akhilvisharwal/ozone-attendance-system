@@ -6,6 +6,8 @@ import * as employeesRepo from "../employees/employees.repository";
 import * as holidaysRepo from "../holidays/holidays.repository";
 import { resolveHolidaysInRange } from "../holidays/holidays.service";
 import {
+  ABSENT_SANDWICH_REASON,
+  applyAbsentSandwichRule,
   buildSummaryFromDays,
   resolveDayStatus,
   WORKED_MINUTE_STATUSES,
@@ -110,6 +112,15 @@ function enumerateDates(from: string, to: string): string[] {
   return dates;
 }
 
+/** Shift a YYYY-MM-DD date by a number of calendar days. */
+export function shiftDateString(date: string, deltaDays: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  return toDateString(new Date(year, month - 1, day + deltaDays));
+}
+
+/** Look-ahead/behind window so sandwich detection works across month boundaries. */
+const SANDWICH_CONTEXT_DAYS = 31;
+
 function buildDayCell(input: {
   dateStr: string;
   record: any | undefined;
@@ -159,8 +170,12 @@ function buildDayCell(input: {
   const isPastClosingCutoff =
     !isToday || (closingTime ? isPastTimeCutoff(now, closingTime, todayStr) : false);
 
+  // Sandwich-rule absents are synthetic; resolve calendar status first, then apply the rule.
+  const effectiveRecord =
+    record && record.admin_mark_reason === ABSENT_SANDWICH_REASON ? undefined : record;
+
   const status = resolveDayStatus({
-    record: record ?? null,
+    record: effectiveRecord ?? null,
     hasLeave: leaveSet.has(key),
     isHoliday,
     isWeeklyOff,
@@ -171,14 +186,14 @@ function buildDayCell(input: {
 
   let totalMinutes: number | null = null;
   let late = false;
-  if (record) {
+  if (effectiveRecord) {
     if (WORKED_MINUTE_STATUSES.has(status)) {
-      totalMinutes = record.total_minutes ?? null;
+      totalMinutes = effectiveRecord.total_minutes ?? null;
     }
     late =
-      record.check_in_status === "late" &&
-      !record.is_admin_marked &&
-      Boolean(record.check_in_time);
+      effectiveRecord.check_in_status === "late" &&
+      !effectiveRecord.is_admin_marked &&
+      Boolean(effectiveRecord.check_in_time);
   }
 
   return {
@@ -245,13 +260,22 @@ export async function buildAttendanceGridForRange(params: {
   sort?: "oldest" | "newest";
 }): Promise<AttendanceRangeGrid> {
   const { from, to } = params;
-  const ctx = await loadGridContext(from, to, params.employeeId, params.siteId, params.sort ?? "oldest");
-  const dates = enumerateDates(from, to);
+  // Load padding so Absent→WO/Holiday→Absent sandwiches spanning month edges still resolve.
+  const paddedFrom = shiftDateString(from, -SANDWICH_CONTEXT_DAYS);
+  const paddedTo = shiftDateString(to, SANDWICH_CONTEXT_DAYS);
+  const ctx = await loadGridContext(
+    paddedFrom,
+    paddedTo,
+    params.employeeId,
+    params.siteId,
+    params.sort ?? "oldest"
+  );
+  const dates = enumerateDates(paddedFrom, paddedTo);
 
   const rows: MonthlyEmployeeRow[] = ctx.employees.map((emp) => {
     const weeklyOff = resolveWeeklyOffDays(emp, ctx.defaultWeeklyOffDays);
     const closingTime = ctx.closingByEmployee.get(emp.id);
-    const days = dates.map((dateStr) =>
+    const rawDays = dates.map((dateStr) =>
       buildDayCell({
         dateStr,
         record: ctx.attendanceMap.get(`${emp.id}|${dateStr}`),
@@ -265,6 +289,8 @@ export async function buildAttendanceGridForRange(params: {
         closingTime,
       })
     );
+    const sandwiched = applyAbsentSandwichRule(rawDays);
+    const days = sandwiched.filter((day) => day.date >= from && day.date <= to);
 
     return {
       employeeId: emp.id,
@@ -284,7 +310,7 @@ export async function buildAttendanceGridForRange(params: {
     label: `${from} to ${to}`,
     defaultWeeklyOffDays: ctx.defaultWeeklyOffDays,
     employees: rows,
-    holidays: ctx.holidaysList,
+    holidays: ctx.holidaysList.filter((h) => h.date >= from && h.date <= to),
   };
 }
 
@@ -317,6 +343,56 @@ export async function buildMonthlyGrid(params: {
     employees: rangeGrid.employees,
     holidays: rangeGrid.holidays,
   };
+}
+
+/**
+ * Returns dates in [from, to] that the Absent Sandwich Rule converts from
+ * weekly_off/holiday to absent for a single employee.
+ */
+export async function listAbsentSandwichTargetDates(params: {
+  employeeId: string;
+  from: string;
+  to: string;
+}): Promise<string[]> {
+  const { employeeId, from, to } = params;
+  const paddedFrom = shiftDateString(from, -SANDWICH_CONTEXT_DAYS);
+  const paddedTo = shiftDateString(to, SANDWICH_CONTEXT_DAYS);
+  const ctx = await loadGridContext(paddedFrom, paddedTo, employeeId, undefined, "oldest");
+  const emp = ctx.employees[0];
+  if (!emp) return [];
+
+  const weeklyOff = resolveWeeklyOffDays(emp, ctx.defaultWeeklyOffDays);
+  const closingTime = ctx.closingByEmployee.get(emp.id);
+  const dates = enumerateDates(paddedFrom, paddedTo);
+  const rawDays = dates.map((dateStr) =>
+    buildDayCell({
+      dateStr,
+      record: ctx.attendanceMap.get(`${emp.id}|${dateStr}`),
+      weeklyOff,
+      holidayMap: ctx.holidayMap,
+      leaveSet: ctx.leaveSet,
+      employeeId: emp.id,
+      joinDate: employeeJoinDate(emp.created_at),
+      todayStr: ctx.todayStr,
+      now: ctx.now,
+      closingTime,
+    })
+  );
+  const applied = applyAbsentSandwichRule(rawDays);
+  const targets: string[] = [];
+  for (let i = 0; i < rawDays.length; i += 1) {
+    const raw = rawDays[i];
+    const next = applied[i];
+    if (
+      raw.date >= from &&
+      raw.date <= to &&
+      (raw.status === "weekly_off" || raw.status === "holiday") &&
+      next.status === "absent"
+    ) {
+      targets.push(raw.date);
+    }
+  }
+  return targets;
 }
 
 export function monthLabel(year: number, month: number): string {

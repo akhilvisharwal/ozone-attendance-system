@@ -200,6 +200,54 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
   return partial;
 }
 
+/** Off-day statuses that can be converted to Absent by the sandwich rule. */
+export const SANDWICH_OFF_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set([
+  "weekly_off",
+  "holiday",
+]);
+
+/** Stored on auto-created sandwich absent rows so they can be recalculated/removed safely. */
+export const ABSENT_SANDWICH_REASON = "Absent sandwich rule";
+
+/**
+ * Absent Sandwich Rule:
+ * If an employee is Absent immediately before and after one or more consecutive
+ * Weekly Off and/or Holiday days, those middle days become Absent.
+ *
+ * Example: Sat Absent → Sun Weekly Off → Mon Absent ⇒ Sun becomes Absent.
+ * Also covers mixed blocks (WO + holidays) of any length.
+ */
+export function applyAbsentSandwichRule(days: MonthlyDayCell[]): MonthlyDayCell[] {
+  if (days.length < 3) return days;
+
+  const result = days.map((day) => ({ ...day }));
+  let i = 0;
+
+  while (i < result.length) {
+    if (!SANDWICH_OFF_STATUSES.has(result[i].status)) {
+      i += 1;
+      continue;
+    }
+
+    const start = i;
+    while (i < result.length && SANDWICH_OFF_STATUSES.has(result[i].status)) {
+      i += 1;
+    }
+    const end = i - 1;
+
+    const before = start > 0 ? result[start - 1] : null;
+    const after = end + 1 < result.length ? result[end + 1] : null;
+
+    if (before?.status === "absent" && after?.status === "absent") {
+      for (let j = start; j <= end; j += 1) {
+        result[j] = { ...result[j], status: "absent" };
+      }
+    }
+  }
+
+  return result;
+}
+
 /** Classifies dashboard bucket from a resolved monthly cell status. */
 export function dashboardBucketFromStatus(
   status: MonthlyCellStatus

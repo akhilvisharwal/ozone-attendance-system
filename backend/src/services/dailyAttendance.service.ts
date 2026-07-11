@@ -12,6 +12,7 @@ import * as attendanceRepo from "../modules/attendance/attendance.repository";
 import * as employeesRepo from "../modules/employees/employees.repository";
 import * as holidaysRepo from "../modules/holidays/holidays.repository";
 import { resolveHolidaysInRange } from "../modules/holidays/holidays.service";
+import { syncAbsentSandwichForEmployees } from "./absentSandwich.service";
 
 export interface DailyAttendanceRunResult {
   date: string;
@@ -194,6 +195,10 @@ export async function runDailyAttendanceProcessing(
   }
 
   const markedAbsent = await attendanceRepo.insertAutoAbsentRecords(toMark, date);
+
+  if (toMark.length > 0) {
+    await syncAbsentSandwichForEmployees(toMark, date);
+  }
 
   if (markedAbsent > 0 || finalized > 0 || updated > 0) {
     console.log(

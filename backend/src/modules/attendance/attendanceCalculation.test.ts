@@ -7,6 +7,7 @@ import {
   computeWorkingDays,
   isIncompleteAttendanceDay,
   resolveDayStatus,
+  applyAbsentSandwichRule,
 } from "./attendanceCalculation.service";
 
 function day(
@@ -220,5 +221,72 @@ describe("attendance calculation service", () => {
       isPastClosingCutoff: false,
     });
     assert.equal(status, "absent");
+  });
+
+  it("applies absent sandwich rule to a single weekly off between absents", () => {
+    const days = [
+      day("2026-07-11", "absent"), // Saturday
+      day("2026-07-12", "weekly_off"), // Sunday
+      day("2026-07-13", "absent"), // Monday
+    ];
+    const result = applyAbsentSandwichRule(days);
+    assert.equal(result[0].status, "absent");
+    assert.equal(result[1].status, "absent");
+    assert.equal(result[2].status, "absent");
+  });
+
+  it("applies sandwich rule across consecutive weekly offs and holidays", () => {
+    const days = [
+      day("2026-07-10", "absent"),
+      day("2026-07-11", "weekly_off"),
+      day("2026-07-12", "holiday"),
+      day("2026-07-13", "weekly_off"),
+      day("2026-07-14", "absent"),
+      day("2026-07-15", "present", 480),
+    ];
+    const result = applyAbsentSandwichRule(days);
+    assert.deepEqual(
+      result.map((d) => d.status),
+      ["absent", "absent", "absent", "absent", "absent", "present"]
+    );
+    const summary = buildSummaryFromDays(result, "2026-07-15");
+    assert.equal(summary.absent, 5);
+    assert.equal(summary.weeklyOff, 0);
+    assert.equal(summary.holidays, 0);
+    assert.equal(summary.workingDays, 6);
+  });
+
+  it("does not sandwich when one side is present or leave", () => {
+    const presentSide = applyAbsentSandwichRule([
+      day("2026-07-11", "present", 480),
+      day("2026-07-12", "weekly_off"),
+      day("2026-07-13", "absent"),
+    ]);
+    assert.equal(presentSide[1].status, "weekly_off");
+
+    const leaveSide = applyAbsentSandwichRule([
+      day("2026-07-11", "absent"),
+      day("2026-07-12", "holiday"),
+      day("2026-07-13", "leave"),
+    ]);
+    assert.equal(leaveSide[1].status, "holiday");
+  });
+
+  it("does not sandwich pending or incomplete edge days", () => {
+    const result = applyAbsentSandwichRule([
+      day("2026-07-11", "absent"),
+      day("2026-07-12", "weekly_off"),
+      day("2026-07-13", "none"),
+    ]);
+    assert.equal(result[1].status, "weekly_off");
+  });
+
+  it("leaves weekly offs untouched without absent neighbors", () => {
+    const result = applyAbsentSandwichRule([
+      day("2026-07-11", "present", 480),
+      day("2026-07-12", "weekly_off"),
+      day("2026-07-13", "present", 480),
+    ]);
+    assert.equal(result[1].status, "weekly_off");
   });
 });

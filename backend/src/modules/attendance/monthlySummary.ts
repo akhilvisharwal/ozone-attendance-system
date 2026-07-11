@@ -9,6 +9,9 @@ export {
   computeAttendancePercentage,
   buildSummaryFromDays,
   dashboardBucketFromStatus,
+  applyAbsentSandwichRule,
+  ABSENT_SANDWICH_REASON,
+  SANDWICH_OFF_STATUSES,
 } from "./attendanceCalculation.service";
 
 import type { MonthlyDayCell, MonthlySummary } from "./attendance.monthly";

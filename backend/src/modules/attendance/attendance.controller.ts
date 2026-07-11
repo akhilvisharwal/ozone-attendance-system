@@ -35,6 +35,10 @@ import { logAudit } from "../audit/audit.repository";
 import { sendManualAttendanceReminder } from "../../services/notifications.service";
 import { listEmployeesEligibleForAttendanceReminder } from "./attendance.reminders";
 import { withTransaction } from "../../config/db";
+import {
+  syncAbsentSandwichForEmployee,
+  syncAbsentSandwichForEmployees,
+} from "../../services/absentSandwich.service";
 
 export const checkIn = asyncHandler(async (req: Request, res: Response) => {
   const input = checkInSchema.parse(req.body);
@@ -145,6 +149,7 @@ export const checkIn = asyncHandler(async (req: Request, res: Response) => {
     specialDayStatus: offDay.specialDayStatus,
   });
 
+  await syncAbsentSandwichForEmployee(employeeId, today);
   res.status(201).json({ attendance: record, checkInStatus, isHalfDay });
 });
 
@@ -237,6 +242,7 @@ export const checkOut = asyncHandler(async (req: Request, res: Response) => {
 
   await logAudit(req, "attendance.check_out", "attendance", record.id, { totalMinutes, dayStatus });
 
+  await syncAbsentSandwichForEmployee(req.user!.id, existing.attendance_date);
   res.json({ attendance: record, totalMinutes, dayStatus });
 });
 
@@ -446,6 +452,7 @@ export const adminMarkPresent = asyncHandler(async (req: Request, res: Response)
     employeeId: input.employeeId, date: input.date, reason: input.reason, overrode: !!existing,
   });
 
+  await syncAbsentSandwichForEmployee(input.employeeId, input.date);
   res.status(existing ? 200 : 201).json({ attendance: record });
 });
 
@@ -471,6 +478,7 @@ export const adminMarkHalfDay = asyncHandler(async (req: Request, res: Response)
     employeeId: input.employeeId, date: input.date, reason: input.reason, overrode: !!existing,
   });
 
+  await syncAbsentSandwichForEmployee(input.employeeId, input.date);
   res.status(existing ? 200 : 201).json({ attendance: record });
 });
 
@@ -494,6 +502,7 @@ export const adminMarkAbsent = asyncHandler(async (req: Request, res: Response) 
     employeeId: input.employeeId, date: input.date, reason: input.reason, overrode: !!existing,
   });
 
+  await syncAbsentSandwichForEmployee(input.employeeId, input.date);
   res.status(existing ? 200 : 201).json({ attendance: record });
 });
 
@@ -535,6 +544,7 @@ export const saveManualAttendance = asyncHandler(async (req: Request, res: Respo
   });
 
   const enriched = await repo.findAttendanceWithEmployeeByDate(input.employeeId, input.date);
+  await syncAbsentSandwichForEmployee(input.employeeId, input.date);
   res.status(existing ? 200 : 201).json({ attendance: enriched ?? record });
 });
 
@@ -597,6 +607,8 @@ export const saveBulkManualAttendance = asyncHandler(async (req: Request, res: R
     saved: records.length,
   });
 
+  await syncAbsentSandwichForEmployees(employeeIds, input.date);
+
   res.status(200).json({
     saved: records.length,
     attendance: records,
@@ -624,6 +636,8 @@ export const deleteManualAttendance = asyncHandler(async (req: Request, res: Res
     previousStatus: existing.admin_mark_status ?? existing.day_status,
     reason: existing.admin_mark_reason,
   });
+
+  await syncAbsentSandwichForEmployee(input.employeeId, input.date);
 
   res.json({ success: true });
 });
