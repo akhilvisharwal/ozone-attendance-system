@@ -10,6 +10,8 @@ import {
   listEmployeesQuerySchema,
   resetPasswordSchema,
   weeklyOffSchema,
+  attendanceScheduleSchema,
+  bulkAttendanceScheduleSchema,
 } from "./employees.validators";
 import { otpFieldsSchema } from "../emailVerification/emailVerification.validators";
 import { requireVerifiedOtp } from "../emailVerification/emailVerification.service";
@@ -357,6 +359,31 @@ export const updateWeeklyOff = asyncHandler(async (req: Request, res: Response) 
 
   await logAudit(req, "employee.update_weekly_off", "employee", employee.id, { weeklyOffDays });
   res.json({ employee: updated });
+});
+
+export const updateAttendanceSchedule = asyncHandler(async (req: Request, res: Response) => {
+  const employee = await repo.findEmployeeById(req.params.id);
+  if (!employee || employee.role !== "employee") throw ApiError.notFound("Employee not found");
+
+  const fields = attendanceScheduleSchema.parse(req.body ?? {});
+  const updated = await repo.updateEmployeeAttendanceSchedule(employee.id, fields);
+  if (!updated) throw ApiError.notFound("Employee not found");
+
+  await logAudit(req, "employee.update_attendance_schedule", "employee", employee.id, fields);
+  res.json({ employee: updated });
+});
+
+export const bulkUpdateAttendanceSchedule = asyncHandler(async (req: Request, res: Response) => {
+  const { employeeIds, ...fields } = bulkAttendanceScheduleSchema.parse(req.body ?? {});
+  const updated = await repo.bulkUpdateEmployeeAttendanceSchedule(employeeIds, fields);
+
+  await logAudit(req, "employee.update_attendance_schedule", "employee", undefined, {
+    ...fields,
+    employeeIds,
+    bulk: true,
+    updatedCount: updated,
+  });
+  res.json({ updated });
 });
 
 export const getEmployeeDependencies = asyncHandler(async (req: Request, res: Response) => {

@@ -1,8 +1,15 @@
 import { z } from "zod";
 
-const hhmm = z.string().regex(/^\d{2}:\d{2}$/);
+export const hhmm = z.string().regex(/^\d{2}:\d{2}$/);
 
-function validateOverrideRules(
+/**
+ * Shared cross-field ordering checks (start <= late <= half-day cutoff <= closing,
+ * half-day minimum < present minimum) for any object shaped like a schedule
+ * layer — reused by the standing per-employee schedule in employees.validators.ts
+ * so the two "same 6 fields, different lifetime" schemas can't validate them
+ * differently.
+ */
+export function validateOverrideRules(
   value: {
     officeStartTime?: string | null;
     lateCheckInTime?: string | null;
@@ -51,7 +58,7 @@ function validateOverrideRules(
   }
 }
 
-function hasAtLeastOneRule(value: {
+export function hasAtLeastOneRule(value: {
   officeStartTime?: string | null;
   lateCheckInTime?: string | null;
   halfDayCutoff?: string | null;

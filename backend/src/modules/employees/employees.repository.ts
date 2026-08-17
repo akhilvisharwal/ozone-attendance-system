@@ -12,7 +12,10 @@ const EMPLOYEE_SELECT = `
   e.designation_id, d.name AS designation,
   e.role, e.is_active, e.must_change_password, e.first_login_completed, e.profile_photo_path,
   e.created_by, e.deleted_at, e.weekly_off_days, e.uses_default_weekly_off,
-  e.admin_permissions, e.created_at, e.updated_at
+  e.admin_permissions,
+  e.standing_office_start_time, e.standing_late_check_in_time, e.standing_half_day_cutoff,
+  e.standing_office_closing_time, e.standing_min_hours_present, e.standing_min_hours_half_day,
+  e.created_at, e.updated_at
 `;
 
 const EMPLOYEE_FROM = `
@@ -278,6 +281,151 @@ export async function updateWeeklyOffDays(
   if (!result.rows[0]) return null;
   const employee = await findEmployeeById(result.rows[0].id);
   return employee ? toPublicEmployee(employee) : null;
+}
+
+export interface StandingAttendanceScheduleFields {
+  officeStartTime: string | null;
+  lateCheckInTime: string | null;
+  halfDayCutoff: string | null;
+  officeClosingTime: string | null;
+  minHoursPresent: number | null;
+  minHoursHalfDay: number | null;
+}
+
+const STANDING_SCHEDULE_COLUMNS = `
+  standing_office_start_time, standing_late_check_in_time, standing_half_day_cutoff,
+  standing_office_closing_time, standing_min_hours_present, standing_min_hours_half_day
+`;
+
+function mapStandingScheduleRow(row: {
+  standing_office_start_time: string | null;
+  standing_late_check_in_time: string | null;
+  standing_half_day_cutoff: string | null;
+  standing_office_closing_time: string | null;
+  standing_min_hours_present: string | number | null;
+  standing_min_hours_half_day: string | number | null;
+}): StandingAttendanceScheduleFields {
+  return {
+    officeStartTime: row.standing_office_start_time,
+    lateCheckInTime: row.standing_late_check_in_time,
+    halfDayCutoff: row.standing_half_day_cutoff,
+    officeClosingTime: row.standing_office_closing_time,
+    minHoursPresent:
+      row.standing_min_hours_present !== null ? Number(row.standing_min_hours_present) : null,
+    minHoursHalfDay:
+      row.standing_min_hours_half_day !== null ? Number(row.standing_min_hours_half_day) : null,
+  };
+}
+
+/** The employee's standing (permanent, not date-ranged) attendance schedule, for the rules resolver. */
+export async function findStandingScheduleForEmployee(
+  employeeId: string
+): Promise<StandingAttendanceScheduleFields | null> {
+  const result = await pool.query<{
+    standing_office_start_time: string | null;
+    standing_late_check_in_time: string | null;
+    standing_half_day_cutoff: string | null;
+    standing_office_closing_time: string | null;
+    standing_min_hours_present: string | null;
+    standing_min_hours_half_day: string | null;
+  }>(
+    `SELECT ${STANDING_SCHEDULE_COLUMNS}
+       FROM employees
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [employeeId]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return mapStandingScheduleRow(row);
+}
+
+/** Batch form of findStandingScheduleForEmployee, for resolving many employees at once (auto-absence). */
+export async function findStandingSchedulesForEmployees(
+  employeeIds: string[]
+): Promise<Map<string, StandingAttendanceScheduleFields>> {
+  const map = new Map<string, StandingAttendanceScheduleFields>();
+  if (employeeIds.length === 0) return map;
+  const result = await pool.query<{
+    id: string;
+    standing_office_start_time: string | null;
+    standing_late_check_in_time: string | null;
+    standing_half_day_cutoff: string | null;
+    standing_office_closing_time: string | null;
+    standing_min_hours_present: string | null;
+    standing_min_hours_half_day: string | null;
+  }>(
+    `SELECT id, ${STANDING_SCHEDULE_COLUMNS}
+       FROM employees
+      WHERE id = ANY($1::uuid[])`,
+    [employeeIds]
+  );
+  for (const row of result.rows) {
+    map.set(row.id, mapStandingScheduleRow(row));
+  }
+  return map;
+}
+
+export async function updateEmployeeAttendanceSchedule(
+  id: string,
+  fields: StandingAttendanceScheduleFields
+): Promise<PublicEmployee | null> {
+  const result = await pool.query<{ id: string }>(
+    `UPDATE employees
+        SET standing_office_start_time = $1,
+            standing_late_check_in_time = $2,
+            standing_half_day_cutoff = $3,
+            standing_office_closing_time = $4,
+            standing_min_hours_present = $5,
+            standing_min_hours_half_day = $6,
+            updated_at = now()
+      WHERE id = $7
+        AND role = 'employee'
+        AND deleted_at IS NULL
+     RETURNING id`,
+    [
+      fields.officeStartTime,
+      fields.lateCheckInTime,
+      fields.halfDayCutoff,
+      fields.officeClosingTime,
+      fields.minHoursPresent,
+      fields.minHoursHalfDay,
+      id,
+    ]
+  );
+  if (!result.rows[0]) return null;
+  const employee = await findEmployeeById(result.rows[0].id);
+  return employee ? toPublicEmployee(employee) : null;
+}
+
+/** Applies the same standing schedule to multiple employees at once (bulk assignment for e.g. all site staff). */
+export async function bulkUpdateEmployeeAttendanceSchedule(
+  employeeIds: string[],
+  fields: StandingAttendanceScheduleFields
+): Promise<number> {
+  if (employeeIds.length === 0) return 0;
+  const result = await pool.query(
+    `UPDATE employees
+        SET standing_office_start_time = $1,
+            standing_late_check_in_time = $2,
+            standing_half_day_cutoff = $3,
+            standing_office_closing_time = $4,
+            standing_min_hours_present = $5,
+            standing_min_hours_half_day = $6,
+            updated_at = now()
+      WHERE id = ANY($7::uuid[])
+        AND role = 'employee'
+        AND deleted_at IS NULL`,
+    [
+      fields.officeStartTime,
+      fields.lateCheckInTime,
+      fields.halfDayCutoff,
+      fields.officeClosingTime,
+      fields.minHoursPresent,
+      fields.minHoursHalfDay,
+      employeeIds,
+    ]
+  );
+  return result.rowCount ?? 0;
 }
 
 /** Lightweight list of active employees (with weekly-off) for the monthly grid. */

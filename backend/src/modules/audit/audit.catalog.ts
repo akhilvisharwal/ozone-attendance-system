@@ -119,6 +119,11 @@ const CATALOG: Record<string, AuditActionMeta> = {
     module: "Holidays",
     actionType: "Update",
   },
+  "employee.update_attendance_schedule": {
+    label: "Employee attendance schedule updated",
+    module: "Attendance",
+    actionType: "Update",
+  },
   "employee.designation_create": {
     label: "Employee role created",
     module: "Employees",

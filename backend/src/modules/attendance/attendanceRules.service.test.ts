@@ -76,6 +76,50 @@ describe("buildEffectiveRulesFromOverrideRow", () => {
   });
 });
 
+describe("buildEffectiveRulesFromOverrideRow with a standing employee schedule", () => {
+  it("applies the standing schedule when no date-range override is active", () => {
+    const result = buildEffectiveRulesFromOverrideRow(null, "2026-07-09", {
+      officeStartTime: "08:00",
+      lateCheckInTime: "08:30",
+      halfDayCutoff: null,
+      officeClosingTime: "16:00",
+      minHoursPresent: null,
+      minHoursHalfDay: null,
+    });
+    assert.equal(result.activeOverride, null);
+    assert.equal(result.settings.officeStartTime, "08:00");
+    assert.equal(result.settings.lateCheckInTime, "08:30");
+    assert.equal(result.settings.checkinOpenTime, "08:00");
+    assert.equal(result.settings.checkinOntimeEnd, "08:30");
+    assert.equal(result.settings.officeClosingTime, "16:00");
+    // Fields left null on the standing schedule fall through to the global default.
+    assert.ok(result.settings.minHoursPresent > 0);
+  });
+
+  it("leaves an employee with no standing schedule on the global default", () => {
+    const withNull = buildEffectiveRulesFromOverrideRow(null, "2026-07-09", null);
+    const withoutArg = buildEffectiveRulesFromOverrideRow(null, "2026-07-09");
+    assert.deepEqual(withNull.settings, withoutArg.settings);
+  });
+
+  it("a date-range override still wins over the standing schedule for the same field", () => {
+    // Standing schedule says late check-in is 08:30; an active override says 11:00 today.
+    const result = buildEffectiveRulesFromOverrideRow(makeRow({ late_check_in_time: "11:00" }), "2026-07-09", {
+      officeStartTime: "08:00",
+      lateCheckInTime: "08:30",
+      halfDayCutoff: null,
+      officeClosingTime: null,
+      minHoursPresent: null,
+      minHoursHalfDay: null,
+    });
+    assert.equal(result.activeOverride?.reason, "Heavy Rain");
+    assert.equal(result.settings.lateCheckInTime, "11:00", "override wins for the field it sets");
+    // The override doesn't touch officeStartTime, so the standing schedule's
+    // value survives underneath it instead of falling all the way to global.
+    assert.equal(result.settings.officeStartTime, "08:00", "standing schedule still wins where override is silent");
+  });
+});
+
 describe("auto-absence closing time helpers", () => {
   it("parses HH:mm closing times", () => {
     assert.deepEqual(parseClosingTime("17:30"), { hour: 17, minute: 30 });

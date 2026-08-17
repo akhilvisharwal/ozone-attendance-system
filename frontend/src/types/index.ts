@@ -162,6 +162,15 @@ export interface Employee {
   deleted_at?: string | null;
   weekly_off_days?: number[];
   uses_default_weekly_off?: boolean;
+  // Standing (permanent, not date-ranged) per-employee attendance schedule.
+  // NULL/undefined per field = inherit company default (see backend
+  // attendanceRules.service.ts's fallback chain).
+  standing_office_start_time?: string | null;
+  standing_late_check_in_time?: string | null;
+  standing_half_day_cutoff?: string | null;
+  standing_office_closing_time?: string | null;
+  standing_min_hours_present?: number | null;
+  standing_min_hours_half_day?: number | null;
   department?: string | null;
   designation_id?: string | null;
   /** Job role / designation label (e.g. Draftsman). Separate from auth `role`. */

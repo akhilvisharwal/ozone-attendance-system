@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
   KeyRound, Pencil, UserCheck, UserMinus, UserX, Power, Plus, Search, ShieldAlert,
-  Image as ImageIcon, Trash2, RefreshCcw, Eye, EyeOff, CalendarOff,
+  Image as ImageIcon, Trash2, RefreshCcw, Eye, EyeOff, CalendarOff, Clock3,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -18,10 +18,22 @@ import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { EmailOtpModal } from "@/components/EmailOtpModal";
 import { ProfilePhotoCropModal } from "@/components/ProfilePhotoCropModal";
+import { EmployeeMultiSelect } from "@/components/EmployeeMultiSelect";
+import {
+  AttendanceScheduleFields,
+  emptyAttendanceScheduleForm,
+  formFromStandingSchedule,
+  attendanceScheduleFormToPayload,
+  validateAttendanceScheduleForm,
+  describeEffectiveSchedule,
+  type AttendanceScheduleFormState,
+  type ScheduleRuleKey,
+} from "@/components/AttendanceScheduleFields";
 import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from "@/utils/profilePhoto";
 import * as employeesApi from "@/api/employees";
 import * as attendanceApi from "@/api/attendance";
 import type { AttendanceRecord, DependencyCounts, Employee } from "@/types";
+import type { AttendanceSettings } from "@/types/settings";
 import { extractErrorMessage } from "@/api/client";
 import { resolveWeeklyOffDays, employeeUsesDefaultWeeklyOff, normalizeWeeklyOffDays } from "@/utils/weeklyOffDays";
 import { usePublicSettings } from "@/contexts/SettingsContext";
@@ -138,6 +150,8 @@ export function EmployeesPage() {
   const [pwTarget, setPwTarget]           = useState<Employee | null>(null);
   const [photoTarget, setPhotoTarget]     = useState<Employee | null>(null);
   const [weeklyOffTarget, setWeeklyOffTarget] = useState<Employee | null>(null);
+  const [scheduleTarget, setScheduleTarget] = useState<Employee | null>(null);
+  const [bulkScheduleOpen, setBulkScheduleOpen] = useState(false);
   const [markTarget, setMarkTarget]       = useState<{ employee: Employee; action: MarkAction } | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<Employee | null>(null);
   const [deleteTarget, setDeleteTarget]   = useState<Employee | null>(null);
@@ -204,6 +218,11 @@ export function EmployeesPage() {
           label: "Configure Weekly Off",
           icon: <CalendarOff className="h-4 w-4" />,
           onClick: () => setWeeklyOffTarget(employee),
+        },
+        {
+          label: "Configure Attendance Schedule",
+          icon: <Clock3 className="h-4 w-4" />,
+          onClick: () => setScheduleTarget(employee),
         }
       );
     }
@@ -317,9 +336,18 @@ export function EmployeesPage() {
         }
         action={
           isMasterAdmin ? (
-            <Button onClick={() => setCreateOpen(true)} icon={<Plus className="h-4 w-4" />}>
-              Add Employee
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setBulkScheduleOpen(true)}
+                icon={<Clock3 className="h-4 w-4" />}
+              >
+                Bulk Apply Schedule
+              </Button>
+              <Button onClick={() => setCreateOpen(true)} icon={<Plus className="h-4 w-4" />}>
+                Add Employee
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -434,6 +462,29 @@ export function EmployeesPage() {
           onSaved={(updated) => {
             setItems((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
             setWeeklyOffTarget(null);
+          }}
+        />
+      )}
+
+      {scheduleTarget && publicSettings && (
+        <AttendanceScheduleModal
+          employee={scheduleTarget}
+          defaultRules={publicSettings.attendance}
+          onClose={() => setScheduleTarget(null)}
+          onSaved={(updated) => {
+            setItems((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+            setScheduleTarget(null);
+          }}
+        />
+      )}
+
+      {bulkScheduleOpen && publicSettings && (
+        <BulkAttendanceScheduleModal
+          defaultRules={publicSettings.attendance}
+          onClose={() => setBulkScheduleOpen(false)}
+          onSaved={() => {
+            setBulkScheduleOpen(false);
+            load();
           }}
         />
       )}
@@ -1051,6 +1102,171 @@ function WeeklyOffModal({
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button isLoading={saving} onClick={handleSave} icon={<CalendarOff className="h-4 w-4" />}>
             Save Weekly Off
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Attendance Schedule (standing per-employee override of Settings → Attendance) ──
+
+function AttendanceScheduleModal({
+  employee,
+  defaultRules,
+  onClose,
+  onSaved,
+}: {
+  employee: Employee;
+  defaultRules: AttendanceSettings;
+  onClose: () => void;
+  onSaved: (updated: Employee) => void;
+}) {
+  const [form, setForm] = useState<AttendanceScheduleFormState>(() =>
+    formFromStandingSchedule(defaultRules, employee)
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function updateForm(patch: Partial<AttendanceScheduleFormState>) {
+    setForm((prev) => ({ ...prev, ...patch }));
+    setError(null);
+  }
+
+  function toggleRule(key: ScheduleRuleKey, enabled: boolean) {
+    setForm((prev) => ({ ...prev, enabled: { ...prev.enabled, [key]: enabled } }));
+    setError(null);
+  }
+
+  async function handleSave() {
+    const validationError = validateAttendanceScheduleForm(form);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await employeesApi.updateAttendanceSchedule(
+        employee.id,
+        attendanceScheduleFormToPayload(form)
+      );
+      onSaved(updated);
+    } catch (err) {
+      setError(extractErrorMessage(err, "Could not update attendance schedule"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Attendance Schedule — ${employee.name}`} widthClassName="max-w-2xl">
+      <div className="flex flex-col gap-4">
+        {error && <Alert variant="error">{error}</Alert>}
+
+        <p className="text-sm text-slate-500">
+          Set a standing schedule for employees whose expected hours differ from the office
+          default — e.g. site staff with an earlier start. This is permanent, not tied to a date
+          range; it stays in effect until changed here again. A date-range daily override (Settings
+          → Attendance) still takes priority over this when both apply to the same day.
+        </p>
+
+        <AttendanceScheduleFields
+          form={form}
+          defaultRules={defaultRules}
+          onToggle={toggleRule}
+          onChange={updateForm}
+        />
+
+        <p className="text-xs text-slate-400">{describeEffectiveSchedule(form)}</p>
+
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button isLoading={saving} onClick={() => void handleSave()} icon={<Clock3 className="h-4 w-4" />}>
+            Save Schedule
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function BulkAttendanceScheduleModal({
+  defaultRules,
+  onClose,
+  onSaved,
+}: {
+  defaultRules: AttendanceSettings;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [employeeIds, setEmployeeIds] = useState<string[]>([]);
+  const [form, setForm] = useState<AttendanceScheduleFormState>(() => emptyAttendanceScheduleForm(defaultRules));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function updateForm(patch: Partial<AttendanceScheduleFormState>) {
+    setForm((prev) => ({ ...prev, ...patch }));
+    setError(null);
+  }
+
+  function toggleRule(key: ScheduleRuleKey, enabled: boolean) {
+    setForm((prev) => ({ ...prev, enabled: { ...prev.enabled, [key]: enabled } }));
+    setError(null);
+  }
+
+  async function handleSave() {
+    if (employeeIds.length === 0) {
+      setError("Select at least one employee.");
+      return;
+    }
+    const validationError = validateAttendanceScheduleForm(form);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await employeesApi.bulkUpdateAttendanceSchedule(employeeIds, attendanceScheduleFormToPayload(form));
+      onSaved();
+    } catch (err) {
+      setError(extractErrorMessage(err, "Could not apply the schedule"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Bulk Apply Attendance Schedule" widthClassName="max-w-2xl">
+      <div className="flex flex-col gap-4">
+        {error && <Alert variant="error">{error}</Alert>}
+
+        <p className="text-sm text-slate-500">
+          Apply the same standing attendance schedule to several employees at once — for example,
+          all site staff who share the same hours. Each employee keeps this schedule until it's
+          changed individually or here again.
+        </p>
+
+        <EmployeeMultiSelect
+          label="Employees"
+          selectedIds={employeeIds}
+          onChange={(ids) => { setEmployeeIds(ids); setError(null); }}
+        />
+
+        <AttendanceScheduleFields
+          form={form}
+          defaultRules={defaultRules}
+          onToggle={toggleRule}
+          onChange={updateForm}
+        />
+
+        <p className="text-xs text-slate-400">{describeEffectiveSchedule(form)}</p>
+
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button isLoading={saving} onClick={() => void handleSave()} icon={<Clock3 className="h-4 w-4" />}>
+            Apply to {employeeIds.length || ""} Employee{employeeIds.length === 1 ? "" : "s"}
           </Button>
         </div>
       </div>

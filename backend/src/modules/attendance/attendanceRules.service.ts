@@ -9,6 +9,10 @@ import type {
 } from "./attendanceOverrides.types";
 import { mapOverrideRow } from "./attendanceOverrides.types";
 import * as repo from "./attendanceOverrides.repository";
+import {
+  findStandingScheduleForEmployee,
+  findStandingSchedulesForEmployees,
+} from "../employees/employees.repository";
 
 export type EffectiveAttendanceSettings = ReturnType<typeof normalizeAttendanceSettings>;
 
@@ -36,36 +40,58 @@ export function isOverrideActiveForDate(
   return row.start_date <= date && row.end_date >= date;
 }
 
-function mergeOverrideIntoDefaults(
-  defaults: AttendanceSettings,
-  override: AttendanceDailyOverride
-): AttendanceSettings {
+/**
+ * A layer of the schedule-resolution fallback chain: any object with some or
+ * all of these fields set. A field left null/undefined means "inherit from
+ * the next tier down" — never "zero"/"blank". Both AttendanceDailyOverride
+ * (date-range overrides) and StandingAttendanceScheduleFields (the standing
+ * per-employee schedule) satisfy this shape structurally.
+ */
+export interface ScheduleLayer {
+  officeStartTime?: string | null;
+  lateCheckInTime?: string | null;
+  halfDayCutoff?: string | null;
+  officeClosingTime?: string | null;
+  minHoursPresent?: number | null;
+  minHoursHalfDay?: number | null;
+}
+
+/** Merges one schedule layer over a base, field by field — null/undefined fields fall through. */
+function mergeScheduleLayer(base: AttendanceSettings, layer: ScheduleLayer | null): AttendanceSettings {
+  if (!layer) return base;
   return {
-    ...defaults,
-    officeStartTime: override.officeStartTime ?? defaults.officeStartTime,
-    lateCheckInTime: override.lateCheckInTime ?? defaults.lateCheckInTime,
-    halfDayCutoff: override.halfDayCutoff ?? defaults.halfDayCutoff,
-    officeClosingTime: override.officeClosingTime ?? defaults.officeClosingTime,
-    minHoursPresent: override.minHoursPresent ?? defaults.minHoursPresent,
-    minHoursHalfDay: override.minHoursHalfDay ?? defaults.minHoursHalfDay,
-    checkinOpenTime: override.officeStartTime ?? defaults.checkinOpenTime,
-    checkinOntimeEnd: override.lateCheckInTime ?? defaults.checkinOntimeEnd,
+    ...base,
+    officeStartTime: layer.officeStartTime ?? base.officeStartTime,
+    lateCheckInTime: layer.lateCheckInTime ?? base.lateCheckInTime,
+    halfDayCutoff: layer.halfDayCutoff ?? base.halfDayCutoff,
+    officeClosingTime: layer.officeClosingTime ?? base.officeClosingTime,
+    minHoursPresent: layer.minHoursPresent ?? base.minHoursPresent,
+    minHoursHalfDay: layer.minHoursHalfDay ?? base.minHoursHalfDay,
   };
 }
 
+/**
+ * Resolves effective attendance settings through the full fallback chain:
+ *   date-range override (if active today) > standing per-employee schedule > global default.
+ * `buildEffectiveRulesFromOverrideRow` stays synchronous and pure (the override
+ * row and standing schedule are both fetched by the caller) so it stays easy to
+ * unit test without a database — see attendanceRules.service.test.ts.
+ */
 export function buildEffectiveRulesFromOverrideRow(
   row: AttendanceDailyOverrideRow | null,
-  date: string
+  date: string,
+  standingSchedule: ScheduleLayer | null = null
 ): EffectiveAttendanceRules {
-  const defaults = normalizeAttendanceSettings(getSettings().attendance);
+  const withStanding = normalizeAttendanceSettings(
+    mergeScheduleLayer(getSettings().attendance, standingSchedule)
+  );
+
   if (!isOverrideActiveForDate(row, date)) {
-    return { settings: defaults, activeOverride: null };
+    return { settings: withStanding, activeOverride: null };
   }
 
   const override = mapOverrideRow(row);
-  const merged = normalizeAttendanceSettings(
-    mergeOverrideIntoDefaults(getSettings().attendance, override)
-  );
+  const merged = normalizeAttendanceSettings(mergeScheduleLayer(withStanding, override));
 
   return {
     settings: merged,
@@ -85,8 +111,11 @@ export async function getEffectiveAttendanceRules(
   if (!employeeId) {
     return buildEffectiveRulesFromOverrideRow(null, date);
   }
-  const row = await repo.findOverrideForEmployeeAndDate(employeeId, date);
-  return buildEffectiveRulesFromOverrideRow(row, date);
+  const [row, standingSchedule] = await Promise.all([
+    repo.findOverrideForEmployeeAndDate(employeeId, date),
+    findStandingScheduleForEmployee(employeeId),
+  ]);
+  return buildEffectiveRulesFromOverrideRow(row, date, standingSchedule);
 }
 
 export async function assertNoAssignmentConflict(
@@ -142,24 +171,41 @@ function effectiveClosingTimeForEmployee(
   employeeId: string,
   date: string,
   overrides: AttendanceDailyOverrideRow[],
-  employeesByOverride: Map<string, OverrideEmployeeSummary[]>
+  employeesByOverride: Map<string, OverrideEmployeeSummary[]>,
+  standingSchedule: ScheduleLayer | null
 ): TimeOfDay {
   const defaults = defaultClosingTime();
+  const standingClosing = standingSchedule?.officeClosingTime
+    ? parseClosingTime(standingSchedule.officeClosingTime)
+    : defaults;
+
   const row = pickOverrideForEmployee(employeeId, date, overrides, employeesByOverride);
-  if (!row) return defaults;
+  if (!row) return standingClosing;
   if (row.office_closing_time) return parseClosingTime(row.office_closing_time);
-  return defaults;
+  return standingClosing;
 }
 
-/** Per-employee effective closing times for auto-absence (respects daily overrides). */
+/** Per-employee effective closing times for auto-absence (respects standing schedules and daily overrides). */
 export async function getEffectiveClosingTimesForEmployees(
   date: string,
   employeeIds: string[]
 ): Promise<Map<string, TimeOfDay>> {
-  const { rows, employeesByOverride } = await repo.listEnabledOverridesForDate(date);
+  const [{ rows, employeesByOverride }, standingSchedules] = await Promise.all([
+    repo.listEnabledOverridesForDate(date),
+    findStandingSchedulesForEmployees(employeeIds),
+  ]);
   const map = new Map<string, TimeOfDay>();
   for (const employeeId of employeeIds) {
-    map.set(employeeId, effectiveClosingTimeForEmployee(employeeId, date, rows, employeesByOverride));
+    map.set(
+      employeeId,
+      effectiveClosingTimeForEmployee(
+        employeeId,
+        date,
+        rows,
+        employeesByOverride,
+        standingSchedules.get(employeeId) ?? null
+      )
+    );
   }
   return map;
 }

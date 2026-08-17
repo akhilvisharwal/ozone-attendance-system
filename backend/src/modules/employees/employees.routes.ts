@@ -40,6 +40,8 @@ router.delete("/designations/:id", requireMasterAdmin(), designationsController.
 
 // View employees (Junior Admin with viewEmployees; Master Admin always)
 router.get("/active", requireAdminPanel(), requirePermission("viewEmployees"), controller.listActiveEmployees);
+// Bulk attendance-schedule apply — registered ahead of "/:id" so "attendance-schedule" is never read as an id.
+router.patch("/attendance-schedule/bulk", requireMasterAdmin(), controller.bulkUpdateAttendanceSchedule);
 router.get("/", requireAdminPanel(), requirePermission("viewEmployees"), controller.listEmployees);
 router.get("/:id", requireAdminPanel(), requirePermission("viewEmployees"), controller.getEmployee);
 
@@ -49,6 +51,7 @@ router.patch("/:id", requireMasterAdmin(), controller.updateEmployee);
 router.patch("/:id/status", requireMasterAdmin(), controller.setEmployeeActive);
 router.post("/:id/reset-password", requireMasterAdmin(), controller.resetEmployeePassword);
 router.patch("/:id/weekly-off", requireMasterAdmin(), controller.updateWeeklyOff);
+router.patch("/:id/attendance-schedule", requireMasterAdmin(), controller.updateAttendanceSchedule);
 router.get("/:id/dependencies", requireMasterAdmin(), controller.getEmployeeDependencies);
 router.delete("/:id", requireMasterAdmin(), controller.deleteEmployee);
 router.patch("/:id/avatar", requireMasterAdmin(), profilePhotoUpload.single("avatar"), controller.adminUpdateEmployeeAvatar);

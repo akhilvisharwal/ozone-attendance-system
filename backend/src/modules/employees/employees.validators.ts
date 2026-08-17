@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CHRONOLOGICAL_SORTS } from "../../utils/chronologicalSort";
+import { hhmm, validateOverrideRules } from "../attendance/attendanceOverrides.validators";
 
 export const createEmployeeSchema = z.object({
   name: z
@@ -52,6 +53,31 @@ export const weeklyOffSchema = z.object({
   /** When true, the employee follows the company default schedule (resolved at runtime). */
   useCompanyDefault: z.boolean().optional(),
 });
+
+/**
+ * Standing (permanent, not date-ranged) per-employee attendance schedule.
+ * Every field is nullable — null means "inherit the next tier down" (see
+ * getEffectiveAttendanceRules). Sending null for a field that already holds a
+ * value clears it back to inherited; omitting a field leaves it unchanged is
+ * NOT supported here — the whole schedule is replaced each save, same as
+ * weeklyOffSchema replaces the whole weekly-off set.
+ */
+const attendanceScheduleFieldsSchema = z.object({
+  officeStartTime: hhmm.nullable(),
+  lateCheckInTime: hhmm.nullable(),
+  halfDayCutoff: hhmm.nullable(),
+  officeClosingTime: hhmm.nullable(),
+  minHoursPresent: z.number().min(1).max(24).nullable(),
+  minHoursHalfDay: z.number().min(0.5).max(12).nullable(),
+});
+
+export const attendanceScheduleSchema = attendanceScheduleFieldsSchema.superRefine(validateOverrideRules);
+
+export const bulkAttendanceScheduleSchema = attendanceScheduleFieldsSchema
+  .extend({
+    employeeIds: z.array(z.string().uuid()).min(1, "Select at least one employee"),
+  })
+  .superRefine(validateOverrideRules);
 
 export const listEmployeesQuerySchema = z.object({
   search: z.string().optional(),

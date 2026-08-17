@@ -161,6 +161,42 @@ export async function updateWeeklyOff(
   return res.data.employee;
 }
 
+/**
+ * Standing (permanent, not date-ranged) per-employee attendance schedule.
+ * Every field null = fully inherit the company default; set only the fields
+ * that should differ. Sent wholesale on each save (same as updateWeeklyOff).
+ */
+export interface AttendanceScheduleInput {
+  officeStartTime: string | null;
+  lateCheckInTime: string | null;
+  halfDayCutoff: string | null;
+  officeClosingTime: string | null;
+  minHoursPresent: number | null;
+  minHoursHalfDay: number | null;
+}
+
+export async function updateAttendanceSchedule(
+  id: string,
+  schedule: AttendanceScheduleInput
+): Promise<Employee> {
+  const res = await apiClient.patch<{ employee: Employee }>(
+    `/employees/${id}/attendance-schedule`,
+    schedule
+  );
+  return res.data.employee;
+}
+
+export async function bulkUpdateAttendanceSchedule(
+  employeeIds: string[],
+  schedule: AttendanceScheduleInput
+): Promise<{ updated: number }> {
+  const res = await apiClient.patch<{ updated: number }>("/employees/attendance-schedule/bulk", {
+    employeeIds,
+    ...schedule,
+  });
+  return res.data;
+}
+
 /** Admin: how many related records an employee has (shown before deletion). */
 export async function getEmployeeDependencies(id: string): Promise<DependencyCounts> {
   const res = await apiClient.get<{ dependencies: DependencyCounts }>(`/employees/${id}/dependencies`);
