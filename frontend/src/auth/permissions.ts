@@ -11,6 +11,8 @@ export const ADMIN_PERMISSION_KEYS = [
   "viewReports",
   "manageExpenses",
   "manageAdvances",
+  "manageLeaves",
+  "manageHolidays",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSION_KEYS)[number];
@@ -69,6 +71,14 @@ export const ADMIN_PERMISSION_META: Record<
     label: "Employee Advances",
     description: "Record advances taken by employees and their repayments, and view the outstanding balance owed to the company.",
   },
+  manageLeaves: {
+    label: "Leave Management",
+    description: "Approve or reject employee leave requests.",
+  },
+  manageHolidays: {
+    label: "Holiday Management",
+    description: "Create and edit company holidays.",
+  },
 };
 
 export function emptyPermissions(): AdminPermissions {
@@ -85,6 +95,8 @@ export function emptyPermissions(): AdminPermissions {
     viewReports: false,
     manageExpenses: false,
     manageAdvances: false,
+    manageLeaves: false,
+    manageHolidays: false,
   };
 }
 
@@ -102,6 +114,8 @@ export function defaultJuniorAdminPermissions(): AdminPermissions {
     viewReports: false,
     manageExpenses: false,
     manageAdvances: false,
+    manageLeaves: false,
+    manageHolidays: false,
   };
 }
 
@@ -128,6 +142,9 @@ export function firstAllowedAdminPath(permissions: AdminPermissions): string {
   if (permissions.assignTasks || permissions.editTasks || permissions.deleteTasks) return "/admin/tasks";
   if (permissions.viewReports) return "/admin/reports";
   if (permissions.manageExpenses) return "/admin/expenses";
+  if (permissions.manageAdvances) return "/admin/advances";
+  if (permissions.manageLeaves) return "/admin/leaves";
+  if (permissions.manageHolidays) return "/admin/holidays";
   if (permissions.sendAttendanceReminders) return "/admin";
   return "/admin/no-access";
 }

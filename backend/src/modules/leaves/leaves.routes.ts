@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, requireRole, requireMasterAdmin } from "../../middleware/auth";
+import { requireAuth, requireRole, requireAdminPanel, requirePermission } from "../../middleware/auth";
 import * as controller from "./leaves.controller";
 
 const router = Router();
@@ -9,10 +9,12 @@ router.post("/", requireRole("employee"), controller.submitLeave);
 router.get("/mine", requireRole("employee"), controller.myLeaves);
 router.delete("/:id", requireRole("employee"), controller.cancelLeave);
 
-// Leave management stays Master Admin only (not in Junior Admin permission set)
-router.get("/", requireMasterAdmin(), controller.adminListLeaves);
-router.get("/:id", requireMasterAdmin(), controller.adminGetLeave);
-router.patch("/:id/review", requireMasterAdmin(), controller.adminReviewLeave);
-router.delete("/:id/admin", requireMasterAdmin(), controller.adminDeleteLeave);
+// Leave management: Master Admin always passes; Junior Admin needs manageLeaves.
+const manageLeaves = [requireAdminPanel(), requirePermission("manageLeaves")] as const;
+
+router.get("/", ...manageLeaves, controller.adminListLeaves);
+router.get("/:id", ...manageLeaves, controller.adminGetLeave);
+router.patch("/:id/review", ...manageLeaves, controller.adminReviewLeave);
+router.delete("/:id/admin", ...manageLeaves, controller.adminDeleteLeave);
 
 export default router;

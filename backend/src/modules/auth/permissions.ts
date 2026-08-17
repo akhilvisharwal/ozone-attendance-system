@@ -13,6 +13,8 @@ export const ADMIN_PERMISSION_KEYS = [
   "viewReports",
   "manageExpenses",
   "manageAdvances",
+  "manageLeaves",
+  "manageHolidays",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSION_KEYS)[number];
@@ -68,6 +70,14 @@ export const ADMIN_PERMISSION_LABELS: Record<AdminPermission, { label: string; d
     label: "Employee Advances",
     description: "Record advances taken by employees and their repayments, and view the outstanding balance owed to the company.",
   },
+  manageLeaves: {
+    label: "Leave Management",
+    description: "Approve or reject employee leave requests.",
+  },
+  manageHolidays: {
+    label: "Holiday Management",
+    description: "Create and edit company holidays.",
+  },
 };
 
 export function emptyPermissions(): AdminPermissions {
@@ -84,6 +94,8 @@ export function emptyPermissions(): AdminPermissions {
     viewReports: false,
     manageExpenses: false,
     manageAdvances: false,
+    manageLeaves: false,
+    manageHolidays: false,
   };
 }
 
@@ -101,6 +113,8 @@ export function defaultJuniorAdminPermissions(): AdminPermissions {
     viewReports: false,
     manageExpenses: false,
     manageAdvances: false,
+    manageLeaves: false,
+    manageHolidays: false,
   };
 }
 

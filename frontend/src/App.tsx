@@ -94,17 +94,25 @@ function AdminShell() {
     ...(isMasterAdmin
       ? [
           { to: "/admin/scoreboard", label: "Scoreboard", icon: <Trophy className="h-4 w-4" /> },
+          { to: "/admin/sites", label: "Sites", icon: <Building2 className="h-4 w-4" /> },
+        ]
+      : []),
+    ...(can("manageLeaves")
+      ? [
           {
             to: "/admin/leaves",
             label: "Leave Management",
             icon: <CalendarCheck className="h-4 w-4" />,
           },
+        ]
+      : []),
+    ...(can("manageHolidays")
+      ? [
           {
             to: "/admin/holidays",
             label: "Holiday Management",
             icon: <CalendarHeart className="h-4 w-4" />,
           },
-          { to: "/admin/sites", label: "Sites", icon: <Building2 className="h-4 w-4" /> },
         ]
       : []),
     ...(can("viewReports")
@@ -186,11 +194,15 @@ function AuthenticatedApp() {
               </Route>
               <Route element={<MasterAdminRoute />}>
                 <Route path="/admin/scoreboard" element={<ScoreboardPage />} />
-                <Route path="/admin/leaves" element={<LeaveManagementPage />} />
-                <Route path="/admin/holidays" element={<HolidayManagementPage />} />
                 <Route path="/admin/sites" element={<SitesPage />} />
                 <Route path="/admin/settings" element={<SettingsPage />} />
                 <Route path="/admin/expense-management" element={<ExpenseManagementPage />} />
+              </Route>
+              <Route element={<PermissionRoute allOf={["manageLeaves"]} />}>
+                <Route path="/admin/leaves" element={<LeaveManagementPage />} />
+              </Route>
+              <Route element={<PermissionRoute allOf={["manageHolidays"]} />}>
+                <Route path="/admin/holidays" element={<HolidayManagementPage />} />
               </Route>
               <Route element={<PermissionRoute allOf={["viewReports"]} />}>
                 <Route path="/admin/reports" element={<ReportsPage />} />

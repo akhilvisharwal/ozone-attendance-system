@@ -1,20 +1,14 @@
+// AdminPermission/AdminPermissions have a single source of truth in
+// modules/auth/permissions.ts (ADMIN_PERMISSION_KEYS) — re-exported here so
+// this file doesn't hand-maintain a second, driftable copy of the key list.
+// (This file used to redeclare its own copy of the union, which fell out of
+// sync the moment a new key — manageLeaves/manageHolidays — was added only
+// to the canonical list, breaking req.user.permissions typing in a way that
+// pointed at middleware/auth.ts rather than at the actual stale copy here.)
+import type { AdminPermission, AdminPermissions } from "../modules/auth/permissions";
+export type { AdminPermission, AdminPermissions };
+
 export type Role = "admin" | "junior_admin" | "employee";
-
-export type AdminPermission =
-  | "viewDashboard"
-  | "viewAttendance"
-  | "editAttendance"
-  | "manualAttendance"
-  | "viewEmployees"
-  | "sendAttendanceReminders"
-  | "assignTasks"
-  | "editTasks"
-  | "deleteTasks"
-  | "viewReports"
-  | "manageExpenses"
-  | "manageAdvances";
-
-export type AdminPermissions = Record<AdminPermission, boolean>;
 
 export interface Employee {
   id: string;
@@ -37,6 +31,15 @@ export interface Employee {
   weekly_off_days: number[];
   uses_default_weekly_off: boolean;
   admin_permissions: AdminPermissions;
+  // Standing per-employee attendance schedule. NULL per field = inherit the
+  // next tier down (see attendanceRules.service.ts). Not a date-ranged
+  // override — see attendance_daily_overrides for that.
+  standing_office_start_time: string | null;
+  standing_late_check_in_time: string | null;
+  standing_half_day_cutoff: string | null;
+  standing_office_closing_time: string | null;
+  standing_min_hours_present: number | null;
+  standing_min_hours_half_day: number | null;
   created_at: string;
   updated_at: string;
 }
