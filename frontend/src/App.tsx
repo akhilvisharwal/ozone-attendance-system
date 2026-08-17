@@ -49,7 +49,6 @@ import { ScoreboardPage } from "@/pages/admin/ScoreboardPage";
 import LeaveManagementPage from "@/pages/admin/LeaveManagementPage";
 import { HolidayManagementPage } from "@/pages/admin/HolidayManagementPage";
 import { SettingsPage } from "@/pages/admin/SettingsPage";
-import { ProfilePage } from "@/pages/admin/ProfilePage";
 import { NoAccessPage } from "@/pages/admin/NoAccessPage";
 import { ExpenseTrackerPage } from "@/pages/admin/ExpenseTrackerPage";
 import { ExpenseManagementPage } from "@/pages/admin/ExpenseManagementPage";
@@ -72,7 +71,6 @@ function AdminShell() {
     ...(can("viewDashboard")
       ? [{ to: "/admin", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" />, end: true }]
       : []),
-    { to: "/admin/profile", label: "My Profile", icon: <UserCircle className="h-4 w-4" /> },
     ...(can("viewEmployees")
       ? [{ to: "/admin/employees", label: "Employees", icon: <Users className="h-4 w-4" /> }]
       : []),
@@ -173,7 +171,6 @@ function AuthenticatedApp() {
 
           <Route element={<ProtectedRoute allowedRoles={["admin", "junior_admin"]} />}>
             <Route element={<AdminShell />}>
-              <Route path="/admin/profile" element={<ProfilePage />} />
               <Route element={<PermissionRoute allOf={["viewDashboard"]} />}>
                 <Route path="/admin" element={<AdminDashboardPage />} />
               </Route>

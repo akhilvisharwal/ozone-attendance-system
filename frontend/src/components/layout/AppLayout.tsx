@@ -46,12 +46,7 @@ export function AppLayout({
   /** Settings uses an internal split-pane scroll; lock the shell scroll on lg+. */
   const isSettingsPage = /\/settings\/?$/.test(location.pathname);
   const isEmployeeMobile = variant === "employee";
-  const profilePath =
-    employee?.role === "employee"
-      ? "/profile"
-      : employee?.role === "junior_admin"
-        ? "/admin/profile"
-        : "/admin/settings";
+  const profilePath = employee?.role === "employee" ? "/profile" : "/admin/settings";
 
   const closeDrawer = () => setDrawerOpen(false);
 
