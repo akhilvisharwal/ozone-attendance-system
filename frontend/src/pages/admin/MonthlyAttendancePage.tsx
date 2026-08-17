@@ -102,8 +102,9 @@ export function MonthlyAttendancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, employeeId, siteId, sortOrder]);
 
-  async function handleDownload(format: "excel" | "pdf") {
-    setDownloading(format);
+  async function handleDownload(format: "excel" | "pdf", style?: "detailed" | "simple") {
+    const key = style ? `${format}-${style}` : format;
+    setDownloading(key);
     try {
       await attendanceApi.downloadMonthlyReport({
         month,
@@ -111,6 +112,7 @@ export function MonthlyAttendancePage() {
         siteId: siteId || undefined,
         sort: sortOrder,
         format,
+        style,
       });
     } catch (err) {
       showToast(extractErrorMessage(err, `Could not download ${format.toUpperCase()} report.`), "error");
@@ -217,10 +219,21 @@ export function MonthlyAttendancePage() {
               variant="outline"
               size="sm"
               icon={<FileText className="h-4 w-4" />}
-              isLoading={downloading === "pdf"}
-              onClick={() => void handleDownload("pdf")}
+              isLoading={downloading === "pdf-detailed"}
+              onClick={() => void handleDownload("pdf", "detailed")}
+              title="Full daily grid, per-status counts, and full advance breakdown"
             >
-              PDF
+              PDF (Detailed)
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<FileText className="h-4 w-4" />}
+              isLoading={downloading === "pdf-simple"}
+              onClick={() => void handleDownload("pdf", "simple")}
+              title="Large-print daily grid with just the headline totals"
+            >
+              PDF (Simple)
             </Button>
           </div>
 

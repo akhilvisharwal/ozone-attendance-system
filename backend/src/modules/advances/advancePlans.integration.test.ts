@@ -20,14 +20,24 @@ describe(
     let createdBy: string;
 
     before(async () => {
+      // Pick an employee with zero existing advance plans — not just "the first
+      // employee" — so this suite's "same-day due date" assertion can never be
+      // thrown off by real plans a developer created against local dev data in an
+      // unrelated session (this bit us once: a manually-created plan with an
+      // earlier due date silently won the MIN(due_date) this test asserts on).
       const emp = await pool.query<{ id: string }>(
-        `SELECT id FROM employees WHERE role = 'employee' AND deleted_at IS NULL LIMIT 1`
+        `SELECT e.id FROM employees e
+          WHERE e.role = 'employee' AND e.deleted_at IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM employee_advance_plans p WHERE p.employee_id = e.id
+            )
+          LIMIT 1`
       );
       const admin = await pool.query<{ id: string }>(
         `SELECT id FROM employees WHERE role = 'admin' LIMIT 1`
       );
       if (!emp.rows[0] || !admin.rows[0]) {
-        throw new Error("Fixture data missing: need at least one employee and one admin");
+        throw new Error("Fixture data missing: need a plan-free employee and one admin");
       }
       employeeId = emp.rows[0].id;
       createdBy = admin.rows[0].id;

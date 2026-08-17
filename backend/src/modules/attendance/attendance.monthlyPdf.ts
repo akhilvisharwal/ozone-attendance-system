@@ -6,7 +6,7 @@ import { getSettings } from "../settings/settings.cache";
 import { formatMinutesAsHours } from "../../utils/date";
 
 /** Compact advance amount for the width-constrained PDF grid ("-" when nothing). */
-function formatAdvanceAmount(value: number | undefined): string {
+export function formatAdvanceAmount(value: number | undefined): string {
   if (!value) return "-";
   return Math.round(value).toLocaleString("en-IN");
 }

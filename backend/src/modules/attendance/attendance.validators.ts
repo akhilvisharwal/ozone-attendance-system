@@ -45,6 +45,8 @@ export const monthlyExportQuerySchema = z.object({
   employeeId: z.string().uuid().optional(),
   siteId: z.string().uuid().optional(),
   format: z.enum(["excel", "pdf"]).optional(),
+  /** PDF only. "detailed" (default) is today's full grid; "simple" is the large-print variant. */
+  style: z.enum(["detailed", "simple"]).default("detailed"),
   sort: z.enum(CHRONOLOGICAL_SORTS).default("oldest"),
 });
 

@@ -183,7 +183,11 @@ export async function getMonthlyAttendance(params: MonthlyParams): Promise<Month
 }
 
 export async function downloadMonthlyReport(
-  params: MonthlyParams & { format: "excel" | "pdf" }
+  params: MonthlyParams & {
+    format: "excel" | "pdf";
+    /** PDF only. Omit/"detailed" for today's full grid; "simple" for the large-print variant. */
+    style?: "detailed" | "simple";
+  }
 ): Promise<void> {
   try {
     const { data, headers } = await apiClient.get("/attendance/admin/monthly/export", {

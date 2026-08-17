@@ -28,6 +28,7 @@ import {
   resolveMonth,
 } from "./attendance.monthly";
 import { buildMonthlyCalendarPdf } from "./attendance.monthlyPdf";
+import { buildMonthlyCalendarPdfSimple } from "./attendance.monthlyPdfSimple";
 import { buildMonthlyCalendarExcel } from "./attendance.monthlyExcel";
 import * as employeesRepo from "../employees/employees.repository";
 import { resolveOffDayContext } from "./attendance.offDay";
@@ -337,9 +338,13 @@ export const adminMonthlyExport = asyncHandler(async (req: Request, res: Respons
   const filenameBase = `attendance-${year}-${String(month).padStart(2, "0")}`;
 
   if (format === "pdf") {
-    const buffer = await buildMonthlyCalendarPdf(grid, meta);
+    const buffer =
+      query.style === "simple"
+        ? await buildMonthlyCalendarPdfSimple(grid, meta)
+        : await buildMonthlyCalendarPdf(grid, meta);
+    const suffix = query.style === "simple" ? "-simple" : "";
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}${suffix}.pdf"`);
     res.send(buffer);
     return;
   }
