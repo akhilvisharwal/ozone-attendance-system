@@ -29,6 +29,14 @@ export interface AttendanceSettings {
   autoCalculate: boolean;
   allowManualOverride: boolean;
   allowMultipleCheckIns: boolean;
+  /**
+   * When true, an employee who checked in but never checked out is marked
+   * Absent for the day once the end-of-day engine auto-closes their session
+   * — instead of the default behavior of calculating Present/Half Day from
+   * however many minutes elapsed since check-in. Off (default) preserves
+   * today's calculated-status behavior; this is opt-in, not retroactive.
+   */
+  markAbsentIfNoCheckout: boolean;
   checkinOpenTime: string;
   checkinOntimeEnd: string;
   halfDayCutoff: string;
@@ -186,6 +194,7 @@ export function buildDefaultSettings(): AppSettings {
       autoCalculate: true,
       allowManualOverride: true,
       allowMultipleCheckIns: false,
+      markAbsentIfNoCheckout: false,
       checkinOpenTime: env.checkinOpenTime,
       checkinOntimeEnd: env.checkinOntimeEnd,
       halfDayCutoff: env.halfDayCutoff,

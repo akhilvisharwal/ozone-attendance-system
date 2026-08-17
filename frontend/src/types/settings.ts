@@ -23,6 +23,8 @@ export interface AttendanceSettings {
   autoCalculate: boolean;
   allowManualOverride: boolean;
   allowMultipleCheckIns: boolean;
+  /** Auto-close a never-checked-out session as Absent instead of calculating status from partial hours. */
+  markAbsentIfNoCheckout: boolean;
   checkinOpenTime: string;
   checkinOntimeEnd: string;
   halfDayCutoff: string;

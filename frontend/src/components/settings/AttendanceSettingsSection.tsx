@@ -24,6 +24,7 @@ type AttendanceFormState = Pick<
   | "autoCalculate"
   | "allowManualOverride"
   | "allowMultipleCheckIns"
+  | "markAbsentIfNoCheckout"
 >;
 
 type FieldErrors = Partial<Record<keyof AttendanceFormState, string>>;
@@ -39,6 +40,7 @@ function attendanceToForm(attendance: AttendanceSettings): AttendanceFormState {
     autoCalculate: attendance.autoCalculate,
     allowManualOverride: attendance.allowManualOverride,
     allowMultipleCheckIns: attendance.allowMultipleCheckIns,
+    markAbsentIfNoCheckout: attendance.markAbsentIfNoCheckout,
   };
 }
 
@@ -257,6 +259,12 @@ export function AttendanceSettingsSection() {
             description="Allow employees to check in again after checking out on the same day. Worked minutes accumulate across sessions."
             checked={form.allowMultipleCheckIns}
             onChange={(checked) => updateField("allowMultipleCheckIns", checked)}
+          />
+          <ToggleRow
+            label="Mark Absent If Not Checked Out"
+            description="Employees who forget to check out will be marked Absent for the day once auto-closed at their closing time, instead of having their hours auto-calculated. Their check-out time and worked minutes are still recorded for reference. Applies going forward only — existing records are not rewritten."
+            checked={form.markAbsentIfNoCheckout}
+            onChange={(checked) => updateField("markAbsentIfNoCheckout", checked)}
           />
         </div>
       </SettingsSection>

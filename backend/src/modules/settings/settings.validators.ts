@@ -40,6 +40,8 @@ const attendanceSettingsInputSchema = z
 
     allowMultipleCheckIns: z.boolean(),
 
+    markAbsentIfNoCheckout: z.boolean(),
+
     checkinOpenTime: hhmm.optional(),
 
     checkinOntimeEnd: hhmm.optional(),

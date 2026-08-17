@@ -77,19 +77,31 @@ async function finalizeOpenSessionsForDate(
       const checkInTime = new Date(row.check_in_time);
       const checkOutTime = closingTimestampForDate(date, cutoff.hour, cutoff.minute);
       const totalMinutes = minutesBetween(checkInTime, checkOutTime);
-      const dayStatus = resolveAutomaticDayStatus({
-        isHalfDay: Boolean(row.is_half_day),
-        checkInStatus: row.check_in_status,
-        totalMinutes,
-        autoCalculate: attendanceSettings.autoCalculate,
-        settings: effectiveRules,
-      });
+      // Settings → Attendance → "Mark Absent If Not Checked Out": forces
+      // Absent for sessions the engine had to auto-close because the
+      // employee never checked out, instead of calculating Present/Half
+      // Day from partial hours. check_out_time and total_minutes are still
+      // recorded below either way — only day_status is overridden — so an
+      // admin reviewing the record later can still see they did check in
+      // and for how long, they just didn't check out.
+      const dayStatus = attendanceSettings.markAbsentIfNoCheckout
+        ? "absent"
+        : resolveAutomaticDayStatus({
+            isHalfDay: Boolean(row.is_half_day),
+            checkInStatus: row.check_in_status,
+            totalMinutes,
+            autoCalculate: attendanceSettings.autoCalculate,
+            settings: effectiveRules,
+          });
 
       const saved = await attendanceRepo.finalizeAttendanceAtClosing({
         id: row.id,
         checkOutTime,
         totalMinutes,
         dayStatus,
+        reason: attendanceSettings.markAbsentIfNoCheckout
+          ? "Marked absent — checked in but never checked out"
+          : undefined,
       });
       if (saved) finalized += 1;
       continue;
