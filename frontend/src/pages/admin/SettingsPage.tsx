@@ -17,12 +17,14 @@ import {
   UserCog,
   Wallet,
   UserCircle,
+  Sparkles,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { MyProfileSection } from "@/components/settings/MyProfileSection";
 import { CompanySettingsSection } from "@/components/settings/CompanySettingsSection";
+import { AppearanceSettingsSection } from "@/components/settings/AppearanceSettingsSection";
 import { AttendanceSettingsSection } from "@/components/settings/AttendanceSettingsSection";
 import { WeeklyOffSettingsSection } from "@/components/settings/WeeklyOffSettingsSection";
 import { EmployeeSettingsSection } from "@/components/settings/EmployeeSettingsSection";
@@ -39,6 +41,7 @@ import { SETTINGS_NAV, type SettingsTabId } from "@/types/settings";
 const ICONS: Record<SettingsTabId, ReactNode> = {
   myProfile: <UserCircle className="h-4 w-4" />,
   company: <Building2 className="h-4 w-4" />,
+  appearance: <Sparkles className="h-4 w-4" />,
   attendance: <Clock className="h-4 w-4" />,
   weeklyOff: <CalendarDays className="h-4 w-4" />,
   employee: <Users className="h-4 w-4" />,
@@ -163,6 +166,8 @@ export function SettingsPage() {
                 <MyProfileSection />
               ) : activeTab === "company" ? (
                 <CompanySettingsSection />
+              ) : activeTab === "appearance" ? (
+                <AppearanceSettingsSection />
               ) : activeTab === "attendance" ? (
                 <AttendanceSettingsSection />
               ) : activeTab === "weeklyOff" ? (

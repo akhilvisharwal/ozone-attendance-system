@@ -123,6 +123,10 @@ export interface AppearanceSettings {
   theme: "light" | "dark" | "system";
   accentColor: string;
   sidebarCollapsed: boolean;
+  /** Master switch for the glassmorphism surface treatment (sidebar, top bar, stat cards, modals, dropdowns). */
+  glassEnabled: boolean;
+  /** 0-100 — single slider driving derived blur/fill/border/shadow strength. See frontend/src/lib/glassTheme.ts. */
+  glassIntensity: number;
 }
 
 export type SettingsCategory =
@@ -239,6 +243,8 @@ export function buildDefaultSettings(): AppSettings {
       theme: "light",
       accentColor: "#2563eb",
       sidebarCollapsed: false,
+      glassEnabled: true,
+      glassIntensity: 50,
     },
     backup: {
       automaticDailyBackup: false,

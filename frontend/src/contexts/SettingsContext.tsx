@@ -5,6 +5,7 @@ import * as settingsApi from "@/api/settings";
 import { useAuth } from "@/auth/AuthContext";
 import { configureFormatting } from "@/utils/format";
 import { getStaticAssetUrl } from "@/api/client";
+import { applyGlassTheme, glassSettingsFromAppearance } from "@/lib/glassTheme";
 
 export type { PublicSettings };
 
@@ -31,6 +32,10 @@ function applyAppearance(settings: Pick<AppSettings, "appearance">) {
   } else {
     root.classList.remove("dark");
   }
+  // Mount-once-in-shell glass effect: this function already runs on every
+  // settings load and refresh (below), so it doubles as the single place
+  // every page picks up the persisted glass setting — see src/lib/glassTheme.ts.
+  applyGlassTheme(glassSettingsFromAppearance(settings.appearance), root);
 }
 
 function applyCompanyMeta(company: PublicSettings["company"]) {

@@ -148,6 +148,10 @@ export interface AppearanceSettings {
   theme: "light" | "dark" | "system";
   accentColor: string;
   sidebarCollapsed: boolean;
+  /** Master switch for the glassmorphism surface treatment. */
+  glassEnabled: boolean;
+  /** 0-100 — single slider driving derived blur/fill/border/shadow strength. */
+  glassIntensity: number;
 }
 
 export interface BackupSettings {
@@ -401,7 +405,10 @@ export interface PublicSettings {
     | "additionalEmails"
   >;
   mobile: MobileSettings;
-  appearance: Pick<AppearanceSettings, "theme" | "accentColor" | "sidebarCollapsed">;
+  appearance: Pick<
+    AppearanceSettings,
+    "theme" | "accentColor" | "sidebarCollapsed" | "glassEnabled" | "glassIntensity"
+  >;
   leave: Pick<LeaveSettings, "halfDayAllowed" | "approvalRequired"> & {
     categories: PublicLeaveCategory[];
   };
@@ -485,6 +492,7 @@ export const WEEKDAY_OPTIONS = WEEKDAY_LABELS.map((label, value) => ({
 export type SettingsTabId =
   | "myProfile"
   | "company"
+  | "appearance"
   | "attendance"
   | "weeklyOff"
   | "employee"
@@ -505,6 +513,7 @@ export const SETTINGS_NAV: {
 }[] = [
   { id: "myProfile", label: "My Profile", description: "Your profile picture and account details", group: "General" },
   { id: "company", label: "Company", description: "Organization profile and branding", group: "General" },
+  { id: "appearance", label: "Appearance", description: "Glass effect intensity and visual style", group: "General" },
   { id: "attendance", label: "Attendance", description: "Check-in rules and attendance policies", group: "Operations" },
   { id: "weeklyOff", label: "Weekly Off & Holidays", description: "Default weekly off and related links", group: "Operations" },
   { id: "employee", label: "Employees", description: "Employee defaults and ID format", group: "Operations" },

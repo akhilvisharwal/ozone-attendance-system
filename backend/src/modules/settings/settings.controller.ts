@@ -108,6 +108,8 @@ export const getPublicSettings = asyncHandler(async (req: Request, res: Response
       theme: s.appearance.theme,
       accentColor: s.appearance.accentColor,
       sidebarCollapsed: s.appearance.sidebarCollapsed,
+      glassEnabled: s.appearance.glassEnabled,
+      glassIntensity: s.appearance.glassIntensity,
     },
     leave: {
       categories: getEnabledLeaveCategories(s.leave).map((cat) => ({

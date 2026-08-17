@@ -288,7 +288,7 @@ function StatCard({
     <motion.div
       variants={staggerItem}
       className={clsx(
-        "flex h-14 min-w-0 items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-2 ring-1 ring-inset sm:h-[3.75rem] sm:gap-2.5 sm:px-3",
+        "glass-surface flex h-14 min-w-0 items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-2 ring-1 ring-inset sm:h-[3.75rem] sm:gap-2.5 sm:px-3",
         styles.ring
       )}
     >

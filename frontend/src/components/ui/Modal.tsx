@@ -145,7 +145,10 @@ export function Modal({
   const footerPad =
     footerClassName
     ?? clsx(
-      "shrink-0 border-t border-slate-100 bg-white",
+      // No own background: the panel behind it (glass or solid, per
+      // .glass-surface-strong above) shows through consistently instead of
+      // this footer strip staying a separately opaque bg-white block.
+      "shrink-0 border-t border-slate-100",
       padX,
       "flex min-h-[5.5rem] items-center pt-5 pb-6-safe"
     );
@@ -177,7 +180,7 @@ export function Modal({
               animate="animate"
               exit="exit"
               className={clsx(
-                "pointer-events-auto relative flex w-full max-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden bg-white outline-none sm:max-h-[min(90vh,calc(100dvh-3rem))]",
+                "glass-surface-strong glass-shadow pointer-events-auto relative flex w-full max-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden bg-white outline-none sm:max-h-[min(90vh,calc(100dvh-3rem))]",
                 "shadow-soft-lg ring-1 ring-slate-900/5",
                 layout === "centered" ? "rounded-2xl" : "rounded-t-2xl sm:rounded-2xl",
                 widthClassName

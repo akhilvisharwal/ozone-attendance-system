@@ -301,3 +301,83 @@ body {
     animation: none;
   }
 }
+
+/*
+ * ── Glass design system (Settings → Appearance → Glass effect) ───────────
+ * USE ON: sidebar, top bar, dashboard stat cards, modals, dropdown/overflow
+ *   menus, combobox popovers — chrome and summary surfaces.
+ * NEVER ON: data tables, attendance lists, the check-in camera/GPS card,
+ *   form inputs — content the user reads for extended periods or in bright
+ *   outdoor light stays fully solid/opaque. See src/lib/glassTheme.ts.
+ *
+ * Variables are written onto <html> by applyGlassTheme() (called from
+ * SettingsContext on load and whenever the setting changes). Every rule
+ * below is scoped under [data-glass="on"] — set only when the admin has
+ * glass enabled AND intensity > 0 — so a disabled/zero setting leaves these
+ * rules matching nothing: each component's own pre-existing Tailwind
+ * classes (bg-white, border-slate-200, shadow-soft-*) are the only thing in
+ * effect, a real fallback rather than an approximated "near zero".
+ *
+ * CRITICAL: never set `position` here — OverflowMenu/NotificationBell/
+ * Combobox popovers are Tailwind `absolute`/inline-`position:fixed`
+ * elements; a `position` here would override that and break their layout
+ * (lesson learned the hard way in ozone-inventory's own glass system).
+ */
+:root {
+  --glass-strength: 0;
+  --glass-blur: 0px;
+  --glass-saturate: 1;
+  --glass-fill: rgb(255 255 255 / 1);
+  --glass-fill-strong: rgb(255 255 255 / 1);
+  --glass-border: rgb(226 232 240 / 1);
+  --glass-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px rgb(15 23 42 / 0.06);
+  --glass-wash-opacity: 0;
+}
+
+[data-glass="on"] .glass-surface,
+[data-glass="on"] .glass-surface-strong {
+  border-style: solid;
+  border-width: 1px;
+  border-color: var(--glass-border);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+[data-glass="on"] .glass-surface {
+  background-color: var(--glass-fill);
+}
+
+[data-glass="on"] .glass-surface-strong {
+  background-color: var(--glass-fill-strong);
+}
+
+/* Separate, optional: box-shadow is its own class because a few glass
+   surfaces (dashboard stat cards) already use Tailwind's `ring-*` utility
+   — also box-shadow-based — for a semantic tone color (present/absent/etc).
+   Setting box-shadow directly on .glass-surface would silently replace
+   that ring instead of combining with it, so only surfaces with no
+   competing ring get .glass-shadow. */
+[data-glass="on"] .glass-shadow {
+  box-shadow: var(--glass-shadow);
+}
+
+/* Sidebar keeps its single right-hand divider instead of a full border. */
+[data-glass="on"] .glass-surface--edge-r {
+  border-width: 0 1px 0 0;
+}
+
+/* Soft blue/indigo wash behind the whole app shell — visible in the gaps
+   around glass chrome. Off state keeps the plain bg-slate-50 it already has. */
+[data-glass="on"] .app-shell-wash {
+  background-image:
+    radial-gradient(circle at 12% 8%, rgb(191 219 254 / var(--glass-wash-opacity)) 0%, transparent 45%),
+    radial-gradient(circle at 88% 22%, rgb(199 210 254 / var(--glass-wash-opacity)) 0%, transparent 42%),
+    linear-gradient(160deg, rgb(239 246 255 / var(--glass-wash-opacity)) 0%, rgb(224 231 255 / var(--glass-wash-opacity)) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-glass="on"] .glass-surface,
+  [data-glass="on"] .glass-surface-strong {
+    transition: none;
+  }
+}

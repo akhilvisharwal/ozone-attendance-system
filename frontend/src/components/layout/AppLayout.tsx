@@ -185,7 +185,7 @@ export function AppLayout({
   );
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-slate-50">
+    <div className="app-shell-wash flex h-dvh overflow-hidden bg-slate-50">
       <aside
         className={clsx(
           "sidebar-shell relative hidden h-full shrink-0 lg:flex",
@@ -202,7 +202,7 @@ export function AppLayout({
           <ChevronLeft className={clsx("h-3.5 w-3.5 transition-transform duration-200", collapsed && "rotate-180")} />
         </button>
 
-        <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden border-r border-slate-200 bg-white">
+        <div className="glass-surface glass-surface--edge-r glass-shadow flex h-full min-w-0 flex-1 flex-col overflow-hidden border-r border-slate-200 bg-white">
           <div
             className={clsx(
               "flex shrink-0 min-h-[4.5rem] items-center overflow-hidden border-b border-slate-100 px-4 py-3 lg:px-5",
@@ -228,7 +228,7 @@ export function AppLayout({
           />
           <aside
             className={clsx(
-              "fixed inset-y-0 left-0 z-50 flex h-dvh w-72 max-w-[85vw] flex-col overflow-hidden bg-white shadow-soft-lg transition-transform duration-200 ease-out lg:hidden",
+              "glass-surface glass-shadow fixed inset-y-0 left-0 z-50 flex h-dvh w-72 max-w-[85vw] flex-col overflow-hidden bg-white shadow-soft-lg transition-transform duration-200 ease-out lg:hidden",
               drawerOpen ? "translate-x-0" : "-translate-x-full"
             )}
             role="dialog"
@@ -256,7 +256,7 @@ export function AppLayout({
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <header
           className={clsx(
-            "sticky top-0 z-30 grid shrink-0 min-h-[3.5rem] items-center gap-2 border-b border-slate-200 bg-white/95 px-3 py-2.5 pt-safe backdrop-blur sm:gap-3 sm:px-4 lg:hidden",
+            "glass-surface sticky top-0 z-30 grid shrink-0 min-h-[3.5rem] items-center gap-2 border-b border-slate-200 bg-white px-3 py-2.5 pt-safe sm:gap-3 sm:px-4 lg:hidden",
             isEmployeeMobile ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[auto_minmax(0,1fr)_auto]"
           )}
         >

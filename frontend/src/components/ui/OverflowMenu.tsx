@@ -149,7 +149,7 @@ export function OverflowMenu({ items, align = "right" }: Props) {
           initial="initial"
           animate="animate"
           exit="exit"
-          className="rounded-2xl bg-white py-1 shadow-soft-lg ring-1 ring-slate-900/10"
+          className="glass-surface-strong glass-shadow rounded-2xl bg-white py-1 shadow-soft-lg ring-1 ring-slate-900/10"
         >
           {items.map((item, idx) => (
             <div key={idx}>

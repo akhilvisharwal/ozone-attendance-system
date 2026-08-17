@@ -305,6 +305,10 @@ export const appearanceSettingsSchema = z.object({
 
   sidebarCollapsed: z.boolean(),
 
+  glassEnabled: z.boolean(),
+
+  glassIntensity: z.coerce.number().int().min(0).max(100),
+
 });
 
 
