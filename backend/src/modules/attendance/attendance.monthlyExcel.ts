@@ -2,6 +2,15 @@ import ExcelJS from "exceljs";
 import fs from "fs";
 import { formatCompanyContactLine, getCompanyName, getDocumentCreator, SYSTEM_NAME } from "../../config/branding";
 import { formatMinutesAsHours } from "../../utils/date";
+
+/**
+ * Advance amounts render as plain 2-dp numbers (no currency symbol) so the cells stay
+ * numeric-looking for spreadsheet formulas. A blank month reads "-" rather than "0.00".
+ */
+function formatAdvanceAmount(value: number | undefined): string {
+  if (!value) return "-";
+  return value.toFixed(2);
+}
 import { resolveCompanyLogoPath } from "../../utils/pdfBranding";
 import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
@@ -46,8 +55,12 @@ const LEGEND_ITEMS: { code: string; label: string; bg: string; fg: string }[] = 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
 const INFO_COL_COUNT = 4;
-const SUMMARY_COL_COUNT = 11;
-const SUMMARY_KEYS = ["P", "H", "A", "L", "WO", "HO", "HW", "WW", "WD", "Hrs", "Att%"] as const;
+// Last three are the per-month advance figures (money owed to the company).
+const SUMMARY_COL_COUNT = 14;
+const SUMMARY_KEYS = [
+  "P", "H", "A", "L", "WO", "HO", "HW", "WW", "WD", "Hrs", "Att%",
+  "Adv Taken", "Adv Ret", "Balance",
+] as const;
 const INFO_HEADERS = ["#", "Name", "ID", "Role"] as const;
 
 const COLORS = {
@@ -145,6 +158,9 @@ export async function buildMonthlyCalendarExcel(
     { width: 5.5 },
     { width: 8 },
     { width: 7 },
+    { width: 10 },
+    { width: 10 },
+    { width: 10 },
   ];
 
   if (reports.includeLogo) {
@@ -396,6 +412,9 @@ export async function buildMonthlyCalendarExcel(
         s.workingDays,
         formatMinutesAsHours(s.totalMinutes).replace(" ", ""),
         `${s.attendancePercentage}%`,
+        formatAdvanceAmount(emp.advances?.taken),
+        formatAdvanceAmount(emp.advances?.returned),
+        formatAdvanceAmount(emp.advances?.balance),
       ];
 
       for (let i = 0; i < SUMMARY_COL_COUNT; i++) {

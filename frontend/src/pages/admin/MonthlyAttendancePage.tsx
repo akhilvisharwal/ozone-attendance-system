@@ -11,6 +11,7 @@ import { FilterBar } from "@/components/ui/ResponsiveTable";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { HolidayFormModal } from "@/components/HolidayFormModal";
 import { ManualAttendanceModal } from "@/components/ManualAttendanceModal";
+import { AdvanceEntryModal } from "@/components/AdvanceEntryModal";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
 import * as attendanceApi from "@/api/attendance";
 import * as sitesApi from "@/api/sites";
@@ -56,6 +57,8 @@ export function MonthlyAttendancePage() {
   const { can, isMasterAdmin } = usePermissions();
   const { showToast } = useToast();
   const canEditCell = can("editAttendance") || can("manualAttendance");
+  const canManageAdvances = isMasterAdmin || can("manageAdvances");
+  const [advanceTarget, setAdvanceTarget] = useState<string | null>(null);
   const [month, setMonth] = useState<string>(currentMonthString());
   const [employeeId, setEmployeeId] = useState("");
   const [siteId, setSiteId] = useState("");
@@ -379,6 +382,9 @@ export function MonthlyAttendancePage() {
                   <th className="px-3 py-2 text-center">Total Hours</th>
                   <th className="px-3 py-2 text-center">Attendance %</th>
                   <th className="px-3 py-2 text-center">Late</th>
+                  <th className="px-3 py-2 text-center">Adv. Taken</th>
+                  <th className="px-3 py-2 text-center">Adv. Returned</th>
+                  <th className="px-3 py-2 text-center">Balance Owed</th>
                 </tr>
               </thead>
               <tbody>
@@ -418,6 +424,33 @@ export function MonthlyAttendancePage() {
                         </span>
                       </td>
                       <td className="px-3 py-2 text-center text-orange-600">{s.lateCheckIns}</td>
+                      <td className="px-3 py-2 text-center tabular-nums text-slate-700">
+                        {formatAdvance(emp.advances?.taken)}
+                      </td>
+                      <td className="px-3 py-2 text-center tabular-nums text-slate-700">
+                        {formatAdvance(emp.advances?.returned)}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {canManageAdvances ? (
+                          <button
+                            type="button"
+                            onClick={() => setAdvanceTarget(emp.employeeId)}
+                            title="View or add advance entries"
+                            className={clsx(
+                              "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums hover:underline",
+                              (emp.advances?.balance ?? 0) > 0
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-slate-50 text-slate-500"
+                            )}
+                          >
+                            {formatAdvance(emp.advances?.balance)}
+                          </button>
+                        ) : (
+                          <span className="tabular-nums text-slate-700">
+                            {formatAdvance(emp.advances?.balance)}
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -435,6 +468,13 @@ export function MonthlyAttendancePage() {
         onSaved={loadGrid}
       />
 
+      <AdvanceEntryModal
+        open={Boolean(advanceTarget)}
+        onClose={() => setAdvanceTarget(null)}
+        initialEmployeeId={advanceTarget ?? undefined}
+        onSaved={loadGrid}
+      />
+
       <ManualAttendanceModal
         open={Boolean(manualTarget)}
         onClose={() => setManualTarget(null)}
@@ -445,6 +485,12 @@ export function MonthlyAttendancePage() {
       />
     </div>
   );
+}
+
+/** Blank months read as "—" rather than a misleading 0.00. */
+function formatAdvance(value: number | undefined): string {
+  if (!value) return "—";
+  return value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function Legend() {

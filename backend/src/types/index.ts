@@ -11,7 +11,8 @@ export type AdminPermission =
   | "editTasks"
   | "deleteTasks"
   | "viewReports"
-  | "manageExpenses";
+  | "manageExpenses"
+  | "manageAdvances";
 
 export type AdminPermissions = Record<AdminPermission, boolean>;
 

@@ -177,6 +177,9 @@ Leave `VITE_API_URL` empty locally — Vite proxies `/api` to `localhost:4000`.
 - [ ] Task assignment + employee task view
 - [ ] Reports (PDF, Excel, JSON)
 - [ ] Settings save (attendance, employees, security, notifications)
+- [ ] Employee Advances: add a 'taken' and a 'returned' entry, confirm Balance Owed updates
+- [ ] Monthly Attendance shows Adv. Taken / Adv. Returned / Balance Owed columns
+- [ ] Monthly Attendance Excel + PDF exports include the three advance columns with correct figures
 - [ ] Database panel backup/export
 - [ ] If on Neon: `NEON_API_KEY`/`NEON_PROJECT_ID` set, and Settings → Database "Physical database size" matches the Storage figure in the Neon console (not pg_database_size, which reads lower — see below)
 - [ ] Audit logs visible

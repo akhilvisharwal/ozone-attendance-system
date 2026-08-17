@@ -13,6 +13,7 @@ export type AuditModule =
   | "Tasks"
   | "Reports"
   | "Expenses"
+  | "Advances"
   | "Other";
 
 export type AuditActionType =
@@ -165,6 +166,21 @@ const CATALOG: Record<string, AuditActionMeta> = {
     actionType: "Delete",
   },
 
+  "advance.create": {
+    label: "Advance entry recorded",
+    module: "Advances",
+    actionType: "Create",
+  },
+  "advance.update": {
+    label: "Advance entry updated",
+    module: "Advances",
+    actionType: "Update",
+  },
+  "advance.delete": {
+    label: "Advance entry deleted",
+    module: "Advances",
+    actionType: "Delete",
+  },
   "expense.create": { label: "Expense created", module: "Expenses", actionType: "Create" },
   "expense.update": { label: "Expense updated", module: "Expenses", actionType: "Update" },
   "expense.delete": { label: "Expense deleted", module: "Expenses", actionType: "Delete" },

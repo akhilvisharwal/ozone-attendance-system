@@ -1,4 +1,8 @@
 import { employeeJoinDate, toDateString } from "../../utils/date";
+import {
+  getMonthlyAdvanceTotals,
+  type AdvanceMonthlyTotals,
+} from "../advances/advances.repository";
 import { getSettings } from "../settings/settings.cache";
 import { normalizeWeeklyOffDays, resolveWeeklyOffDays } from "../../utils/weeklyOffDays";
 import * as repo from "./attendance.repository";
@@ -60,6 +64,12 @@ export interface MonthlyEmployeeRow {
   weeklyOffDays: number[];
   days: MonthlyDayCell[];
   summary: MonthlySummary;
+  /**
+   * Advances for this employee in this month. Only populated by buildMonthlyGrid
+   * (the month-scoped view); left undefined for arbitrary date ranges, where a
+   * "this month taken/returned" figure would be meaningless.
+   */
+  advances?: AdvanceMonthlyTotals;
 }
 
 export interface MonthlyGrid {
@@ -334,13 +344,20 @@ export async function buildMonthlyGrid(params: {
     sort: params.sort ?? "oldest",
   });
 
+  // Per-employee advances for this month (taken/returned in-month, balance at month end).
+  const advanceTotals = await getMonthlyAdvanceTotals(from, to);
+  const employees = rangeGrid.employees.map((row) => ({
+    ...row,
+    advances: advanceTotals.get(row.employeeId) ?? { taken: 0, returned: 0, balance: 0 },
+  }));
+
   return {
     year,
     month,
     label: `${MONTH_NAMES[month - 1]} ${year}`,
     daysInMonth,
     defaultWeeklyOffDays: rangeGrid.defaultWeeklyOffDays,
-    employees: rangeGrid.employees,
+    employees,
     holidays: rangeGrid.holidays,
   };
 }

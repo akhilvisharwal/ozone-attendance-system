@@ -4,6 +4,12 @@ import { drawPdfLogo } from "../../utils/pdfBranding";
 import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import { formatMinutesAsHours } from "../../utils/date";
+
+/** Compact advance amount for the width-constrained PDF grid ("-" when nothing). */
+function formatAdvanceAmount(value: number | undefined): string {
+  if (!value) return "-";
+  return Math.round(value).toLocaleString("en-IN");
+}
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
 
 export interface MonthlyPdfMeta {
@@ -97,6 +103,10 @@ export async function buildMonthlyCalendarPdf(
       { key: "WD", w: 18 },
       { key: "Hrs", w: 34 },
       { key: "Att%", w: 28 },
+      // Per-month advance figures (money owed to the company).
+      { key: "Adv+", w: 30 },
+      { key: "Adv-", w: 30 },
+      { key: "Bal", w: 32 },
     ] as const;
     const summaryW = sumCols.reduce((s, c) => s + c.w, 0);
 
@@ -329,6 +339,9 @@ export async function buildMonthlyCalendarPdf(
         String(s.workingDays),
         hoursLabel,
         `${s.attendancePercentage}%`,
+        formatAdvanceAmount(emp.advances?.taken),
+        formatAdvanceAmount(emp.advances?.returned),
+        formatAdvanceAmount(emp.advances?.balance),
       ];
 
       for (let i = 0; i < sumCols.length; i++) {

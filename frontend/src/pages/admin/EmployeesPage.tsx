@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
   KeyRound, Pencil, UserCheck, UserMinus, UserX, Power, Plus, Search, ShieldAlert,
-  Image as ImageIcon, Trash2, RefreshCcw, Eye, EyeOff, CalendarOff,
+  Image as ImageIcon, Trash2, RefreshCcw, Eye, EyeOff, CalendarOff, Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -28,6 +28,7 @@ import { usePublicSettings } from "@/contexts/SettingsContext";
 import { usePermissions } from "@/auth/usePermissions";
 import { formatDate } from "@/utils/format";
 import { DesignationSelect } from "@/components/DesignationSelect";
+import { AdvanceEntryModal } from "@/components/AdvanceEntryModal";
 import type { ChronologicalSort } from "@/utils/chronologicalSort";
 import { normalizeEmployeeName, findDuplicateEmployeeName } from "@/utils/chronologicalSort";
 import { EMPLOYEE_CODES_CHANGED_EVENT } from "@/utils/employeeCodeEvents";
@@ -138,6 +139,7 @@ export function EmployeesPage() {
   const [pwTarget, setPwTarget]           = useState<Employee | null>(null);
   const [photoTarget, setPhotoTarget]     = useState<Employee | null>(null);
   const [weeklyOffTarget, setWeeklyOffTarget] = useState<Employee | null>(null);
+  const [advanceTarget, setAdvanceTarget] = useState<Employee | null>(null);
   const [markTarget, setMarkTarget]       = useState<{ employee: Employee; action: MarkAction } | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<Employee | null>(null);
   const [deleteTarget, setDeleteTarget]   = useState<Employee | null>(null);
@@ -206,6 +208,14 @@ export function EmployeesPage() {
           onClick: () => setWeeklyOffTarget(employee),
         }
       );
+    }
+
+    if (isMasterAdmin || can("manageAdvances")) {
+      items.push({
+        label: "Employee Advances",
+        icon: <Wallet className="h-4 w-4" />,
+        onClick: () => setAdvanceTarget(employee),
+      });
     }
 
     if (manualOverride && (isMasterAdmin || can("editAttendance"))) {
@@ -427,6 +437,12 @@ export function EmployeesPage() {
       )}
 
       {/* Configure weekly off days */}
+      <AdvanceEntryModal
+        open={Boolean(advanceTarget)}
+        onClose={() => setAdvanceTarget(null)}
+        initialEmployeeId={advanceTarget?.id}
+      />
+
       {weeklyOffTarget && (
         <WeeklyOffModal
           employee={weeklyOffTarget}

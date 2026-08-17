@@ -10,6 +10,7 @@ export const ADMIN_PERMISSION_KEYS = [
   "deleteTasks",
   "viewReports",
   "manageExpenses",
+  "manageAdvances",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSION_KEYS)[number];
@@ -64,6 +65,10 @@ export const ADMIN_PERMISSION_META: Record<
     label: "Expense Tracker",
     description: "Record company expenses, submit reimbursement requests, and export expense reports.",
   },
+  manageAdvances: {
+    label: "Employee Advances",
+    description: "Record advances taken by employees and their repayments, and view the outstanding balance owed to the company.",
+  },
 };
 
 export function emptyPermissions(): AdminPermissions {
@@ -79,6 +84,7 @@ export function emptyPermissions(): AdminPermissions {
     deleteTasks: false,
     viewReports: false,
     manageExpenses: false,
+    manageAdvances: false,
   };
 }
 
@@ -95,6 +101,7 @@ export function defaultJuniorAdminPermissions(): AdminPermissions {
     deleteTasks: false,
     viewReports: false,
     manageExpenses: false,
+    manageAdvances: false,
   };
 }
 

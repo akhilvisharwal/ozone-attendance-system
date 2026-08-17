@@ -46,7 +46,8 @@ export type AdminPermission =
   | "editTasks"
   | "deleteTasks"
   | "viewReports"
-  | "manageExpenses";
+  | "manageExpenses"
+  | "manageAdvances";
 
 export type AdminPermissions = Record<AdminPermission, boolean>;
 
@@ -533,6 +534,15 @@ export interface MonthlySummary {
   lateCheckIns: number;
 }
 
+export interface AdvanceMonthlyTotals {
+  /** Advances taken within the month. */
+  taken: number;
+  /** Repayments made within the month. */
+  returned: number;
+  /** Amount still owed as of the last day of that month (cumulative, all time). */
+  balance: number;
+}
+
 export interface MonthlyEmployeeRow {
   employeeId: string;
   employeeCode: string;
@@ -542,6 +552,8 @@ export interface MonthlyEmployeeRow {
   weeklyOffDays: number[];
   days: MonthlyDayCell[];
   summary: MonthlySummary;
+  /** Present only on month-scoped grids (Monthly Attendance), not arbitrary ranges. */
+  advances?: AdvanceMonthlyTotals;
 }
 
 export interface MonthlyGrid {
