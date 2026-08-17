@@ -16,6 +16,7 @@ import {
   CalendarHeart,
   Wallet,
   UserCircle,
+  PiggyBank,
 } from "lucide-react";
 import { AuthProvider } from "@/auth/AuthContext";
 import { SessionManager } from "@/auth/SessionManager";
@@ -52,6 +53,7 @@ import { ProfilePage } from "@/pages/admin/ProfilePage";
 import { NoAccessPage } from "@/pages/admin/NoAccessPage";
 import { ExpenseTrackerPage } from "@/pages/admin/ExpenseTrackerPage";
 import { ExpenseManagementPage } from "@/pages/admin/ExpenseManagementPage";
+import { AdvancesPage } from "@/pages/admin/AdvancesPage";
 import { EmployeeProfilePage } from "@/pages/employee/EmployeeProfilePage";
 
 const employeeNavItems: NavItem[] = [
@@ -121,6 +123,9 @@ function AdminShell() {
       : can("manageExpenses")
         ? [{ to: "/admin/expenses", label: "Expense Tracker", icon: <Wallet className="h-4 w-4" /> }]
         : []),
+    ...(can("manageAdvances")
+      ? [{ to: "/admin/advances", label: "Advances", icon: <PiggyBank className="h-4 w-4" /> }]
+      : []),
   ];
 
   return (
@@ -195,6 +200,9 @@ function AuthenticatedApp() {
               </Route>
               <Route element={<PermissionRoute allOf={["manageExpenses"]} />}>
                 <Route path="/admin/expenses" element={<ExpenseTrackerPage />} />
+              </Route>
+              <Route element={<PermissionRoute allOf={["manageAdvances"]} />}>
+                <Route path="/admin/advances" element={<AdvancesPage />} />
               </Route>
               <Route path="/admin/no-access" element={<NoAccessPage />} />
             </Route>

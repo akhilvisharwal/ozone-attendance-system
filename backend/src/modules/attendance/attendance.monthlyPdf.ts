@@ -107,6 +107,7 @@ export async function buildMonthlyCalendarPdf(
       { key: "Adv+", w: 30 },
       { key: "Adv-", w: 30 },
       { key: "Bal", w: 32 },
+      { key: "Due", w: 26 },
     ] as const;
     const summaryW = sumCols.reduce((s, c) => s + c.w, 0);
 
@@ -342,6 +343,7 @@ export async function buildMonthlyCalendarPdf(
         formatAdvanceAmount(emp.advances?.taken),
         formatAdvanceAmount(emp.advances?.returned),
         formatAdvanceAmount(emp.advances?.balance),
+        formatAdvanceAmount(emp.advances?.scheduled),
       ];
 
       for (let i = 0; i < sumCols.length; i++) {

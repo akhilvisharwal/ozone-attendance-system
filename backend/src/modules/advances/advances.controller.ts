@@ -79,6 +79,11 @@ export const updateAdvance = asyncHandler(async (req: Request, res: Response) =>
 
   const existing = await repo.findAdvanceById(id);
   if (!existing) throw ApiError.notFound("Advance entry not found");
+  if (existing.planId) {
+    throw ApiError.badRequest(
+      "This entry belongs to a repayment plan — edit the plan or its installments instead."
+    );
+  }
 
   const entry = await repo.updateAdvance(id, input);
   if (!entry) throw ApiError.notFound("Advance entry not found");
@@ -108,6 +113,11 @@ export const deleteAdvance = asyncHandler(async (req: Request, res: Response) =>
 
   const existing = await repo.findAdvanceById(id);
   if (!existing) throw ApiError.notFound("Advance entry not found");
+  if (existing.planId) {
+    throw ApiError.badRequest(
+      "This entry belongs to a repayment plan — cancel or delete the plan instead."
+    );
+  }
 
   await repo.deleteAdvance(id);
 

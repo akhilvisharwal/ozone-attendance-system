@@ -1,4 +1,8 @@
+import type { PoolClient } from "pg";
 import { pool } from "../../config/db";
+
+/** Lets a function run inside a caller-owned transaction, or standalone against the pool. */
+type Queryable = Pick<typeof pool, "query"> | PoolClient;
 
 export type AdvanceEntryType = "taken" | "returned";
 
@@ -11,6 +15,8 @@ export interface AdvanceRow {
   entry_type: AdvanceEntryType;
   note: string | null;
   created_by: string | null;
+  plan_id: string | null;
+  installment_id: string | null;
   created_at: string;
   updated_at: string;
   employee_code?: string;
@@ -27,6 +33,9 @@ export interface AdvanceEntry {
   note: string | null;
   createdBy: string | null;
   createdByName: string | null;
+  /** Set when this entry is a plan's principal ("taken") or an installment repayment ("returned"). */
+  planId: string | null;
+  installmentId: string | null;
   employeeCode?: string;
   employeeName?: string;
   createdAt: string;
@@ -55,8 +64,15 @@ const SELECT_FIELDS = `
   a.entry_type,
   a.note,
   a.created_by,
+  a.plan_id,
+  a.installment_id,
   a.created_at,
   a.updated_at
+`;
+
+const RETURNING_FIELDS = `
+  id, employee_id, entry_date::text AS entry_date, amount::text AS amount,
+  entry_type, note, created_by, plan_id, installment_id, created_at, updated_at
 `;
 
 export function mapAdvance(row: AdvanceRow): AdvanceEntry {
@@ -69,6 +85,8 @@ export function mapAdvance(row: AdvanceRow): AdvanceEntry {
     note: row.note,
     createdBy: row.created_by,
     createdByName: row.created_by_name ?? null,
+    planId: row.plan_id,
+    installmentId: row.installment_id,
     employeeCode: row.employee_code,
     employeeName: row.employee_name,
     createdAt: row.created_at,
@@ -76,22 +94,49 @@ export function mapAdvance(row: AdvanceRow): AdvanceEntry {
   };
 }
 
-export async function createAdvance(input: {
-  employeeId: string;
-  entryDate: string;
-  amount: number;
-  entryType: AdvanceEntryType;
-  note?: string | null;
-  createdBy: string;
-}): Promise<AdvanceEntry> {
-  const res = await pool.query<AdvanceRow>(
-    `INSERT INTO employee_advances (employee_id, entry_date, amount, entry_type, note, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, employee_id, entry_date::text AS entry_date, amount::text AS amount,
-               entry_type, note, created_by, created_at, updated_at`,
-    [input.employeeId, input.entryDate, input.amount, input.entryType, input.note ?? null, input.createdBy]
+export async function createAdvance(
+  input: {
+    employeeId: string;
+    entryDate: string;
+    amount: number;
+    entryType: AdvanceEntryType;
+    note?: string | null;
+    createdBy: string;
+    planId?: string | null;
+    installmentId?: string | null;
+  },
+  db: Queryable = pool
+): Promise<AdvanceEntry> {
+  const res = await db.query<AdvanceRow>(
+    `INSERT INTO employee_advances (employee_id, entry_date, amount, entry_type, note, created_by, plan_id, installment_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING ${RETURNING_FIELDS}`,
+    [
+      input.employeeId,
+      input.entryDate,
+      input.amount,
+      input.entryType,
+      input.note ?? null,
+      input.createdBy,
+      input.planId ?? null,
+      input.installmentId ?? null,
+    ]
   );
   return mapAdvance(res.rows[0]);
+}
+
+/** Updates the amount of the single 'taken' ledger row a plan owns, keeping Balance reconciled after a principal edit. */
+export async function updatePlanTakenEntryAmount(
+  planId: string,
+  amount: number,
+  db: Queryable = pool
+): Promise<void> {
+  await db.query(
+    `UPDATE employee_advances
+        SET amount = $2, updated_at = now()
+      WHERE plan_id = $1 AND entry_type = 'taken'`,
+    [planId, amount]
+  );
 }
 
 export async function findAdvanceById(id: string): Promise<AdvanceEntry | null> {
@@ -119,8 +164,7 @@ export async function updateAdvance(
             note       = CASE WHEN $5::boolean THEN $6 ELSE note END,
             updated_at = now()
       WHERE id = $1
-      RETURNING id, employee_id, entry_date::text AS entry_date, amount::text AS amount,
-                entry_type, note, created_by, created_at, updated_at`,
+      RETURNING ${RETURNING_FIELDS}`,
     [
       id,
       input.entryDate ?? null,

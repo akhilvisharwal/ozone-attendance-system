@@ -171,6 +171,31 @@ const CATALOG: Record<string, AuditActionMeta> = {
     module: "Advances",
     actionType: "Create",
   },
+  "advance.plan_create": {
+    label: "Advance plan created",
+    module: "Advances",
+    actionType: "Create",
+  },
+  "advance.plan_update": {
+    label: "Advance plan updated",
+    module: "Advances",
+    actionType: "Update",
+  },
+  "advance.plan_cancel": {
+    label: "Advance plan cancelled",
+    module: "Advances",
+    actionType: "Update",
+  },
+  "advance.plan_delete": {
+    label: "Advance plan deleted",
+    module: "Advances",
+    actionType: "Delete",
+  },
+  "advance.plan_repayment": {
+    label: "Advance repayment recorded",
+    module: "Advances",
+    actionType: "Update",
+  },
   "advance.update": {
     label: "Advance entry updated",
     module: "Advances",

@@ -541,6 +541,8 @@ export interface AdvanceMonthlyTotals {
   returned: number;
   /** Amount still owed as of the last day of that month (cumulative, all time). */
   balance: number;
+  /** Sum of repayment-plan installments due this month (any status: active or completed). */
+  scheduled: number;
 }
 
 export interface MonthlyEmployeeRow {

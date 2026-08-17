@@ -3,6 +3,7 @@ import {
   getMonthlyAdvanceTotals,
   type AdvanceMonthlyTotals,
 } from "../advances/advances.repository";
+import { getMonthlyScheduledTotals } from "../advances/advancePlans.repository";
 import { getSettings } from "../settings/settings.cache";
 import { normalizeWeeklyOffDays, resolveWeeklyOffDays } from "../../utils/weeklyOffDays";
 import * as repo from "./attendance.repository";
@@ -69,7 +70,7 @@ export interface MonthlyEmployeeRow {
    * (the month-scoped view); left undefined for arbitrary date ranges, where a
    * "this month taken/returned" figure would be meaningless.
    */
-  advances?: AdvanceMonthlyTotals;
+  advances?: AdvanceMonthlyTotals & { scheduled: number };
 }
 
 export interface MonthlyGrid {
@@ -344,12 +345,19 @@ export async function buildMonthlyGrid(params: {
     sort: params.sort ?? "oldest",
   });
 
-  // Per-employee advances for this month (taken/returned in-month, balance at month end).
-  const advanceTotals = await getMonthlyAdvanceTotals(from, to);
-  const employees = rangeGrid.employees.map((row) => ({
-    ...row,
-    advances: advanceTotals.get(row.employeeId) ?? { taken: 0, returned: 0, balance: 0 },
-  }));
+  // Per-employee advances for this month (taken/returned in-month, balance at month
+  // end, plus what's scheduled to come back this month per any repayment plan).
+  const [advanceTotals, scheduledTotals] = await Promise.all([
+    getMonthlyAdvanceTotals(from, to),
+    getMonthlyScheduledTotals(from, to),
+  ]);
+  const employees = rangeGrid.employees.map((row) => {
+    const totals = advanceTotals.get(row.employeeId) ?? { taken: 0, returned: 0, balance: 0 };
+    return {
+      ...row,
+      advances: { ...totals, scheduled: scheduledTotals.get(row.employeeId) ?? 0 },
+    };
+  });
 
   return {
     year,

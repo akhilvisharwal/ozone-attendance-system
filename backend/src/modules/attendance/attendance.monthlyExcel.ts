@@ -56,10 +56,10 @@ const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
 const INFO_COL_COUNT = 4;
 // Last three are the per-month advance figures (money owed to the company).
-const SUMMARY_COL_COUNT = 14;
+const SUMMARY_COL_COUNT = 15;
 const SUMMARY_KEYS = [
   "P", "H", "A", "L", "WO", "HO", "HW", "WW", "WD", "Hrs", "Att%",
-  "Adv Taken", "Adv Ret", "Balance",
+  "Adv Taken", "Adv Ret", "Balance", "Adv Due",
 ] as const;
 const INFO_HEADERS = ["#", "Name", "ID", "Role"] as const;
 
@@ -158,6 +158,7 @@ export async function buildMonthlyCalendarExcel(
     { width: 5.5 },
     { width: 8 },
     { width: 7 },
+    { width: 10 },
     { width: 10 },
     { width: 10 },
     { width: 10 },
@@ -415,6 +416,7 @@ export async function buildMonthlyCalendarExcel(
         formatAdvanceAmount(emp.advances?.taken),
         formatAdvanceAmount(emp.advances?.returned),
         formatAdvanceAmount(emp.advances?.balance),
+        formatAdvanceAmount(emp.advances?.scheduled),
       ];
 
       for (let i = 0; i < SUMMARY_COL_COUNT; i++) {

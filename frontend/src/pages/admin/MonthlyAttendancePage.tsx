@@ -11,7 +11,7 @@ import { FilterBar } from "@/components/ui/ResponsiveTable";
 import { CrossfadeSwitch } from "@/components/ui/CrossfadeSwitch";
 import { HolidayFormModal } from "@/components/HolidayFormModal";
 import { ManualAttendanceModal } from "@/components/ManualAttendanceModal";
-import { AdvanceEntryModal } from "@/components/AdvanceEntryModal";
+import { EmployeeAdvanceDetailModal } from "@/components/EmployeeAdvanceDetailModal";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
 import * as attendanceApi from "@/api/attendance";
 import * as sitesApi from "@/api/sites";
@@ -58,7 +58,7 @@ export function MonthlyAttendancePage() {
   const { showToast } = useToast();
   const canEditCell = can("editAttendance") || can("manualAttendance");
   const canManageAdvances = isMasterAdmin || can("manageAdvances");
-  const [advanceTarget, setAdvanceTarget] = useState<string | null>(null);
+  const [advanceTarget, setAdvanceTarget] = useState<{ id: string; name: string } | null>(null);
   const [month, setMonth] = useState<string>(currentMonthString());
   const [employeeId, setEmployeeId] = useState("");
   const [siteId, setSiteId] = useState("");
@@ -385,6 +385,7 @@ export function MonthlyAttendancePage() {
                   <th className="px-3 py-2 text-center">Adv. Taken</th>
                   <th className="px-3 py-2 text-center">Adv. Returned</th>
                   <th className="px-3 py-2 text-center">Balance Owed</th>
+                  <th className="px-3 py-2 text-center">Due This Month</th>
                 </tr>
               </thead>
               <tbody>
@@ -434,8 +435,8 @@ export function MonthlyAttendancePage() {
                         {canManageAdvances ? (
                           <button
                             type="button"
-                            onClick={() => setAdvanceTarget(emp.employeeId)}
-                            title="View or add advance entries"
+                            onClick={() => setAdvanceTarget({ id: emp.employeeId, name: emp.name })}
+                            title="View advance plans"
                             className={clsx(
                               "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums hover:underline",
                               (emp.advances?.balance ?? 0) > 0
@@ -450,6 +451,9 @@ export function MonthlyAttendancePage() {
                             {formatAdvance(emp.advances?.balance)}
                           </span>
                         )}
+                      </td>
+                      <td className="px-3 py-2 text-center tabular-nums text-slate-500">
+                        {formatAdvance(emp.advances?.scheduled)}
                       </td>
                     </tr>
                   );
@@ -468,11 +472,12 @@ export function MonthlyAttendancePage() {
         onSaved={loadGrid}
       />
 
-      <AdvanceEntryModal
+      <EmployeeAdvanceDetailModal
         open={Boolean(advanceTarget)}
         onClose={() => setAdvanceTarget(null)}
-        initialEmployeeId={advanceTarget ?? undefined}
-        onSaved={loadGrid}
+        employeeId={advanceTarget?.id ?? null}
+        employeeName={advanceTarget?.name}
+        onChanged={loadGrid}
       />
 
       <ManualAttendanceModal
