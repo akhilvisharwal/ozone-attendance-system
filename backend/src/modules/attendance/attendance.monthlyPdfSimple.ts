@@ -3,7 +3,6 @@ import { formatCompanyContactLine, getCompanyName, SYSTEM_NAME } from "../../con
 import { drawPdfLogo } from "../../utils/pdfBranding";
 import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
-import { formatMinutesAsHours } from "../../utils/date";
 import { formatAdvanceAmount } from "./attendance.monthlyPdf";
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
 import type { MonthlyPdfMeta } from "./attendance.monthlyPdf";
@@ -57,9 +56,13 @@ const WEEKDAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  *
  * This is a sibling to buildMonthlyCalendarPdf, not a replacement — it reuses the
  * same MonthlyGrid data (no separate DB queries) but renders a simplified layout:
- * bigger day cells and fonts, a two-row date+weekday header, and just three status
- * totals (Present/Absent/Half Day) plus Hrs, Att%, and a single Advance Owed figure
- * instead of the Detailed PDF's full per-status and per-advance-type column set.
+ * bigger day cells and fonts, a two-row date+weekday header, and just four
+ * summary figures (Present/Absent/Half Day/Att%) plus a single Advance Owed
+ * figure, instead of the Detailed PDF's full per-status and per-advance-type
+ * column set. Role (Employee Details) and Hrs (Monthly Summary) are dropped
+ * here specifically — Simple-only trims, the Detailed PDF keeps both — and
+ * the width they free is redistributed into the daily grid, not left as
+ * blank margin (see computeLayout below).
  */
 export async function buildMonthlyCalendarPdfSimple(
   grid: MonthlyGrid,
@@ -91,33 +94,49 @@ export async function buildMonthlyCalendarPdfSimple(
     const generatedAt = meta.generatedAt ?? new Date();
     const dateStr = formatDisplayDateTime(generatedAt);
 
-    const colSn = 18;
-    const colName = 92;
-    const colId = 46;
-    const colDept = 52;
-    const infoW = colSn + colName + colId + colDept;
+    // No Role column here (Simple-only trim — Detailed keeps it): one less
+    // column in Employee Details, freeing width for the daily grid below.
+    const colSn = 16;
+    const colName = 74;
+    const colId = 44;
+    const infoW = colSn + colName + colId;
 
-    // Just six summary columns (vs the Detailed PDF's fifteen) — the freed-up width
-    // goes to bigger day cells below.
+    // Five summary columns (vs the Detailed PDF's fifteen) — no Hrs here
+    // (Simple-only trim — Detailed keeps it) — the freed-up width, along
+    // with Role's, goes to bigger day cells below.
     const sumCols = [
-      { key: "Present", w: 42 },
-      { key: "Absent", w: 42 },
-      { key: "Half Day", w: 44 },
-      { key: "Hrs", w: 40 },
-      { key: "Att%", w: 36 },
-      { key: "Adv Owed", w: 52 },
+      { key: "Present", w: 38 },
+      { key: "Absent", w: 38 },
+      { key: "Half Day", w: 40 },
+      { key: "Att%", w: 32 },
+      { key: "Adv Owed", w: 50 },
     ] as const;
     const summaryW = sumCols.reduce((s, c) => s + c.w, 0);
 
     const contentW = pageW - margin * 2;
 
-    /** Scale day columns so the full table fits, biased toward bigger cells than the Detailed PDF. */
+    /**
+     * Scale day columns so the full table fits, biased toward bigger cells than
+     * the Detailed PDF. minDayW (13) intentionally matches Detailed's own
+     * maxDayW, so Simple's smallest day cell is never smaller than Detailed's
+     * biggest — but a naive Math.max(minDayW, ...) clamp can silently push the
+     * table past the page's right edge for longer months if the column widths
+     * above ever grow (this is exactly how "Adv Owed" — the last column —
+     * previously rendered off-page and looked entirely missing, not
+     * misplaced). The re-clamp below is the actual guarantee against that:
+     * unlike a plain min/max clamp, it re-measures the table and shrinks dayW
+     * again if it still doesn't fit, so the table can never exceed contentW.
+     */
     function computeLayout() {
       let dayW = Math.floor((contentW - infoW - summaryW) / grid.daysInMonth);
       const minDayW = 13;
       const maxDayW = 22;
       dayW = Math.max(minDayW, Math.min(maxDayW, dayW));
-      const tableW = infoW + dayW * grid.daysInMonth + summaryW;
+      let tableW = infoW + dayW * grid.daysInMonth + summaryW;
+      if (tableW > contentW) {
+        dayW = Math.max(1, Math.floor((contentW - infoW - summaryW) / grid.daysInMonth));
+        tableW = infoW + dayW * grid.daysInMonth + summaryW;
+      }
       const tableX = margin + Math.max(0, (contentW - tableW) / 2);
       return { dayW, tableW, tableX };
     }
@@ -231,7 +250,6 @@ export async function buildMonthlyCalendarPdfSimple(
         { label: "#", w: colSn },
         { label: "Name", w: colName },
         { label: "ID", w: colId },
-        { label: "Role", w: colDept },
       ];
       for (const h of infoHeaders) {
         doc.rect(x, subTop, h.w, subHeaderH).fill("#f1f5f9");
@@ -296,7 +314,6 @@ export async function buildMonthlyCalendarPdfSimple(
         { text: String(index + 1), w: colSn, align: "center" },
         { text: emp.name, w: colName, align: "left" },
         { text: emp.employeeCode, w: colId, align: "center" },
-        { text: emp.designation ?? emp.department ?? "-", w: colDept, align: "center" },
       ];
 
       for (const cell of infoCells) {
@@ -325,12 +342,10 @@ export async function buildMonthlyCalendarPdfSimple(
       }
 
       const s = emp.summary;
-      const hoursLabel = formatMinutesAsHours(s.totalMinutes).replace(" ", "");
       const summaryValues = [
         String(s.present),
         String(s.absent),
         String(s.halfDay),
-        hoursLabel,
         `${s.attendancePercentage}%`,
         // Advance owed = the employee's current balance (cumulative through this
         // month's end) — the same canonical figure the Advances panel and the

@@ -1,5 +1,6 @@
-import { describe, it, before } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import bcrypt from "bcryptjs";
 import { pool } from "../../config/db";
 import * as repo from "./advancePlans.repository";
 
@@ -18,29 +19,47 @@ describe(
   () => {
     let employeeId: string;
     let createdBy: string;
+    const stamp = Date.now();
 
     before(async () => {
-      // Pick an employee with zero existing advance plans — not just "the first
-      // employee" — so this suite's "same-day due date" assertion can never be
-      // thrown off by real plans a developer created against local dev data in an
-      // unrelated session (this bit us once: a manually-created plan with an
-      // earlier due date silently won the MIN(due_date) this test asserts on).
-      const emp = await pool.query<{ id: string }>(
-        `SELECT e.id FROM employees e
-          WHERE e.role = 'employee' AND e.deleted_at IS NULL
-            AND NOT EXISTS (
-              SELECT 1 FROM employee_advance_plans p WHERE p.employee_id = e.id
-            )
-          LIMIT 1`
-      );
+      // A dedicated employee, not "an employee with zero existing advance
+      // plans" picked from whoever happens to already exist — that query
+      // previously fell back to "the first employee" and got fixed once to
+      // require zero plans instead, but a zero-plans employee is itself an
+      // exhaustible shared resource: enough manual/local testing across
+      // sessions eventually leaves every real employee with at least one
+      // plan, and this suite's before() then throws "Fixture data missing"
+      // with no real bug behind it. Creating our own employee here removes
+      // the dependency on local dev data state entirely, same fix already
+      // applied to dailyAttendance.integration.test.ts's employee fixture.
       const admin = await pool.query<{ id: string }>(
-        `SELECT id FROM employees WHERE role = 'admin' LIMIT 1`
+        `SELECT id FROM employees WHERE role = 'admin' AND is_active = true AND deleted_at IS NULL LIMIT 1`
       );
-      if (!emp.rows[0] || !admin.rows[0]) {
-        throw new Error("Fixture data missing: need a plan-free employee and one admin");
-      }
-      employeeId = emp.rows[0].id;
+      if (!admin.rows[0]) throw new Error("Need an active admin for advance plan tests");
       createdBy = admin.rows[0].id;
+
+      const created = await pool.query<{ id: string }>(
+        `INSERT INTO employees (
+           employee_code, name, email, password_hash, role, is_active,
+           must_change_password, first_login_completed
+         ) VALUES ($1, $2, $3, $4, 'employee', true, false, true)
+         RETURNING id`,
+        [
+          `AP${String(stamp).slice(-6)}`,
+          `Advance Plans Test ${stamp}`,
+          `advance-plans-${stamp}@example.com`,
+          await bcrypt.hash("TempPass1!", 10),
+        ]
+      );
+      employeeId = created.rows[0].id;
+    });
+
+    after(async () => {
+      if (employeeId) {
+        await pool.query(`DELETE FROM employee_advances WHERE employee_id = $1`, [employeeId]);
+        await pool.query(`DELETE FROM employee_advance_plans WHERE employee_id = $1`, [employeeId]);
+        await pool.query(`DELETE FROM employees WHERE id = $1`, [employeeId]);
+      }
     });
 
     it("createPlan returns a fully-populated plan (RETURNING clause works)", async () => {
