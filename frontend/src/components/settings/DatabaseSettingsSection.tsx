@@ -197,7 +197,11 @@ export function DatabaseSettingsSection() {
 
       <SettingsSection
         title="Storage Analytics"
-        description="Live PostgreSQL database size measured with pg_database_size, plus real uploaded file sizes on disk."
+        description={
+          storage.physicalSizeFromProvider
+            ? "Live storage as metered by your database provider (Neon), plus real uploaded file sizes on disk."
+            : "Live PostgreSQL database size measured with pg_database_size, plus real uploaded file sizes on disk. Set NEON_API_KEY + NEON_PROJECT_ID to show Neon's own metered size here instead — it can read higher because it also counts WAL across all branches."
+        }
       >
         <div className="mb-3 flex justify-end">
           <Button
@@ -235,7 +239,11 @@ export function DatabaseSettingsSection() {
               label="Physical database size"
               value={storage.physicalDatabaseLabel ?? capacity.usedLabel}
               tone={capacityTone}
-              hint="pg_database_size — bytes Postgres still reports on disk"
+              hint={
+                storage.physicalSizeFromProvider
+                  ? "Real size metered by Neon — matches your Neon console"
+                  : "pg_database_size — bytes Postgres still reports on disk"
+              }
             />
             <StatCard
               label="Actual live data"
@@ -291,6 +299,16 @@ export function DatabaseSettingsSection() {
               {storage.reclaimableExplanation}
             </Alert>
           )}
+
+          {storage.physicalSizeFromProvider &&
+            storage.postgresLogicalBytes !== storage.physicalDatabaseBytes && (
+              <p className="mt-3 text-xs text-slate-500">
+                For reference, PostgreSQL's own logical size (pg_database_size) is{" "}
+                <span className="font-medium text-slate-700">{storage.postgresLogicalLabel}</span> —
+                smaller than the figure above by design, since Neon's metered storage also counts
+                Write-Ahead Log (WAL) across all branches.
+              </p>
+            )}
 
           <p className="mt-4 text-xs text-slate-500">
             Combined footprint (physical database + uploads):{" "}

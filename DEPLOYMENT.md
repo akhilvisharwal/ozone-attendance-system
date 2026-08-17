@@ -47,6 +47,8 @@ This app is a **split deployment**:
 | `NODE_ENV` | `production` |
 | `TZ` | `Asia/Kolkata` |
 | `DATABASE_SSL` | `true` |
+| `NEON_API_KEY` | Optional, recommended when the database is on Neon. Makes the Settings → Database panel show Neon's real metered storage instead of pg_database_size (which reads lower — see "Database storage analytics" below). Create at [console.neon.tech/app/settings/api-keys](https://console.neon.tech/app/settings/api-keys) |
+| `NEON_PROJECT_ID` | Required alongside `NEON_API_KEY`. Found in the Neon console URL. |
 
 5. After first deploy, open the **Render Shell** and run once:
 
@@ -176,6 +178,7 @@ Leave `VITE_API_URL` empty locally — Vite proxies `/api` to `localhost:4000`.
 - [ ] Reports (PDF, Excel, JSON)
 - [ ] Settings save (attendance, employees, security, notifications)
 - [ ] Database panel backup/export
+- [ ] If on Neon: `NEON_API_KEY`/`NEON_PROJECT_ID` set, and Settings → Database "Physical database size" matches the Storage figure in the Neon console (not pg_database_size, which reads lower — see below)
 - [ ] Audit logs visible
 - [ ] Mobile layout (phone / narrow viewport)
 
@@ -223,3 +226,19 @@ See `backend/.env.example` and `frontend/.env.example`. **Never commit `.env` fi
 | `GOOGLE_MAPS_API_KEY` | Maps + reverse geocode |
 | `DATABASE_SSL` | `true` for managed Postgres |
 | `TZ` | Office timezone (e.g. `Asia/Kolkata`) |
+| `NEON_API_KEY` / `NEON_PROJECT_ID` | Required for accurate Settings → Database storage numbers when hosted on Neon (see below) |
+
+### Database storage analytics (Settings → Database panel)
+
+The panel's "Physical database size" is, by default, PostgreSQL's own `pg_database_size()` — the
+logical size of your data. **On Neon, this will always read lower than what the Neon console
+shows**, because Neon's real metered/billed storage (`synthetic_storage_size` in Neon's API, shown
+as "Storage" on the project dashboard) also counts Write-Ahead Log (WAL) across all branches, which
+`pg_database_size()` doesn't. This is expected behavior in Postgres/Neon, not a bug — but it
+means the panel can't tell you accurately how close you are to your Neon plan's storage limit
+without querying Neon directly.
+
+Set `NEON_API_KEY` + `NEON_PROJECT_ID` to have the panel fetch and
+display Neon's exact metered size instead, matching the Neon console 1:1. Without these, the panel
+still works and clearly labels the figure as PostgreSQL's logical size rather than implying it
+matches Neon's billing.

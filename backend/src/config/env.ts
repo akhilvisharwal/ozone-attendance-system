@@ -57,6 +57,16 @@ export const env = {
    * from the DATABASE_URL host.
    */
   renderPostgresId: process.env.RENDER_POSTGRES_ID ?? "",
+  /**
+   * Neon API key used to read the real storage Neon meters and shows in its own
+   * console (project.synthetic_storage_size — logical data + WAL across all branches)
+   * via GET /projects/{id}. Required for Neon-backed databases: Neon's metered storage
+   * does not equal pg_database_size(), so without this key the panel falls back to the
+   * PostgreSQL logical size, which reads lower than Neon's UI.
+   */
+  neonApiKey: process.env.NEON_API_KEY ?? "",
+  /** Neon project id (e.g. "dawn-base-73512925"), shown in the Neon console URL. */
+  neonProjectId: process.env.NEON_PROJECT_ID ?? "",
 
   jwtAccessSecret,
   jwtRefreshSecret,

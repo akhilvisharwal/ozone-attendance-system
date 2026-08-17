@@ -1,6 +1,7 @@
 import { formatDatabaseSize } from "../../utils/backupHelpers";
 import { buildStorageCapacity } from "../../utils/storageCapacity";
 import { resolveDatabaseCapacity } from "../../utils/providerCapacity";
+import { fetchNeonStorageInfo } from "../../utils/neonCapacity";
 import {
   buildApplicationModules,
   buildFileCategories,
@@ -32,9 +33,18 @@ export interface StorageCategory {
 export interface StorageBreakdown {
   databaseSizeBytes: number;
   databaseSizeLabel: string;
-  /** Alias of databaseSizeBytes — physical Postgres size (pg_database_size). */
+  /**
+   * Alias of databaseSizeBytes. When `physicalSizeFromProvider` is true this came
+   * from the hosting provider's real metered storage (e.g. Neon's synthetic storage
+   * size, matching the Neon console); otherwise it's PostgreSQL's own pg_database_size().
+   */
   physicalDatabaseBytes: number;
   physicalDatabaseLabel: string;
+  /** True when physicalDatabaseBytes is the provider's metered size, not pg_database_size(). */
+  physicalSizeFromProvider: boolean;
+  /** PostgreSQL logical size (pg_database_size) — always measured, for reference/debugging. */
+  postgresLogicalBytes: number;
+  postgresLogicalLabel: string;
   /** Bytes attributed to tables that still contain rows. */
   liveDataBytes: number;
   liveDataLabel: string;
@@ -75,11 +85,18 @@ export async function getStorageBreakdown(options?: {
 }): Promise<StorageBreakdown> {
   const tables = options?.exactCounts ? await queryExactTableStats() : await queryAllTableStats();
 
-  const [databaseSizeBytes, referenced, space] = await Promise.all([
+  const neonStorage = await fetchNeonStorageInfo();
+
+  const [pgDatabaseSizeBytes, referenced, space] = await Promise.all([
     queryDatabaseSizeBytes(),
     collectReferencedFilePaths(),
-    queryDatabaseSpaceBreakdown(tables),
+    queryDatabaseSpaceBreakdown(tables, neonStorage?.syntheticStorageBytes ?? null),
   ]);
+
+  // Use the provider's real metered size (e.g. Neon synthetic storage size) for the headline
+  // "used" figure and capacity math when available — pg_database_size() alone
+  // understates what a provider like Neon actually bills against the plan limit.
+  const databaseSizeBytes = space.physicalDatabaseBytes;
 
   const [postgresCategories, fileCategories, disk] = await Promise.all([
     Promise.resolve(buildPostgresCategories(tables)),
@@ -113,6 +130,9 @@ export async function getStorageBreakdown(options?: {
     databaseSizeLabel: formatDatabaseSize(databaseSizeBytes),
     physicalDatabaseBytes: space.physicalDatabaseBytes,
     physicalDatabaseLabel: formatDatabaseSize(space.physicalDatabaseBytes),
+    physicalSizeFromProvider: space.physicalSizeFromProvider,
+    postgresLogicalBytes: pgDatabaseSizeBytes,
+    postgresLogicalLabel: formatDatabaseSize(pgDatabaseSizeBytes),
     liveDataBytes: space.liveDataBytes,
     liveDataLabel: formatDatabaseSize(space.liveDataBytes),
     reclaimableBytes: space.reclaimableBytes,

@@ -335,6 +335,11 @@ export interface StorageBreakdown {
   databaseSizeLabel: string;
   physicalDatabaseBytes: number;
   physicalDatabaseLabel: string;
+  /** True when physicalDatabaseBytes is the provider's real metered size (e.g. Neon), not pg_database_size(). */
+  physicalSizeFromProvider: boolean;
+  /** PostgreSQL logical size (pg_database_size) — always measured, for reference. */
+  postgresLogicalBytes: number;
+  postgresLogicalLabel: string;
   liveDataBytes: number;
   liveDataLabel: string;
   reclaimableBytes: number;

@@ -481,14 +481,21 @@ export async function purgeUploadFilesExcept(
 }
 
 export interface DatabaseSpaceBreakdown {
-  /** pg_database_size — physical bytes billed / reported by Postgres. */
+  /**
+   * Physical bytes billed/reported by the database. When a hosting-provider storage
+   * API is configured (e.g. Neon), this is the provider's own metered size, which can
+   * be materially larger than pg_database_size() because it also counts WAL
+   * retention layers. Falls back to pg_database_size() otherwise.
+   */
   physicalDatabaseBytes: number;
   /** Sum of pg_total_relation_size for tables that still have rows. */
   liveDataBytes: number;
   /** Empty/cleared table files still occupying disk until VACUUM FULL (or provider reclaim). */
   reclaimableBytes: number;
-  /** Catalogs / free space map / other DB overhead not attributed to application tables. */
+  /** Catalogs / free space map / provider history overhead not attributed to application tables. */
   internalOverheadBytes: number;
+  /** True when physicalDatabaseBytes came from a provider storage API rather than pg_database_size(). */
+  physicalSizeFromProvider: boolean;
   explanation: string;
 }
 
@@ -532,12 +539,19 @@ function quoteIdent(name: string): string {
 }
 
 export async function queryDatabaseSpaceBreakdown(
-  tables?: TableStat[]
+  tables?: TableStat[],
+  /** Provider-reported metered size (e.g. Neon's synthetic storage size), when available. */
+  providerPhysicalBytes?: number | null
 ): Promise<DatabaseSpaceBreakdown> {
-  const [physicalDatabaseBytes, tableStats] = await Promise.all([
+  const [pgDatabaseBytes, tableStats] = await Promise.all([
     queryDatabaseSizeBytes(),
     tables ? Promise.resolve(tables) : queryExactTableStats(),
   ]);
+
+  const physicalSizeFromProvider = providerPhysicalBytes != null && providerPhysicalBytes > 0;
+  const physicalDatabaseBytes = physicalSizeFromProvider
+    ? (providerPhysicalBytes as number)
+    : pgDatabaseBytes;
 
   const liveDataBytes = tableStats
     .filter((t) => t.recordCount > 0)
@@ -549,16 +563,24 @@ export async function queryDatabaseSpaceBreakdown(
   const internalOverheadBytes = Math.max(0, physicalDatabaseBytes - relationsTotal);
   const reclaimableBytes = emptyTableBytes;
 
-  const explanation =
-    reclaimableBytes > 0
-      ? "PostgreSQL keeps empty table files after DELETE. Regular VACUUM marks space reusable for new data; physical size may not shrink until VACUUM FULL (when allowed) or provider storage reclaim. Live data size reflects tables that still contain rows."
-      : "Physical database size matches live application tables plus normal PostgreSQL catalog overhead.";
+  let explanation: string;
+  if (physicalSizeFromProvider) {
+    explanation =
+      "Physical database size is the real storage Neon meters for this project — its synthetic storage size, which combines logical data and Write-Ahead Log (WAL) across all branches. It will normally read higher than the sum of table sizes below; that gap is expected, not an error. Live data size reflects tables that still contain rows, measured directly from PostgreSQL.";
+  } else if (reclaimableBytes > 0) {
+    explanation =
+      "PostgreSQL keeps empty table files after DELETE. Regular VACUUM marks space reusable for new data; physical size may not shrink until VACUUM FULL (when allowed) or provider storage reclaim. Live data size reflects tables that still contain rows. Note: this figure is pg_database_size(), the PostgreSQL logical size — if your host is Neon, its console shows a larger \"Storage\" figure that also counts WAL across all branches; set NEON_API_KEY and NEON_PROJECT_ID to show that exact figure here instead.";
+  } else {
+    explanation =
+      "Physical database size matches live application tables plus normal PostgreSQL catalog overhead. Note: this figure is pg_database_size(), the PostgreSQL logical size — if your host is Neon, its console shows a larger \"Storage\" figure that also counts WAL across all branches; set NEON_API_KEY and NEON_PROJECT_ID to show that exact figure here instead.";
+  }
 
   return {
     physicalDatabaseBytes,
     liveDataBytes,
     reclaimableBytes,
     internalOverheadBytes,
+    physicalSizeFromProvider,
     explanation,
   };
 }

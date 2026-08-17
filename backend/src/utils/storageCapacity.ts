@@ -102,7 +102,11 @@ function warningsForPercent(percent: number): string[] {
  * unavailable rather than estimated, so the UI never shows misleading numbers.
  */
 export function buildStorageCapacity(input: {
-  /** Must be the PostgreSQL database size only (pg_database_size). */
+  /**
+   * Database size only (never includes uploaded files). This is the provider's metered
+   * size when one is available (e.g. Neon's synthetic storage size), otherwise
+   * pg_database_size().
+   */
   usedBytes: number;
   resolved: ResolvedCapacity;
 }): StorageCapacity {
