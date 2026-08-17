@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback } from "react";
 import { CalendarCheck, Check, X, Filter, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import type { LeaveRequest, LeaveStatus } from "../../types";
 import * as leavesApi from "../../api/leaves";
@@ -230,8 +230,8 @@ export default function LeaveManagementPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {items.map(lr => (
-                    <>
-                      <tr key={lr.id} className="hover:bg-gray-50">
+                    <Fragment key={lr.id}>
+                      <tr className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <EmployeeAvatar
@@ -283,7 +283,7 @@ export default function LeaveManagementPage() {
                         </td>
                       </tr>
                       {expandedId === lr.id && (
-                        <tr key={`${lr.id}-expand`} className="bg-gray-50">
+                        <tr className="bg-gray-50">
                           <td colSpan={6} className="px-8 py-3 text-sm text-gray-600">
                             <div><span className="font-semibold">Reason: </span>{lr.reason}</div>
                             {lr.review_note && (
@@ -298,7 +298,7 @@ export default function LeaveManagementPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

@@ -80,14 +80,18 @@ export default function LeaveRequestsPage() {
     e.preventDefault();
     setFormError(null);
     if (!form.leaveDate) { setFormError("Please select a date."); return; }
-    if (!form.leaveCategory) { setFormError("Please select a leave category."); return; }
+    // The category select falls back to displaying the first enabled category when
+    // form.leaveCategory is still empty (user never touched the dropdown) — validate
+    // and submit that same effective value so a default selection isn't rejected.
+    const effectiveCategory = form.leaveCategory || enabledCategories[0]?.name || "";
+    if (!effectiveCategory) { setFormError("Please select a leave category."); return; }
     if (form.leaveType === "half" && leaveConfig && !leaveConfig.halfDayAllowed) {
       setFormError("Half-day leave is not enabled.");
       return;
     }
     setSubmitting(true);
     try {
-      await leavesApi.submitLeave(form);
+      await leavesApi.submitLeave({ ...form, leaveCategory: effectiveCategory });
       setSuccess(
         leaveConfig?.approvalRequired
           ? "Leave request submitted successfully. Awaiting admin approval."
