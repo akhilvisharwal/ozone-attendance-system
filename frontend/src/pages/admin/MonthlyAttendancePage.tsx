@@ -20,6 +20,7 @@ import { useToast } from "@/components/ui/Toast";
 import type { MonthlyCellStatus, MonthlyGrid, Site } from "@/types";
 import { formatMinutesAsHours } from "@/utils/format";
 import { usePermissions } from "@/auth/usePermissions";
+import { useAuth } from "@/auth/AuthContext";
 import type { ChronologicalSort } from "@/utils/chronologicalSort";
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -54,7 +55,8 @@ function weekdayOf(dateStr: string): number {
 }
 
 export function MonthlyAttendancePage() {
-  const { can, isMasterAdmin } = usePermissions();
+  const { can, isMasterAdmin, isJuniorAdmin } = usePermissions();
+  const { employee: currentAdmin } = useAuth();
   const { showToast } = useToast();
   const canEditCell = can("editAttendance") || can("manualAttendance");
   const canManageAdvances = isMasterAdmin || can("manageAdvances");
@@ -318,6 +320,8 @@ export function MonthlyAttendancePage() {
                     {emp.days.map((cell) => {
                       const meta = STATUS_META[cell.status];
                       const dimmed = statusFilter && cell.status !== statusFilter;
+                      const isSelfRow = isJuniorAdmin && emp.employeeId === currentAdmin?.id;
+                      const cellEditable = canEditCell && !isSelfRow;
                       const title = [
                         cell.date,
                         cell.holidayName ? `Holiday: ${cell.holidayName}` : meta.label,
@@ -329,13 +333,15 @@ export function MonthlyAttendancePage() {
                           <button
                             type="button"
                             title={
-                              canEditCell
+                              isSelfRow
+                                ? `${title} — You can't edit your own attendance record`
+                                : cellEditable
                                 ? `${title} — Click to edit attendance`
                                 : title
                             }
-                            disabled={!canEditCell}
+                            disabled={!cellEditable}
                             onClick={() => {
-                              if (!canEditCell) return;
+                              if (!cellEditable) return;
                               setManualTarget({
                                 employeeId: emp.employeeId,
                                 date: cell.date,
@@ -344,8 +350,8 @@ export function MonthlyAttendancePage() {
                             }}
                             className={clsx(
                               "relative mx-auto flex h-9 w-9 items-center justify-center rounded text-[10px] font-semibold transition sm:h-8 sm:w-8",
-                              canEditCell && "cursor-pointer hover:ring-2 hover:ring-brand-300 hover:scale-105",
-                              !canEditCell && "cursor-default",
+                              cellEditable && "cursor-pointer hover:ring-2 hover:ring-brand-300 hover:scale-105",
+                              !cellEditable && "cursor-default",
                               meta.cell,
                               dimmed && "opacity-20"
                             )}

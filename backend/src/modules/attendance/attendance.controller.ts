@@ -385,6 +385,34 @@ const adminMarkSchema = z.object({
   override: z.boolean().optional(),
 });
 
+/**
+ * A Junior Admin's login IS an `employees` row (role = 'junior_admin') — there is
+ * no separate identity for "junior admin" vs "the employee they are". Without this
+ * guard a Junior Admin with editAttendance/manualAttendance could mark or edit their
+ * own attendance record, which defeats the point of admin-recorded attendance.
+ * Master Admin is intentionally unaffected — only Junior Admin targeting themself
+ * is blocked, everyone else's record stays fully editable by a Junior Admin.
+ */
+function assertNotSelfTarget(req: Request, employeeId: string) {
+  if (req.user!.role === "junior_admin" && employeeId === req.user!.id) {
+    throw ApiError.forbidden("You can't edit your own attendance record.");
+  }
+}
+
+/**
+ * Bulk variant: if the acting Junior Admin included themself among the target
+ * employees, reject the whole action rather than silently dropping them from
+ * the batch — a bulk apply that silently did less than what was selected is
+ * more likely to go unnoticed than an outright rejection naming the problem.
+ */
+function assertNoSelfInBulk(req: Request, employeeIds: string[]) {
+  if (req.user!.role === "junior_admin" && employeeIds.includes(req.user!.id)) {
+    throw ApiError.forbidden(
+      `You can't edit your own attendance record. Remove ${req.user!.employeeCode} from the selection and try again.`
+    );
+  }
+}
+
 /** Shared guard: block silent overwrites of automatic attendance unless admin confirms. */
 async function ensureCanMark(
   employeeId: string,
@@ -440,6 +468,7 @@ export const adminMarkPresent = asyncHandler(async (req: Request, res: Response)
     throw ApiError.forbidden("Manual attendance override is disabled in system settings");
   }
   const input = adminMarkSchema.parse(req.body);
+  assertNotSelfTarget(req, input.employeeId);
   const existing = await ensureCanMark(input.employeeId, input.date, input.override);
   const { settings: effectiveRules } = await getEffectiveAttendanceRules(input.date, input.employeeId);
 
@@ -466,6 +495,7 @@ export const adminMarkHalfDay = asyncHandler(async (req: Request, res: Response)
     throw ApiError.forbidden("Manual attendance override is disabled in system settings");
   }
   const input = adminMarkSchema.parse(req.body);
+  assertNotSelfTarget(req, input.employeeId);
   const existing = await ensureCanMark(input.employeeId, input.date, input.override);
   const { settings: effectiveRules } = await getEffectiveAttendanceRules(input.date, input.employeeId);
 
@@ -492,6 +522,7 @@ export const adminMarkAbsent = asyncHandler(async (req: Request, res: Response) 
     throw ApiError.forbidden("Manual attendance override is disabled in system settings");
   }
   const input = adminMarkSchema.parse(req.body);
+  assertNotSelfTarget(req, input.employeeId);
   const existing = await ensureCanMark(input.employeeId, input.date, input.override);
 
   const record = await repo.upsertManualAttendance({
@@ -524,6 +555,7 @@ export const saveManualAttendance = asyncHandler(async (req: Request, res: Respo
   }
 
   const input = manualAttendanceSchema.parse(req.body);
+  assertNotSelfTarget(req, input.employeeId);
   const existing = await ensureCanMark(input.employeeId, input.date, input.override ?? true);
   const totalMinutes = await resolveManualTotalMinutes(input);
 
@@ -560,6 +592,7 @@ export const saveBulkManualAttendance = asyncHandler(async (req: Request, res: R
 
   const input = bulkManualAttendanceSchema.parse(req.body);
   const employeeIds = Array.from(new Set(input.employeeIds));
+  assertNoSelfInBulk(req, employeeIds);
   const validIds = await repo.listValidEmployeeIdsForManualAttendance(employeeIds);
   if (validIds.length !== employeeIds.length) {
     throw ApiError.badRequest("One or more selected employees are invalid or inactive");
@@ -626,6 +659,7 @@ export const deleteManualAttendance = asyncHandler(async (req: Request, res: Res
   }
 
   const input = manualAttendanceDeleteSchema.parse(req.body);
+  assertNotSelfTarget(req, input.employeeId);
   const existing = await repo.findTodayAttendance(input.employeeId, input.date);
   if (!existing) throw ApiError.notFound("No attendance record found for that employee and date");
   if (!existing.is_admin_marked) {

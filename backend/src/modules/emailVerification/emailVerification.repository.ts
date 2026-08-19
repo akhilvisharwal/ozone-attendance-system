@@ -13,14 +13,33 @@ export const OTP_PURPOSES = [
   "database_reset_step2",
   /** Server-issued ticket after step-1 OTP — not requestable by clients. */
   "database_reset_authorization",
+  /**
+   * Advances (money owed to the company): create/edit/delete on the raw
+   * ledger, repayment plans, and installments all share these three
+   * purposes, split by verb — mirrors junior_admin_create/junior_admin_delete
+   * rather than one purpose per entity type. Requested via the advances
+   * module's own POST /advances/otp/request (not requestable through the
+   * generic, master-admin-only POST /otp/request below) so Junior Admins
+   * with manageAdvances can request codes too.
+   */
+  "advance_create",
+  "advance_edit",
+  "advance_delete",
 ] as const;
 
 export type OtpPurpose = (typeof OTP_PURPOSES)[number];
 
-/** Purposes clients may request via POST /otp/request. */
+const NOT_GENERICALLY_REQUESTABLE = [
+  "database_reset_authorization",
+  "advance_create",
+  "advance_edit",
+  "advance_delete",
+] as const;
+
+/** Purposes clients may request via the generic, master-admin-only POST /otp/request. */
 export const REQUESTABLE_OTP_PURPOSES = OTP_PURPOSES.filter(
-  (purpose) => purpose !== "database_reset_authorization"
-) as Exclude<OtpPurpose, "database_reset_authorization">[];
+  (purpose) => !(NOT_GENERICALLY_REQUESTABLE as readonly string[]).includes(purpose)
+) as Exclude<OtpPurpose, (typeof NOT_GENERICALLY_REQUESTABLE)[number]>[];
 
 export const OTP_PURPOSE_LABELS: Record<OtpPurpose, string> = {
   admin_password_change: "Change System Admin password",
@@ -33,6 +52,9 @@ export const OTP_PURPOSE_LABELS: Record<OtpPurpose, string> = {
   database_reset_step1: "Reset entire database (step 1 of 2)",
   database_reset_step2: "Reset entire database (step 2 of 2)",
   database_reset_authorization: "Database reset authorization ticket",
+  advance_create: "Create an employee advance",
+  advance_edit: "Edit an employee advance",
+  advance_delete: "Delete an employee advance",
 };
 
 export type EmailOtpChallenge = {

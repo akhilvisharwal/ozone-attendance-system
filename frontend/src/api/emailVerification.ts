@@ -9,7 +9,10 @@ export type OtpPurpose =
   | "junior_admin_delete"
   | "employee_delete"
   | "database_reset_step1"
-  | "database_reset_step2";
+  | "database_reset_step2"
+  | "advance_create"
+  | "advance_edit"
+  | "advance_delete";
 
 export type EmailOtpPayload = {
   otpChallengeId: string;

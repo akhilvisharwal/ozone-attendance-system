@@ -18,6 +18,7 @@ import {
   recordRepaymentSchema,
   updatePlanSchema,
 } from "./advancePlans.validators";
+import { extractOtpFields, requireAdvanceOtp } from "./advances.otp";
 
 /** Maps the repository's typed error classes onto the right HTTP status. */
 function toApiError(err: unknown): ApiError | null {
@@ -57,11 +58,14 @@ export const getPlan = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const createPlan = asyncHandler(async (req: Request, res: Response) => {
-  const input = createPlanSchema.parse(req.body);
+  const { otpChallengeId, otpCode, rest } = extractOtpFields(req.body);
+  const input = createPlanSchema.parse(rest);
 
   if (!(await repo.employeeExists(input.employeeId))) {
     throw ApiError.badRequest("Employee not found");
   }
+
+  await requireAdvanceOtp(req, "create", input.employeeId, otpChallengeId, otpCode);
 
   const plan = await repo.createPlan({
     employeeId: input.employeeId,
@@ -86,10 +90,13 @@ export const createPlan = asyncHandler(async (req: Request, res: Response) => {
 
 export const updatePlan = asyncHandler(async (req: Request, res: Response) => {
   const id = z.string().uuid().parse(req.params.id);
-  const input = updatePlanSchema.parse(req.body);
+  const { otpChallengeId, otpCode, rest } = extractOtpFields(req.body);
+  const input = updatePlanSchema.parse(rest);
 
   const before = await repo.getPlanById(id);
   if (!before) throw ApiError.notFound("Advance plan not found");
+
+  await requireAdvanceOtp(req, "edit", before.employeeId, otpChallengeId, otpCode);
 
   try {
     const plan = await repo.updatePlan(id, { ...input, updatedBy: req.user!.id });
@@ -120,6 +127,13 @@ export const updatePlan = asyncHandler(async (req: Request, res: Response) => {
 
 export const cancelPlan = asyncHandler(async (req: Request, res: Response) => {
   const id = z.string().uuid().parse(req.params.id);
+  const { otpChallengeId, otpCode } = extractOtpFields(req.body);
+
+  const before = await repo.getPlanById(id);
+  if (!before) throw ApiError.notFound("Advance plan not found");
+
+  await requireAdvanceOtp(req, "edit", before.employeeId, otpChallengeId, otpCode);
+
   try {
     const plan = await repo.cancelPlan(id);
     await logAudit(req, "advance.plan_cancel", "employee_advance_plan", plan.id, {
@@ -135,8 +149,12 @@ export const cancelPlan = asyncHandler(async (req: Request, res: Response) => {
 
 export const deletePlan = asyncHandler(async (req: Request, res: Response) => {
   const id = z.string().uuid().parse(req.params.id);
+  const { otpChallengeId, otpCode } = extractOtpFields(req.body);
+
   const before = await repo.getPlanById(id);
   if (!before) throw ApiError.notFound("Advance plan not found");
+
+  await requireAdvanceOtp(req, "delete", before.employeeId, otpChallengeId, otpCode);
 
   try {
     await repo.deletePlanIfUnpaid(id);
@@ -153,7 +171,13 @@ export const deletePlan = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const recordRepayment = asyncHandler(async (req: Request, res: Response) => {
-  const input = recordRepaymentSchema.parse(req.body);
+  const { otpChallengeId, otpCode, rest } = extractOtpFields(req.body);
+  const input = recordRepaymentSchema.parse(rest);
+
+  const employeeId = await repo.findEmployeeIdForInstallment(input.installmentId);
+  if (!employeeId) throw ApiError.notFound("Installment not found");
+
+  await requireAdvanceOtp(req, "create", employeeId, otpChallengeId, otpCode);
 
   try {
     const { plan, installment } = await repo.recordRepayment({

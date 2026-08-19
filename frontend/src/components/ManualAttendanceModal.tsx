@@ -59,6 +59,13 @@ export function ManualAttendanceModal({
   initialStatus?: string;
 }) {
   const { employee: currentAdmin } = useAuth();
+  // A Junior Admin's login IS an employees row — never let them target themselves
+  // here, in either the single-employee picker or the bulk-apply list. The server
+  // enforces this too; this just keeps the UI from offering an action that will
+  // be rejected.
+  const isJuniorAdmin = currentAdmin?.role === "junior_admin";
+  const selfEmployeeId = isJuniorAdmin ? currentAdmin!.id : null;
+  const excludeSelfIds = useMemo(() => (selfEmployeeId ? [selfEmployeeId] : []), [selfEmployeeId]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -159,7 +166,11 @@ export function ManualAttendanceModal({
 
   useEffect(() => {
     if (!open) return;
-    setEmployeeId(initialEmployeeId ?? "");
+    // Defensive: even if a caller somehow passes the acting Junior Admin's own id
+    // (e.g. a stale target), never pre-select it — the server would reject it anyway.
+    const safeInitialEmployeeId =
+      initialEmployeeId && initialEmployeeId === selfEmployeeId ? "" : initialEmployeeId ?? "";
+    setEmployeeId(safeInitialEmployeeId);
     setDate(initialDate ?? "");
     setStatus(statusFromCellHint(initialStatus));
     setCheckInTime("09:00");
@@ -170,12 +181,16 @@ export function ManualAttendanceModal({
     setExisting(null);
     setNeedsOverride(false);
     setConfirmOpen(false);
-    setError(null);
+    setError(
+      initialEmployeeId && initialEmployeeId === selfEmployeeId
+        ? "You can't edit your own attendance record. Select a different employee."
+        : null
+    );
     setApplyToMultiple(false);
     setEmployeeSearch("");
     setRoleFilter("");
-    setSelectedEmployeeIds(initialEmployeeId ? [initialEmployeeId] : []);
-  }, [open, initialEmployeeId, initialDate, initialStatus, currentAdmin?.id]);
+    setSelectedEmployeeIds(safeInitialEmployeeId ? [safeInitialEmployeeId] : []);
+  }, [open, initialEmployeeId, initialDate, initialStatus, currentAdmin?.id, selfEmployeeId]);
 
   useEffect(() => {
     if (!open || !employeeId || !date) return;
@@ -199,10 +214,10 @@ export function ManualAttendanceModal({
       .listActiveEmployees()
       .then((items) => {
         if (cancelled) return;
-        setAllEmployees(items);
+        setAllEmployees(selfEmployeeId ? items.filter((e) => e.id !== selfEmployeeId) : items);
         setSelectedEmployeeIds((prev) => {
           const next = new Set(prev);
-          if (employeeId) next.add(employeeId);
+          if (employeeId && employeeId !== selfEmployeeId) next.add(employeeId);
           return Array.from(next);
         });
       })
@@ -217,12 +232,12 @@ export function ManualAttendanceModal({
     return () => {
       cancelled = true;
     };
-  }, [open, applyToMultiple, employeeId]);
+  }, [open, applyToMultiple, employeeId, selfEmployeeId]);
 
   useEffect(() => {
-    if (!employeeId) return;
+    if (!employeeId || employeeId === selfEmployeeId) return;
     setSelectedEmployeeIds((prev) => (prev.includes(employeeId) ? prev : [...prev, employeeId]));
-  }, [employeeId]);
+  }, [employeeId, selfEmployeeId]);
 
   const workingHoursPreview = useMemo(() => {
     if (!showTimeFields || !checkInTime || !checkOutTime) return null;
@@ -234,6 +249,7 @@ export function ManualAttendanceModal({
 
   function validate(): string | null {
     if (!employeeId) return "Select an employee.";
+    if (employeeId === selfEmployeeId) return "You can't edit your own attendance record.";
     if (!date) return "Select a date.";
     if (!reason.trim()) return "Reason is required.";
     if (showTimeFields && (!checkInTime || !checkOutTime)) {
@@ -403,7 +419,12 @@ export function ManualAttendanceModal({
           ) : (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <EmployeeCombobox label="Employee" value={employeeId} onChange={setEmployeeId} />
+                <EmployeeCombobox
+                  label="Employee"
+                  value={employeeId}
+                  onChange={setEmployeeId}
+                  excludeIds={excludeSelfIds}
+                />
                 <Input label="Date" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
 

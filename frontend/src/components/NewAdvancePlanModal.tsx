@@ -6,9 +6,10 @@ import { Alert } from "@/components/ui/Alert";
 import { Input, Select, Textarea, FieldWrapper } from "@/components/ui/Input";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
 import { InstallmentScheduleEditor } from "@/components/InstallmentScheduleEditor";
+import { EmailOtpModal } from "@/components/EmailOtpModal";
+import { useAdvanceOtp } from "@/hooks/useAdvanceOtp";
 import * as advancePlansApi from "@/api/advancePlans";
 import type { PlanType } from "@/api/advancePlans";
-import { extractErrorMessage } from "@/api/client";
 
 function todayStr(): string {
   const now = new Date();
@@ -46,6 +47,7 @@ export function NewAdvancePlanModal({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const otp = useAdvanceOtp();
 
   useEffect(() => {
     if (!open) return;
@@ -92,24 +94,26 @@ export function NewAdvancePlanModal({
       }
     }
 
-    setSaving(true);
-    try {
-      await advancePlansApi.createPlan({
-        employeeId,
-        principalAmount: principal,
-        startDate,
-        planType,
-        installmentCount: planType === "equal_installments" ? count : undefined,
-        installments: planType === "custom" ? customAmounts : undefined,
-        note: note.trim() || null,
-      });
-      onCreated();
-      onClose();
-    } catch (err) {
-      setError(extractErrorMessage(err, "Could not create the advance plan."));
-    } finally {
-      setSaving(false);
-    }
+    setError(null);
+    otp.runWithOtp("create", employeeId, async (otpFields) => {
+      setSaving(true);
+      try {
+        await advancePlansApi.createPlan({
+          employeeId,
+          principalAmount: principal,
+          startDate,
+          planType,
+          installmentCount: planType === "equal_installments" ? count : undefined,
+          installments: planType === "custom" ? customAmounts : undefined,
+          note: note.trim() || null,
+          ...otpFields,
+        });
+        onCreated();
+        onClose();
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   return (
@@ -205,6 +209,14 @@ export function NewAdvancePlanModal({
           onChange={(e) => setNote(e.target.value)}
         />
       </div>
+
+      <EmailOtpModal
+        open={otp.purpose !== null}
+        purpose={otp.purpose}
+        requestFn={otp.requestFn}
+        onClose={otp.close}
+        onVerified={otp.onVerified}
+      />
     </Modal>
   );
 }

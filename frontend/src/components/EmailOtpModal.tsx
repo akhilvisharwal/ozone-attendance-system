@@ -47,6 +47,18 @@ const PURPOSE_COPY: Record<OtpPurpose, { title: string; description: string }> =
     description:
       "Enter the second 6-digit code sent to the administrator email to permanently reset the database. This cannot be undone.",
   },
+  advance_create: {
+    title: "Verify advance",
+    description: "Enter the 6-digit code sent to the administrator email to record this advance or repayment.",
+  },
+  advance_edit: {
+    title: "Verify advance change",
+    description: "Enter the 6-digit code sent to the administrator email to save this change.",
+  },
+  advance_delete: {
+    title: "Verify advance deletion",
+    description: "Enter the 6-digit code sent to the administrator email to delete this advance.",
+  },
 };
 
 export function EmailOtpModal({
@@ -55,6 +67,7 @@ export function EmailOtpModal({
   onClose,
   onVerified,
   dismissible = true,
+  requestFn,
 }: {
   open: boolean;
   purpose: OtpPurpose | null;
@@ -62,6 +75,14 @@ export function EmailOtpModal({
   onVerified: (otp: { otpChallengeId: string; otpCode: string }) => void | Promise<void>;
   /** When false, cancel/backdrop/Escape cannot close the modal (used while a destructive action runs). */
   dismissible?: boolean;
+  /**
+   * Overrides how the code is requested — defaults to the generic,
+   * master-admin-only POST /otp/request via emailApi.requestEmailOtp.
+   * Pass this for purposes with their own, differently-gated request
+   * endpoint (e.g. advances, where Junior Admins with manageAdvances must
+   * be able to request a code too).
+   */
+  requestFn?: () => Promise<{ challengeId: string; expiresAt: string; maskedEmail: string }>;
 }) {
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [maskedEmail, setMaskedEmail] = useState("");
@@ -86,7 +107,7 @@ export function EmailOtpModal({
     setSending(true);
     setError(null);
     try {
-      const result = await emailApi.requestEmailOtp(purpose);
+      const result = await (requestFn ? requestFn() : emailApi.requestEmailOtp(purpose));
       // Ignore stale responses from an older open/resend cycle (Strict Mode / remount).
       if (generation !== sendGenerationRef.current) return;
       setChallengeId(result.challengeId);

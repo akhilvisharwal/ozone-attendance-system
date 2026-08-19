@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Spinner";
 import { Input, Select, Textarea, FieldWrapper } from "@/components/ui/Input";
 import { InstallmentScheduleEditor } from "@/components/InstallmentScheduleEditor";
+import { EmailOtpModal } from "@/components/EmailOtpModal";
+import { useAdvanceOtp } from "@/hooks/useAdvanceOtp";
 import * as advancePlansApi from "@/api/advancePlans";
 import type { AdvancePlanWithSchedule, Installment, PlanStatus, PlanType } from "@/api/advancePlans";
 import { extractErrorMessage } from "@/api/client";
@@ -36,10 +38,14 @@ const STATUS_TONE: Record<PlanStatus, "green" | "amber" | "slate"> = {
 /** Inline "Record Payment" row, shown under an unpaid/partial installment. */
 function RepaymentForm({
   installment,
+  employeeId,
+  otp,
   onSaved,
   onCancel,
 }: {
   installment: Installment;
+  employeeId: string;
+  otp: ReturnType<typeof useAdvanceOtp>;
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -50,27 +56,28 @@ function RepaymentForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit() {
+  function submit() {
     setError(null);
     const parsed = Number(amount);
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setError("Enter an amount greater than zero.");
       return;
     }
-    setSaving(true);
-    try {
-      await advancePlansApi.recordRepayment({
-        installmentId: installment.id,
-        amount: parsed,
-        entryDate,
-        note: note.trim() || null,
-      });
-      onSaved();
-    } catch (err) {
-      setError(extractErrorMessage(err, "Could not record the repayment."));
-    } finally {
-      setSaving(false);
-    }
+    otp.runWithOtp("create", employeeId, async (otpFields) => {
+      setSaving(true);
+      try {
+        await advancePlansApi.recordRepayment({
+          installmentId: installment.id,
+          amount: parsed,
+          entryDate,
+          note: note.trim() || null,
+          ...otpFields,
+        });
+        onSaved();
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   return (
@@ -109,10 +116,12 @@ function RepaymentForm({
 /** Inline edit form for an active plan's principal / schedule. */
 function EditPlanForm({
   plan,
+  otp,
   onSaved,
   onCancel,
 }: {
   plan: AdvancePlanWithSchedule;
+  otp: ReturnType<typeof useAdvanceOtp>;
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -139,7 +148,7 @@ function EditPlanForm({
       ? keptInstallments[keptInstallments.length - 1].dueDate
       : plan.startDate;
 
-  async function submit() {
+  function submit() {
     setError(null);
     if (principal < alreadyPaid) {
       setError(`Principal cannot be less than the amount already paid (${formatAmount(alreadyPaid)}).`);
@@ -153,22 +162,23 @@ function EditPlanForm({
       }
     }
 
-    setSaving(true);
-    try {
-      await advancePlansApi.updatePlan(plan.id, {
-        principalAmount: principal,
-        planType,
-        installmentCount:
-          planType === "equal_installments" && remaining > 0 ? Number(installmentCount) : undefined,
-        installments: planType === "custom" && remaining > 0 ? customAmounts : undefined,
-        note: note.trim() || null,
-      });
-      onSaved();
-    } catch (err) {
-      setError(extractErrorMessage(err, "Could not update the plan."));
-    } finally {
-      setSaving(false);
-    }
+    otp.runWithOtp("edit", plan.employeeId, async (otpFields) => {
+      setSaving(true);
+      try {
+        await advancePlansApi.updatePlan(plan.id, {
+          principalAmount: principal,
+          planType,
+          installmentCount:
+            planType === "equal_installments" && remaining > 0 ? Number(installmentCount) : undefined,
+          installments: planType === "custom" && remaining > 0 ? customAmounts : undefined,
+          note: note.trim() || null,
+          ...otpFields,
+        });
+        onSaved();
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   return (
@@ -249,31 +259,32 @@ function PlanCard({
   const [payingInstallmentId, setPayingInstallmentId] = useState<string | null>(null);
   const [busy, setBusy] = useState<"cancel" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const otp = useAdvanceOtp();
 
-  async function handleCancel() {
+  function handleCancel() {
     setError(null);
-    setBusy("cancel");
-    try {
-      await advancePlansApi.cancelPlan(plan.id);
-      onChanged();
-    } catch (err) {
-      setError(extractErrorMessage(err, "Could not cancel the plan."));
-    } finally {
-      setBusy(null);
-    }
+    otp.runWithOtp("edit", plan.employeeId, async (otpFields) => {
+      setBusy("cancel");
+      try {
+        await advancePlansApi.cancelPlan(plan.id, otpFields);
+        onChanged();
+      } finally {
+        setBusy(null);
+      }
+    });
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     setError(null);
-    setBusy("delete");
-    try {
-      await advancePlansApi.deletePlan(plan.id);
-      onChanged();
-    } catch (err) {
-      setError(extractErrorMessage(err, "Could not delete the plan."));
-    } finally {
-      setBusy(null);
-    }
+    otp.runWithOtp("delete", plan.employeeId, async (otpFields) => {
+      setBusy("delete");
+      try {
+        await advancePlansApi.deletePlan(plan.id, otpFields);
+        onChanged();
+      } finally {
+        setBusy(null);
+      }
+    });
   }
 
   return (
@@ -342,6 +353,7 @@ function PlanCard({
         <div className="mt-3">
           <EditPlanForm
             plan={plan}
+            otp={otp}
             onSaved={() => {
               setEditing(false);
               onChanged();
@@ -395,6 +407,8 @@ function PlanCard({
                         <td colSpan={5} className="pb-2">
                           <RepaymentForm
                             installment={inst}
+                            employeeId={plan.employeeId}
+                            otp={otp}
                             onCancel={() => setPayingInstallmentId(null)}
                             onSaved={() => {
                               setPayingInstallmentId(null);
@@ -411,6 +425,14 @@ function PlanCard({
           </table>
         </div>
       )}
+
+      <EmailOtpModal
+        open={otp.purpose !== null}
+        purpose={otp.purpose}
+        requestFn={otp.requestFn}
+        onClose={otp.close}
+        onVerified={otp.onVerified}
+      />
     </div>
   );
 }

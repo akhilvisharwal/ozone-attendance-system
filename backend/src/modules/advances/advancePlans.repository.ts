@@ -534,6 +534,18 @@ export async function deletePlanIfUnpaid(id: string): Promise<boolean> {
   });
 }
 
+/** Cheap lookup used only to pre-check an OTP challenge's employee context before recordRepayment runs. */
+export async function findEmployeeIdForInstallment(installmentId: string): Promise<string | null> {
+  const result = await pool.query<{ employee_id: string }>(
+    `SELECT p.employee_id
+       FROM employee_advance_installments i
+       JOIN employee_advance_plans p ON p.id = i.plan_id
+      WHERE i.id = $1`,
+    [installmentId]
+  );
+  return result.rows[0]?.employee_id ?? null;
+}
+
 export interface RecordRepaymentInput {
   installmentId: string;
   amount: number;

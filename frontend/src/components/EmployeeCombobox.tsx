@@ -23,6 +23,7 @@ export function EmployeeCombobox({
   className,
   triggerClassName,
   hideHint = false,
+  excludeIds,
 }: {
   value: string;
   onChange: (employeeId: string) => void;
@@ -31,6 +32,8 @@ export function EmployeeCombobox({
   className?: string;
   triggerClassName?: string;
   hideHint?: boolean;
+  /** Employee ids to omit from the results — e.g. hiding a Junior Admin's own row. */
+  excludeIds?: string[];
 }) {
   const [options, setOptions] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(false);
@@ -103,6 +106,7 @@ export function EmployeeCombobox({
   const comboboxOptions = useMemo<ComboboxOption[]>(() => {
     const rows: ComboboxOption[] = [{ value: ALL_EMPLOYEES_VALUE, label: "All Employees" }];
     for (const employee of options) {
+      if (excludeIds?.includes(employee.id)) continue;
       rows.push({
         value: employee.id,
         label: employee.name,
@@ -113,7 +117,8 @@ export function EmployeeCombobox({
       });
     }
     return rows;
-  }, [options]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, excludeIds?.join(",")]);
 
   function handleSearch(query: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current);

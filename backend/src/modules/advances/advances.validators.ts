@@ -41,3 +41,8 @@ export const advanceListQuerySchema = z.object({
 export const advanceMonthQuerySchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/, "Use YYYY-MM").optional(),
 });
+
+export const advanceOtpRequestSchema = z.object({
+  action: z.enum(["create", "edit", "delete"]),
+  employeeId: z.string().uuid(),
+});

@@ -38,6 +38,7 @@ import { extractErrorMessage } from "@/api/client";
 import { resolveWeeklyOffDays, employeeUsesDefaultWeeklyOff, normalizeWeeklyOffDays } from "@/utils/weeklyOffDays";
 import { usePublicSettings } from "@/contexts/SettingsContext";
 import { usePermissions } from "@/auth/usePermissions";
+import { useAuth } from "@/auth/AuthContext";
 import { formatDate } from "@/utils/format";
 import { DesignationSelect } from "@/components/DesignationSelect";
 import type { ChronologicalSort } from "@/utils/chronologicalSort";
@@ -129,7 +130,8 @@ function TodayStatusBadge({ record }: { record?: AttendanceRecord | null }) {
 
 export function EmployeesPage() {
   const { publicSettings } = usePublicSettings();
-  const { isMasterAdmin, can } = usePermissions();
+  const { isMasterAdmin, isJuniorAdmin, can } = usePermissions();
+  const { employee: currentAdmin } = useAuth();
   const manualOverride = publicSettings?.attendance.allowManualOverride ?? true;
 
   const [items, setItems]     = useState<Employee[]>([]);
@@ -227,7 +229,12 @@ export function EmployeesPage() {
       );
     }
 
-    if (manualOverride && (isMasterAdmin || can("editAttendance"))) {
+    // A Junior Admin's login IS an employees row — block them from marking their own
+    // attendance from this menu (server enforces this too; this just avoids offering
+    // an action that will be rejected). Master Admin is unaffected.
+    const isSelfRow = isJuniorAdmin && employee.id === currentAdmin?.id;
+
+    if (manualOverride && !isSelfRow && (isMasterAdmin || can("editAttendance"))) {
       items.push(
         {
           label: marked && dayStatusEquivalent(marked) === "present" ? "Marked Present" : "Mark as Present",

@@ -122,15 +122,26 @@ export async function sendOtpEmail(input: {
   code: string;
   purposeLabel: string;
   expiresMinutes: number;
+  /**
+   * Optional extra detail line shown between the purpose and the code —
+   * e.g. "Employee: Danish (OZN010)" so an approver can see *who* the
+   * action targets, not just *what kind* of action it is.
+   */
+  contextLine?: string;
 }): Promise<SendEmailResult> {
   const subject = `Security code: ${input.purposeLabel}`;
+  const contextHtml = input.contextLine
+    ? `<p style="margin:0 0 12px;line-height:1.5;color:#334155;">${escapeHtml(input.contextLine)}</p>`
+    : "";
   const html = layout(
     "Email verification code",
     `<p style="margin:0 0 12px;line-height:1.5;">Use this one-time code to confirm: <strong>${escapeHtml(input.purposeLabel)}</strong>.</p>
+     ${contextHtml}
      <p style="margin:20px 0;font-size:32px;letter-spacing:8px;font-weight:700;text-align:center;color:#0f172a;">${escapeHtml(input.code)}</p>
      <p style="margin:0;line-height:1.5;color:#475569;">This code expires in ${input.expiresMinutes} minutes and can be used only once. If you did not request this, ignore this email and review recent admin activity.</p>`
   );
-  const text = `Your Ozone Aircon security code for ${input.purposeLabel} is ${input.code}. It expires in ${input.expiresMinutes} minutes.`;
+  const contextText = input.contextLine ? `${input.contextLine}\n` : "";
+  const text = `Your Ozone Aircon security code for ${input.purposeLabel} is ${input.code}. ${contextText}It expires in ${input.expiresMinutes} minutes.`;
   return sendEmail({ to: input.to, subject, html, text });
 }
 

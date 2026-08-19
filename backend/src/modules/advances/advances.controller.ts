@@ -7,8 +7,20 @@ import * as repo from "./advances.repository";
 import {
   advanceCreateSchema,
   advanceListQuerySchema,
+  advanceOtpRequestSchema,
   advanceUpdateSchema,
 } from "./advances.validators";
+import { extractOtpFields, requestAdvanceOtp, requireAdvanceOtp } from "./advances.otp";
+
+/** Step 1 of the OTP gate: request a code naming the specific employee involved. */
+export const requestOtp = asyncHandler(async (req: Request, res: Response) => {
+  const input = advanceOtpRequestSchema.parse(req.body);
+  const result = await requestAdvanceOtp(req, input.action, input.employeeId);
+  res.json({
+    ...result,
+    message: `A verification code was sent to ${result.maskedEmail}.`,
+  });
+});
 
 /** Ledger + running balance for one employee (or all employees when unfiltered). */
 export const listAdvances = asyncHandler(async (req: Request, res: Response) => {
@@ -46,11 +58,14 @@ export const getAllBalances = asyncHandler(async (_req: Request, res: Response) 
 });
 
 export const createAdvance = asyncHandler(async (req: Request, res: Response) => {
-  const input = advanceCreateSchema.parse(req.body);
+  const { otpChallengeId, otpCode, rest } = extractOtpFields(req.body);
+  const input = advanceCreateSchema.parse(rest);
 
   if (!(await repo.employeeExistsForAdvance(input.employeeId))) {
     throw ApiError.badRequest("Employee not found");
   }
+
+  await requireAdvanceOtp(req, "create", input.employeeId, otpChallengeId, otpCode);
 
   const entry = await repo.createAdvance({
     employeeId: input.employeeId,
@@ -75,7 +90,8 @@ export const createAdvance = asyncHandler(async (req: Request, res: Response) =>
 
 export const updateAdvance = asyncHandler(async (req: Request, res: Response) => {
   const id = z.string().uuid().parse(req.params.id);
-  const input = advanceUpdateSchema.parse(req.body);
+  const { otpChallengeId, otpCode, rest } = extractOtpFields(req.body);
+  const input = advanceUpdateSchema.parse(rest);
 
   const existing = await repo.findAdvanceById(id);
   if (!existing) throw ApiError.notFound("Advance entry not found");
@@ -84,6 +100,8 @@ export const updateAdvance = asyncHandler(async (req: Request, res: Response) =>
       "This entry belongs to a repayment plan — edit the plan or its installments instead."
     );
   }
+
+  await requireAdvanceOtp(req, "edit", existing.employeeId, otpChallengeId, otpCode);
 
   const entry = await repo.updateAdvance(id, input);
   if (!entry) throw ApiError.notFound("Advance entry not found");
@@ -110,6 +128,7 @@ export const updateAdvance = asyncHandler(async (req: Request, res: Response) =>
 
 export const deleteAdvance = asyncHandler(async (req: Request, res: Response) => {
   const id = z.string().uuid().parse(req.params.id);
+  const { otpChallengeId, otpCode } = extractOtpFields(req.body);
 
   const existing = await repo.findAdvanceById(id);
   if (!existing) throw ApiError.notFound("Advance entry not found");
@@ -118,6 +137,8 @@ export const deleteAdvance = asyncHandler(async (req: Request, res: Response) =>
       "This entry belongs to a repayment plan — cancel or delete the plan instead."
     );
   }
+
+  await requireAdvanceOtp(req, "delete", existing.employeeId, otpChallengeId, otpCode);
 
   await repo.deleteAdvance(id);
 

@@ -1,4 +1,24 @@
 import { apiClient } from "./client";
+import type { OtpChallengeResponse } from "./emailVerification";
+
+export type AdvanceOtpAction = "create" | "edit" | "delete";
+
+/**
+ * Step 1 of the OTP gate shared by every create/edit/delete below: request a
+ * code naming the specific employee involved. Uses the advances module's own
+ * endpoint (not the generic, master-admin-only one) so Junior Admins with
+ * manageAdvances can request codes too.
+ */
+export async function requestAdvanceOtp(
+  action: AdvanceOtpAction,
+  employeeId: string
+): Promise<OtpChallengeResponse> {
+  const res = await apiClient.post<OtpChallengeResponse>("/advances/otp/request", {
+    action,
+    employeeId,
+  });
+  return res.data;
+}
 
 export type PlanType = "equal_installments" | "custom";
 export type PlanStatus = "active" | "completed" | "cancelled";
@@ -52,7 +72,13 @@ export interface EmployeeAdvanceSummary {
   nextDueAmount: number | null;
 }
 
-export interface CreatePlanPayload {
+/** Present on every create/edit/delete call below — the OTP gate is mandatory, not optional. */
+export interface AdvanceOtpFields {
+  otpChallengeId: string;
+  otpCode: string;
+}
+
+export interface CreatePlanPayload extends AdvanceOtpFields {
   employeeId: string;
   principalAmount: number;
   startDate: string;
@@ -62,7 +88,7 @@ export interface CreatePlanPayload {
   note?: string | null;
 }
 
-export interface UpdatePlanPayload {
+export interface UpdatePlanPayload extends AdvanceOtpFields {
   principalAmount?: number;
   planType?: PlanType;
   installmentCount?: number;
@@ -100,13 +126,13 @@ export async function updatePlan(
   return res.data.plan;
 }
 
-export async function cancelPlan(id: string): Promise<AdvancePlan> {
-  const res = await apiClient.post<{ plan: AdvancePlan }>(`/advances/plans/${id}/cancel`);
+export async function cancelPlan(id: string, otp: AdvanceOtpFields): Promise<AdvancePlan> {
+  const res = await apiClient.post<{ plan: AdvancePlan }>(`/advances/plans/${id}/cancel`, otp);
   return res.data.plan;
 }
 
-export async function deletePlan(id: string): Promise<void> {
-  await apiClient.delete(`/advances/plans/${id}`);
+export async function deletePlan(id: string, otp: AdvanceOtpFields): Promise<void> {
+  await apiClient.delete(`/advances/plans/${id}`, { data: otp });
 }
 
 export async function recordRepayment(payload: {
@@ -114,7 +140,7 @@ export async function recordRepayment(payload: {
   amount: number;
   entryDate: string;
   note?: string | null;
-}): Promise<{ plan: AdvancePlanWithSchedule; installment: Installment }> {
+} & AdvanceOtpFields): Promise<{ plan: AdvancePlanWithSchedule; installment: Installment }> {
   const res = await apiClient.post<{ plan: AdvancePlanWithSchedule; installment: Installment }>(
     "/advances/plans/repayments",
     payload

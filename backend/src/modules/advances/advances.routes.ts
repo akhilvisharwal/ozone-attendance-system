@@ -11,6 +11,11 @@ router.use(requireAuth);
 // Master Admin passes requirePermission implicitly; Junior Admins need manageAdvances.
 const manageAdvances = [requireAdminPanel(), requirePermission("manageAdvances")] as const;
 
+// OTP gate for create/edit/delete on the ledger, plans, and installments below —
+// gated the same as every other advances route (not the generic, master-admin-
+// only /otp/request) so Junior Admins with manageAdvances can request codes too.
+router.post("/otp/request", ...manageAdvances, controller.requestOtp);
+
 // Repayment plans — the primary interface (dedicated Advances page).
 router.get("/plans/summaries", ...manageAdvances, plansController.listSummaries);
 router.get("/plans", ...manageAdvances, plansController.listPlansForEmployee);

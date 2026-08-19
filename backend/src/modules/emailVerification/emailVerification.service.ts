@@ -64,6 +64,8 @@ export async function requestOtpChallenge(input: {
   purpose: OtpPurpose;
   actorId: string;
   payload?: Record<string, unknown>;
+  /** Extra detail line for the email — e.g. "Employee: Danish (OZN010)". */
+  contextLine?: string;
 }): Promise<{ challengeId: string; expiresAt: string; maskedEmail: string }> {
   if (!isEmailConfigured() && env.isProduction) {
     throw ApiError.internal("Email verification is not configured. Set RESEND_API_KEY.");
@@ -99,6 +101,7 @@ export async function requestOtpChallenge(input: {
     code,
     purposeLabel: OTP_PURPOSE_LABELS[input.purpose],
     expiresMinutes: 5,
+    contextLine: input.contextLine,
   });
 
   if (!sendResult.ok) {
