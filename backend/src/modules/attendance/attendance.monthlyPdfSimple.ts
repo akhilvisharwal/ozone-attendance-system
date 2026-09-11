@@ -61,13 +61,12 @@ const WEEKDAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  *
  * This is a sibling to buildMonthlyCalendarPdf, not a replacement — it reuses the
  * same MonthlyGrid data (no separate DB queries) but renders a simplified layout:
- * bigger day cells and fonts, a two-row date+weekday header, and just four
- * summary figures (Present/Absent/Half Day/Att%) plus a single Advance Owed
- * figure, instead of the Detailed PDF's full per-status and per-advance-type
- * column set. Role (Employee Details) and Hrs (Monthly Summary) are dropped
- * here specifically — Simple-only trims, the Detailed PDF keeps both — and
- * the width they free is redistributed into the daily grid, not left as
- * blank margin (see computeLayout below).
+ * bigger day cells and fonts, a two-row date+weekday header, and a compact
+ * monthly summary (Present/Absent/Half Day/Worked on Off Days/Att%/Advance
+ * Owed plus a blank Signature column). Role (Employee Details) and Hrs
+ * (Monthly Summary) are dropped here specifically — Simple-only trims, the
+ * Detailed PDF keeps both — and the width they free is redistributed into
+ * the daily grid, not left as blank margin (see computeLayout below).
  */
 export async function buildMonthlyCalendarPdfSimple(
   grid: MonthlyGrid,
@@ -106,15 +105,16 @@ export async function buildMonthlyCalendarPdfSimple(
     const colId = 44;
     const infoW = colSn + colName + colId;
 
-    // Five summary columns (vs the Detailed PDF's fifteen) — no Hrs here
-    // (Simple-only trim — Detailed keeps it) — the freed-up width, along
-    // with Role's, goes to bigger day cells below.
+    // Compact summary: Present excludes HW/WW. Off-day work is a separate
+    // review column; Signature is a blank handwriting box at the far right.
     const sumCols = [
-      { key: "Present", w: 38 },
-      { key: "Absent", w: 38 },
-      { key: "Half Day", w: 40 },
-      { key: "Att%", w: 32 },
-      { key: "Adv Owed", w: 50 },
+      { key: "Present", w: 32 },
+      { key: "Absent", w: 30 },
+      { key: "Half Day", w: 32 },
+      { key: "Worked on\nOff Days", w: 42, wrap: true },
+      { key: "Att%", w: 28 },
+      { key: "Adv Owed", w: 40 },
+      { key: "Signature", w: 54, blank: true },
     ] as const;
     const summaryW = sumCols.reduce((s, c) => s + c.w, 0);
 
@@ -290,8 +290,13 @@ export async function buildMonthlyCalendarPdfSimple(
       for (const sc of sumCols) {
         doc.rect(x, subTop, sc.w, subHeaderH).fill("#f1f5f9");
         doc.rect(x, subTop, sc.w, subHeaderH).stroke("#cbd5e1");
-        doc.fillColor("#334155").font("Helvetica-Bold").fontSize(6.5)
-          .text(sc.key, x + 1, subTop + subHeaderH / 2 - 4, { width: sc.w - 2, align: "center", ellipsis: true });
+        const wrap = "wrap" in sc && sc.wrap;
+        doc.fillColor("#334155").font("Helvetica-Bold").fontSize(wrap ? 6 : 6.5)
+          .text(sc.key, x + 1, wrap ? subTop + 8 : subTop + subHeaderH / 2 - 4, {
+            width: sc.w - 2,
+            align: "center",
+            lineGap: 0,
+          });
         x += sc.w;
       }
 
@@ -351,20 +356,28 @@ export async function buildMonthlyCalendarPdfSimple(
         formatPresentEquivalent(s.presentEquivalent ?? computePresentEquivalent(s)),
         String(s.absent),
         String(s.halfDay),
+        String(s.holidayWorked + s.weeklyOffWorked),
         `${s.attendancePercentage}%`,
         // Advance owed = the employee's current balance (cumulative through this
         // month's end) — the same canonical figure the Advances panel and the
         // Detailed PDF's "Bal" column both read, collapsed here to one number
         // instead of the four separate taken/returned/balance/due columns.
         formatAdvanceAmount(emp.advances?.balance),
+        "",
       ];
 
       for (let i = 0; i < sumCols.length; i++) {
         const sc = sumCols[i];
         doc.rect(x, top, sc.w, rowH).fill(rowBg);
         doc.rect(x, top, sc.w, rowH).stroke("#e2e8f0");
-        doc.fillColor("#1e293b").font("Helvetica-Bold").fontSize(7)
-          .text(summaryValues[i], x + 1, top + rowH / 2 - 4, { width: sc.w - 2, align: "center", ellipsis: true });
+        if (!("blank" in sc && sc.blank)) {
+          doc.fillColor("#1e293b").font("Helvetica-Bold").fontSize(7)
+            .text(summaryValues[i], x + 1, top + rowH / 2 - 4, {
+              width: sc.w - 2,
+              align: "center",
+              ellipsis: true,
+            });
+        }
         x += sc.w;
       }
 

@@ -4,6 +4,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/errors";
 import { logAudit } from "../audit/audit.repository";
 import * as repo from "./advances.repository";
+import * as plansRepo from "./advancePlans.repository";
 import {
   advanceCreateSchema,
   advanceListQuerySchema,
@@ -55,6 +56,19 @@ export const getAllBalances = asyncHandler(async (_req: Request, res: Response) 
       balance,
     })),
   });
+});
+
+/** Original / recovered / remaining plus chronological history for one employee. */
+export const getEmployeeStatement = asyncHandler(async (req: Request, res: Response) => {
+  const employeeId = z.string().uuid().parse(req.params.employeeId);
+  if (!(await repo.employeeExistsForAdvance(employeeId))) {
+    throw ApiError.notFound("Employee not found");
+  }
+  const [statement, plans] = await Promise.all([
+    repo.getEmployeeAdvanceStatement(employeeId),
+    plansRepo.listPlansForEmployee(employeeId),
+  ]);
+  res.json({ ...statement, plans });
 });
 
 export const createAdvance = asyncHandler(async (req: Request, res: Response) => {
@@ -136,6 +150,9 @@ export const deleteAdvance = asyncHandler(async (req: Request, res: Response) =>
     throw ApiError.badRequest(
       "This entry belongs to a repayment plan — cancel or delete the plan instead."
     );
+  }
+  if (existing.entryType === "returned" || existing.recoveryKind) {
+    throw ApiError.badRequest("Recovery history cannot be deleted.");
   }
 
   await requireAdvanceOtp(req, "delete", existing.employeeId, otpChallengeId, otpCode);

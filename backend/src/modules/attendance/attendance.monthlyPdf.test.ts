@@ -38,6 +38,15 @@ describe("monthly attendance PDF print colors", () => {
     assert.doesNotMatch(source, /bg:\s*"#0d9488"/);
     assert.doesNotMatch(source, /bg:\s*"#4f46e5"/);
   });
+
+  it("adds Worked on Off Days and a blank Signature column in Monthly Summary", () => {
+    assert.match(source, /Worked on\\nOff Days/);
+    assert.match(source, /key: "Signature"/);
+    assert.match(source, /holidayWorked \+ s\.weeklyOffWorked/);
+    assert.match(source, /blank: true/);
+    assert.doesNotMatch(source, /\{ key: "HW", w: /);
+    assert.doesNotMatch(source, /\{ key: "WW", w: /);
+  });
 });
 
 describe("monthly attendance simple PDF summary", () => {
@@ -46,8 +55,11 @@ describe("monthly attendance simple PDF summary", () => {
     "utf8"
   );
 
-  it("prints Present/Worked from presentEquivalent so HW and WW are included", () => {
+  it("prints Present as P + half-day equivalent, with HW/WW in a separate Off Days column", () => {
     assert.match(simpleSource, /formatPresentEquivalent\(s\.presentEquivalent/);
+    assert.match(simpleSource, /holidayWorked \+ s\.weeklyOffWorked/);
+    assert.match(simpleSource, /Worked on\\nOff Days/);
+    assert.match(simpleSource, /key: "Signature"/);
     assert.match(simpleSource, /holiday_worked:\s*\{\s*code:\s*"HW"/);
     assert.match(simpleSource, /weekly_off_worked:\s*\{\s*code:\s*"WW"/);
     assert.match(simpleSource, /label:\s*"Worked on Holiday"/);

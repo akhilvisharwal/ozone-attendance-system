@@ -92,28 +92,27 @@ export async function buildMonthlyCalendarPdf(
     const dateStr = formatDisplayDateTime(generatedAt);
 
     const colSn = 16;
-    const colName = 68;
-    const colId = 42;
-    const colDept = 46;
+    const colName = 62;
+    const colId = 36;
+    const colDept = 36;
     const infoW = colSn + colName + colId + colDept;
 
     const sumCols = [
-      { key: "P", w: 16 },
-      { key: "H", w: 16 },
-      { key: "A", w: 16 },
-      { key: "L", w: 16 },
-      { key: "WO", w: 18 },
-      { key: "HO", w: 16 },
-      { key: "HW", w: 16 },
-      { key: "WW", w: 16 },
-      { key: "WD", w: 18 },
-      { key: "Hrs", w: 34 },
-      { key: "Att%", w: 28 },
-      // Per-month advance figures (money owed to the company).
-      { key: "Adv+", w: 30 },
-      { key: "Adv-", w: 30 },
-      { key: "Bal", w: 32 },
-      { key: "Due", w: 26 },
+      { key: "P", w: 14 },
+      { key: "H", w: 14 },
+      { key: "A", w: 14 },
+      { key: "L", w: 14 },
+      { key: "WO", w: 16 },
+      { key: "HO", w: 14 },
+      { key: "Worked on\nOff Days", w: 32, wrap: true },
+      { key: "WD", w: 16 },
+      { key: "Hrs", w: 26 },
+      { key: "Att%", w: 26 },
+      { key: "Adv+", w: 22 },
+      { key: "Adv-", w: 22 },
+      { key: "Bal", w: 24 },
+      { key: "Due", w: 20 },
+      { key: "Signature", w: 54, blank: true },
     ] as const;
     const summaryW = sumCols.reduce((s, c) => s + c.w, 0);
 
@@ -276,8 +275,13 @@ export async function buildMonthlyCalendarPdf(
       for (const sc of sumCols) {
         doc.rect(x, subTop, sc.w, headerRowH).fill("#f1f5f9");
         doc.rect(x, subTop, sc.w, headerRowH).stroke("#cbd5e1");
-        doc.fillColor("#334155").font("Helvetica-Bold").fontSize(5.5)
-          .text(sc.key, x + 1, subTop + 7, { width: sc.w - 2, align: "center" });
+        const wrap = "wrap" in sc && sc.wrap;
+        doc.fillColor("#334155").font("Helvetica-Bold").fontSize(wrap ? 4.5 : 5.5)
+          .text(sc.key, x + 1, wrap ? subTop + 3 : subTop + 7, {
+            width: sc.w - 2,
+            align: "center",
+            lineGap: 0,
+          });
         x += sc.w;
       }
 
@@ -341,8 +345,7 @@ export async function buildMonthlyCalendarPdf(
         String(s.leave),
         String(s.weeklyOff),
         String(s.holidays),
-        String(s.holidayWorked),
-        String(s.weeklyOffWorked),
+        String(s.holidayWorked + s.weeklyOffWorked),
         String(s.workingDays),
         hoursLabel,
         `${s.attendancePercentage}%`,
@@ -350,14 +353,17 @@ export async function buildMonthlyCalendarPdf(
         formatAdvanceAmount(emp.advances?.returned),
         formatAdvanceAmount(emp.advances?.balance),
         formatAdvanceAmount(emp.advances?.scheduled),
+        "",
       ];
 
       for (let i = 0; i < sumCols.length; i++) {
         const sc = sumCols[i];
         doc.rect(x, top, sc.w, rowH).fill(index % 2 === 0 ? "#ffffff" : "#f8fafc");
         doc.rect(x, top, sc.w, rowH).stroke("#e2e8f0");
-        doc.fillColor("#1e293b").font("Helvetica-Bold").fontSize(5)
-          .text(summaryValues[i], x + 1, top + 4, { width: sc.w - 2, align: "center", ellipsis: true });
+        if (!("blank" in sc && sc.blank)) {
+          doc.fillColor("#1e293b").font("Helvetica-Bold").fontSize(5)
+            .text(summaryValues[i], x + 1, top + 4, { width: sc.w - 2, align: "center", ellipsis: true });
+        }
         x += sc.w;
       }
 

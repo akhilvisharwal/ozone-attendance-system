@@ -99,7 +99,7 @@ export async function getScoreboard(filters: { from: string; to: string }): Prom
       profile_photo_path: photoByEmployee.get(row.employeeId) ?? null,
       total_days_present: daysPresent,
       half_days: summary.halfDay,
-      absent_days: summary.absent,
+      absent_days: Math.max(0, summary.absent - summary.leave),
       late_arrivals: summary.lateCheckIns,
       leave_days: summary.leave,
       total_tasks: tasks.totalTasks,
@@ -107,7 +107,7 @@ export async function getScoreboard(filters: { from: string; to: string }): Prom
       score: calculateScore({
         daysPresent,
         halfDays: summary.halfDay,
-        absentDays: summary.absent,
+        absentDays: Math.max(0, summary.absent - summary.leave),
         lateArrivals: summary.lateCheckIns,
         leaveDays: summary.leave,
         completedTasks: tasks.completedTasks,

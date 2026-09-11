@@ -1,6 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { addMonthsAsFirstOfMonth, splitEqualInstallments } from "./advancePlans.repository";
+import {
+  addMonthsAsFirstOfMonth,
+  allocateRecoveryToInstallments,
+  RecoveryExceedsBalanceError,
+  splitEqualInstallments,
+  type Installment,
+} from "./advancePlans.repository";
 
 describe("splitEqualInstallments", () => {
   it("splits evenly when the principal divides cleanly", () => {
@@ -51,5 +57,47 @@ describe("addMonthsAsFirstOfMonth", () => {
 
   it("always lands on the 1st regardless of the input day of month", () => {
     assert.equal(addMonthsAsFirstOfMonth("2026-01-31", 1), "2026-02-01");
+  });
+});
+
+function installment(id: string, scheduled: number, paid: number): Installment {
+  return {
+    id,
+    planId: "plan",
+    installmentNo: 1,
+    dueDate: "2030-01-01",
+    scheduledAmount: scheduled,
+    paidAmount: paid,
+    paidAt: paid > 0 ? "2030-01-02T00:00:00.000Z" : null,
+    createdAt: "2030-01-01T00:00:00.000Z",
+    updatedAt: "2030-01-01T00:00:00.000Z",
+  };
+}
+
+describe("allocateRecoveryToInstallments", () => {
+  it("applies a partial recovery to the first unpaid installment", () => {
+    const allocations = allocateRecoveryToInstallments(
+      [installment("a", 500, 0), installment("b", 500, 0)],
+      200
+    );
+    assert.deepEqual(allocations, [{ installmentId: "a", apply: 200 }]);
+  });
+
+  it("spreads a full settlement across remaining installments", () => {
+    const allocations = allocateRecoveryToInstallments(
+      [installment("a", 500, 200), installment("b", 500, 0)],
+      800
+    );
+    assert.deepEqual(allocations, [
+      { installmentId: "a", apply: 300 },
+      { installmentId: "b", apply: 500 },
+    ]);
+  });
+
+  it("rejects a recovery larger than the remaining balance", () => {
+    assert.throws(
+      () => allocateRecoveryToInstallments([installment("a", 500, 100)], 500),
+      RecoveryExceedsBalanceError
+    );
   });
 });

@@ -147,3 +147,62 @@ export async function recordRepayment(payload: {
   );
   return res.data;
 }
+
+export type AdvanceRecoveryKind = "repayment" | "salary_deduction" | "adjustment";
+export type AdvancePaymentMethod = "cash" | "upi" | "bank_transfer" | "card" | "salary" | "other";
+
+export interface AdvanceStatementTransaction {
+  id: string;
+  employeeId: string;
+  entryDate: string;
+  amount: number;
+  entryType: "taken" | "returned";
+  note: string | null;
+  createdByName: string | null;
+  planId: string | null;
+  recoveryKind: AdvanceRecoveryKind | null;
+  paymentMethod: AdvancePaymentMethod | null;
+  runningBalance: number;
+  createdAt: string;
+}
+
+export interface EmployeeAdvanceStatement {
+  originalAdvance: number;
+  totalRecovered: number;
+  remainingBalance: number;
+  transactions: AdvanceStatementTransaction[];
+  plans: AdvancePlanWithSchedule[];
+}
+
+export async function getEmployeeStatement(employeeId: string): Promise<EmployeeAdvanceStatement> {
+  const res = await apiClient.get<EmployeeAdvanceStatement>(
+    `/advances/employees/${employeeId}/statement`
+  );
+  return res.data;
+}
+
+export async function recordPlanRecovery(
+  planId: string,
+  payload: {
+    amount: number;
+    entryDate: string;
+    kind: AdvanceRecoveryKind;
+    paymentMethod: AdvancePaymentMethod;
+    note?: string | null;
+  } & AdvanceOtpFields
+): Promise<{
+  plan: AdvancePlanWithSchedule;
+  recovered: number;
+  originalAdvance: number;
+  totalRecovered: number;
+  remainingBalance: number;
+}> {
+  const res = await apiClient.post<{
+    plan: AdvancePlanWithSchedule;
+    recovered: number;
+    originalAdvance: number;
+    totalRecovered: number;
+    remainingBalance: number;
+  }>(`/advances/plans/${planId}/recover`, payload);
+  return res.data;
+}

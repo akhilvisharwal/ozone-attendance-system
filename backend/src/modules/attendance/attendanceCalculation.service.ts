@@ -102,6 +102,8 @@ export function cellStatusFromRecord(
 /**
  * Resolves a day cell status from attendance data and calendar rules.
  * Today without check-in stays pending (none) until closing cutoff or admin action.
+ * Approved leave on a working day is `leave` (shown as L, counted as absent).
+ * Unworked holidays and weekly offs never become absent, even if leave is approved.
  */
 export function resolveDayStatus(input: {
   record: AttendanceRecordLike | null;
@@ -119,18 +121,25 @@ export function resolveDayStatus(input: {
     if (isToday && !isPastClosingCutoff && isIncompleteAttendanceDay(record)) {
       return "none";
     }
-    return cellStatusFromRecord(record, isWeeklyOff, isHoliday);
+    const fromRecord = cellStatusFromRecord(record, isWeeklyOff, isHoliday);
+    if (WORKED_MINUTE_STATUSES.has(fromRecord)) return fromRecord;
+    if (isHoliday) return "holiday";
+    if (isWeeklyOff) return "weekly_off";
+    if (hasLeave || fromRecord === "leave") return "leave";
+    return fromRecord;
   }
-  if (hasLeave) return "leave";
   if (isHoliday) return "holiday";
   if (isWeeklyOff) return "weekly_off";
+  if (hasLeave) return "leave";
   if (isFuture || isToday) return "none";
   return "absent";
 }
 
 /**
  * Statuses that are not eligible scheduled working days for Att% / WD.
- * HW and WW count as extra worked days in the numerator only.
+ * HW and WW are excluded from Present and Attendance %; they are counted
+ * separately as worked-on-off-days for review. Approved leave stays `L` on
+ * the grid but is an eligible working day (counted as absent).
  */
 export const NON_SCHEDULED_WORKING_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set([
   "not_applicable",
@@ -138,13 +147,12 @@ export const NON_SCHEDULED_WORKING_STATUSES: ReadonlySet<MonthlyCellStatus> = ne
   "holiday",
   "holiday_worked",
   "weekly_off_worked",
-  "leave",
   "none",
 ]);
 
 /**
- * Eligible scheduled working days: present + half-day + absent.
- * Excludes holidays, weekly offs (worked or not), pre-join dates, approved leave, and pending.
+ * Eligible scheduled working days: present + half-day + absent + approved leave.
+ * Excludes holidays, weekly offs (worked or not), pre-join dates, and pending.
  */
 export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): number {
   let count = 0;
@@ -156,11 +164,18 @@ export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): nu
   return count;
 }
 
-/** Present/Worked = P + HW + WW + (H × 0.5). */
+/** Present = P + (H × 0.5). HW and WW are not included. */
 export function computePresentEquivalent(
-  summary: Pick<MonthlySummary, "present" | "halfDay" | "holidayWorked" | "weeklyOffWorked">
+  summary: Pick<MonthlySummary, "present" | "halfDay">
 ): number {
-  return summary.present + summary.holidayWorked + summary.weeklyOffWorked + summary.halfDay * 0.5;
+  return summary.present + summary.halfDay * 0.5;
+}
+
+/** HW + WW, each counted as 1. Unworked holidays/weekly offs are not included. */
+export function computeWorkedOnOffDays(
+  summary: Pick<MonthlySummary, "holidayWorked" | "weeklyOffWorked">
+): number {
+  return summary.holidayWorked + summary.weeklyOffWorked;
 }
 
 export function formatPresentEquivalent(value: number): string {
@@ -202,6 +217,7 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
         break;
       case "leave":
         leave += 1;
+        absent += 1;
         break;
       case "weekly_off":
         weeklyOff += 1;
@@ -228,12 +244,7 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
   }
 
   const workingDays = computeWorkingDays(days, todayStr);
-  const presentEquivalent = computePresentEquivalent({
-    present,
-    halfDay,
-    holidayWorked,
-    weeklyOffWorked,
-  });
+  const presentEquivalent = computePresentEquivalent({ present, halfDay });
   const partial: MonthlySummary = {
     present,
     halfDay,
@@ -314,6 +325,8 @@ export function dashboardBucketFromStatus(
       return "half_day";
     case "none":
     case "not_applicable":
+    case "weekly_off":
+    case "holiday":
       return "pending";
     default:
       return "absent";

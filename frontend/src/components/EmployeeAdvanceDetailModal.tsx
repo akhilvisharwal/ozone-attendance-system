@@ -9,8 +9,18 @@ import { Input, Select, Textarea, FieldWrapper } from "@/components/ui/Input";
 import { InstallmentScheduleEditor } from "@/components/InstallmentScheduleEditor";
 import { EmailOtpModal } from "@/components/EmailOtpModal";
 import { useAdvanceOtp } from "@/hooks/useAdvanceOtp";
+import { usePermissions } from "@/auth/usePermissions";
 import * as advancePlansApi from "@/api/advancePlans";
-import type { AdvancePlanWithSchedule, Installment, PlanStatus, PlanType } from "@/api/advancePlans";
+import type {
+  AdvancePaymentMethod,
+  AdvancePlanWithSchedule,
+  AdvanceRecoveryKind,
+  AdvanceStatementTransaction,
+  EmployeeAdvanceStatement,
+  Installment,
+  PlanStatus,
+  PlanType,
+} from "@/api/advancePlans";
 import { extractErrorMessage } from "@/api/client";
 
 function todayStr(): string {
@@ -29,11 +39,180 @@ function formatMonth(dateStr: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 }
 
+const KIND_LABELS: Record<AdvanceRecoveryKind, string> = {
+  repayment: "Repayment",
+  salary_deduction: "Salary deduction",
+  adjustment: "Adjustment",
+};
+
+const METHOD_LABELS: Record<AdvancePaymentMethod, string> = {
+  cash: "Cash",
+  upi: "UPI",
+  bank_transfer: "Bank transfer",
+  card: "Card",
+  salary: "Salary",
+  other: "Other",
+};
+
+function transactionLabel(row: AdvanceStatementTransaction): string {
+  if (row.entryType === "taken") return "Original advance";
+  if (row.recoveryKind) return KIND_LABELS[row.recoveryKind];
+  return "Repayment";
+}
+
 const STATUS_TONE: Record<PlanStatus, "green" | "amber" | "slate"> = {
   active: "amber",
   completed: "green",
   cancelled: "slate",
 };
+
+function RecoveryForm({
+  plans,
+  employeeId,
+  remainingBalance,
+  otp,
+  onSaved,
+}: {
+  plans: AdvancePlanWithSchedule[];
+  employeeId: string;
+  remainingBalance: number;
+  otp: ReturnType<typeof useAdvanceOtp>;
+  onSaved: (result: { totalRecovered: number; remainingBalance: number }) => void;
+}) {
+  const recoverable = plans.filter((plan) => plan.status === "active" && plan.remainingBalance > 0);
+  const [planId, setPlanId] = useState(recoverable[0]?.id ?? "");
+  const selected = recoverable.find((plan) => plan.id === planId) ?? recoverable[0];
+  const maxAmount = selected?.remainingBalance ?? remainingBalance;
+  const [kind, setKind] = useState<AdvanceRecoveryKind>("repayment");
+  const [paymentMethod, setPaymentMethod] = useState<AdvancePaymentMethod>("upi");
+  const [amount, setAmount] = useState("");
+  const [entryDate, setEntryDate] = useState(todayStr());
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (kind === "salary_deduction") setPaymentMethod("salary");
+  }, [kind]);
+
+  useEffect(() => {
+    if (!selected) return;
+    if (planId !== selected.id) setPlanId(selected.id);
+  }, [planId, selected]);
+
+  function submit() {
+    setError(null);
+    if (!selected) {
+      setError("No active advance remaining to recover.");
+      return;
+    }
+    const parsed = Number(amount);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setError("Enter an amount greater than zero.");
+      return;
+    }
+    if (parsed > selected.remainingBalance + 0.001) {
+      setError(`Recovered amount cannot exceed the remaining balance (${formatAmount(selected.remainingBalance)}).`);
+      return;
+    }
+    otp.runWithOtp("create", employeeId, async (otpFields) => {
+      setSaving(true);
+      try {
+        const result = await advancePlansApi.recordPlanRecovery(selected.id, {
+          amount: parsed,
+          entryDate,
+          kind,
+          paymentMethod,
+          note: note.trim() || null,
+          ...otpFields,
+        });
+        setAmount("");
+        setNote("");
+        onSaved({
+          totalRecovered: result.totalRecovered,
+          remainingBalance: result.remainingBalance,
+        });
+      } catch (err) {
+        setError(extractErrorMessage(err, "Could not save recovery."));
+        throw err;
+      } finally {
+        setSaving(false);
+      }
+    });
+  }
+
+  if (recoverable.length === 0) return null;
+
+  return (
+    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <p className="text-sm font-semibold text-slate-800">Record recovery</p>
+      {error && <Alert variant="error">{error}</Alert>}
+      {recoverable.length > 1 && (
+        <FieldWrapper label="Advance" required>
+          <Select value={selected.id} onChange={(e) => setPlanId(e.target.value)}>
+            {recoverable.map((plan) => (
+              <option key={plan.id} value={plan.id}>
+                {formatAmount(plan.principalAmount)} · remaining {formatAmount(plan.remainingBalance)}
+              </option>
+            ))}
+          </Select>
+        </FieldWrapper>
+      )}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FieldWrapper label="Type" required>
+          <Select value={kind} onChange={(e) => setKind(e.target.value as AdvanceRecoveryKind)}>
+            <option value="repayment">Repayment</option>
+            <option value="salary_deduction">Salary deduction</option>
+            <option value="adjustment">Reduce remaining balance</option>
+          </Select>
+        </FieldWrapper>
+        <FieldWrapper label="Payment method" required>
+          <Select
+            value={paymentMethod}
+            disabled={kind === "salary_deduction"}
+            onChange={(e) => setPaymentMethod(e.target.value as AdvancePaymentMethod)}
+          >
+            {Object.entries(METHOD_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </FieldWrapper>
+        <Input
+          label="Amount"
+          type="number"
+          min="0"
+          step="0.01"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          hint={`Remaining ${formatAmount(maxAmount)}`}
+        />
+        <Input label="Date" type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
+      </div>
+      <Textarea
+        label="Notes"
+        rows={2}
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Optional reference for this recovery"
+      />
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setAmount(maxAmount.toFixed(2))}
+        >
+          Settle remaining
+        </Button>
+        <Button type="button" size="sm" onClick={() => void submit()} isLoading={saving} icon={<Check className="h-3.5 w-3.5" />}>
+          Save recovery
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /** Inline "Record Payment" row, shown under an unpaid/partial installment. */
 function RepaymentForm({
@@ -250,9 +429,11 @@ function EditPlanForm({
 
 function PlanCard({
   plan,
+  canRecordRecovery,
   onChanged,
 }: {
   plan: AdvancePlanWithSchedule;
+  canRecordRecovery: boolean;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -391,7 +572,10 @@ function PlanCard({
                         </Badge>
                       </td>
                       <td className="py-2 text-right">
-                        {!paidInFull && plan.status === "active" && payingInstallmentId !== inst.id && (
+                        {canRecordRecovery &&
+                          !paidInFull &&
+                          plan.status === "active" &&
+                          payingInstallmentId !== inst.id && (
                           <button
                             type="button"
                             onClick={() => setPayingInstallmentId(inst.id)}
@@ -451,26 +635,32 @@ export function EmployeeAdvanceDetailModal({
   /** Fired after any change so the caller can refresh the overview table. */
   onChanged: () => void;
 }) {
-  const [plans, setPlans] = useState<AdvancePlanWithSchedule[]>([]);
+  const { isMasterAdmin } = usePermissions();
+  const otp = useAdvanceOtp();
+  const [statement, setStatement] = useState<EmployeeAdvanceStatement | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!employeeId) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await advancePlansApi.listPlansForEmployee(employeeId);
-      setPlans(data);
+      const data = await advancePlansApi.getEmployeeStatement(employeeId);
+      setStatement(data);
     } catch (err) {
-      setError(extractErrorMessage(err, "Could not load advance plans."));
+      setError(extractErrorMessage(err, "Could not load advance history."));
     } finally {
       setLoading(false);
     }
   }, [employeeId]);
 
   useEffect(() => {
-    if (open) void load();
+    if (open) {
+      setMessage(null);
+      void load();
+    }
   }, [open, load]);
 
   function refresh() {
@@ -478,13 +668,18 @@ export function EmployeeAdvanceDetailModal({
     onChanged();
   }
 
+  const originalAdvance = statement?.originalAdvance ?? 0;
+  const totalRecovered = statement?.totalRecovered ?? 0;
+  const remainingBalance = statement?.remainingBalance ?? 0;
+  const plans = statement?.plans ?? [];
+
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={employeeName ? `Advances — ${employeeName}` : "Advances"}
-      description="All repayment plans for this employee, oldest active first."
-      widthClassName="max-w-3xl"
+      description="Original advance, recoveries, remaining balance, and full transaction history."
+      widthClassName="max-w-4xl"
       footer={
         <ModalFooterActions>
           <Button type="button" variant="secondary" onClick={onClose} icon={<X className="h-4 w-4" />}>
@@ -495,20 +690,115 @@ export function EmployeeAdvanceDetailModal({
     >
       <div className="space-y-4">
         {error && <Alert variant="error">{error}</Alert>}
-        {loading ? (
+        {message && <Alert variant="success">{message}</Alert>}
+        {loading && !statement ? (
           <div className="flex justify-center py-8">
-            <Spinner label="Loading plans…" />
+            <Spinner label="Loading history…" />
           </div>
-        ) : plans.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-500">No advance plans for this employee yet.</p>
         ) : (
-          <div className="space-y-3">
-            {plans.map((plan) => (
-              <PlanCard key={plan.id} plan={plan} onChanged={refresh} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {(
+                [
+                  { label: "Original Advance", value: originalAdvance, tone: "text-slate-900" },
+                  { label: "Total Recovered", value: totalRecovered, tone: "text-emerald-700" },
+                  { label: "Remaining Balance", value: remainingBalance, tone: "text-amber-700" },
+                ] as const
+              ).map((item) => (
+                <div key={item.label} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                    {item.label}
+                  </p>
+                  <p className={`mt-1 text-lg font-semibold tabular-nums ${item.tone}`}>
+                    {formatAmount(item.value)}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {isMasterAdmin && employeeId && (
+              <RecoveryForm
+                plans={plans}
+                employeeId={employeeId}
+                remainingBalance={remainingBalance}
+                otp={otp}
+                onSaved={(result) => {
+                  setMessage(
+                    `Saved. Total recovered ${formatAmount(result.totalRecovered)} · remaining ${formatAmount(result.remainingBalance)}.`
+                  );
+                  refresh();
+                }}
+              />
+            )}
+
+            <div>
+              <p className="mb-2 text-sm font-semibold text-slate-800">Transaction History</p>
+              {!statement || statement.transactions.length === 0 ? (
+                <p className="py-4 text-center text-sm text-slate-500">No advance transactions yet.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-400">
+                      <tr>
+                        <th className="px-3 py-2">Date</th>
+                        <th className="px-3 py-2">Type</th>
+                        <th className="px-3 py-2">Method</th>
+                        <th className="px-3 py-2 text-right">Amount</th>
+                        <th className="px-3 py-2 text-right">Balance</th>
+                        <th className="px-3 py-2">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {statement.transactions.map((row) => (
+                        <tr key={row.id}>
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-700">{row.entryDate}</td>
+                          <td className="px-3 py-2 text-slate-800">{transactionLabel(row)}</td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {row.paymentMethod ? METHOD_LABELS[row.paymentMethod] : "—"}
+                          </td>
+                          <td
+                            className={`px-3 py-2 text-right tabular-nums ${
+                              row.entryType === "taken" ? "text-amber-700" : "text-emerald-700"
+                            }`}
+                          >
+                            {row.entryType === "taken" ? "+" : "−"}
+                            {formatAmount(row.amount)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-800">
+                            {formatAmount(row.runningBalance)}
+                          </td>
+                          <td className="px-3 py-2 text-slate-500">{row.note || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {plans.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-slate-800">Repayment plans</p>
+                {plans.map((plan) => (
+                  <PlanCard
+                    key={plan.id}
+                    plan={plan}
+                    canRecordRecovery={isMasterAdmin}
+                    onChanged={refresh}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
+      <EmailOtpModal
+        open={otp.purpose !== null}
+        purpose={otp.purpose}
+        requestFn={otp.requestFn}
+        onClose={otp.close}
+        onVerified={otp.onVerified}
+      />
     </Modal>
   );
 }

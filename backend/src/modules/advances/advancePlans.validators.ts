@@ -69,6 +69,24 @@ export const recordRepaymentSchema = z.object({
   note: z.string().trim().max(1000).optional().nullable(),
 });
 
+export const recoveryKind = z.enum(["repayment", "salary_deduction", "adjustment"]);
+export const recoveryPaymentMethod = z.enum([
+  "cash",
+  "upi",
+  "bank_transfer",
+  "card",
+  "salary",
+  "other",
+]);
+
+export const recordPlanRecoverySchema = z.object({
+  amount,
+  entryDate: dateString,
+  kind: recoveryKind,
+  paymentMethod: recoveryPaymentMethod,
+  note: z.string().trim().max(1000).optional().nullable(),
+});
+
 export const planListQuerySchema = z.object({
   employeeId: z.string().uuid().optional(),
 });

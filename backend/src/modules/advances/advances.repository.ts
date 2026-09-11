@@ -5,6 +5,8 @@ import { pool } from "../../config/db";
 type Queryable = Pick<typeof pool, "query"> | PoolClient;
 
 export type AdvanceEntryType = "taken" | "returned";
+export type AdvanceRecoveryKind = "repayment" | "salary_deduction" | "adjustment";
+export type AdvancePaymentMethod = "cash" | "upi" | "bank_transfer" | "card" | "salary" | "other";
 
 /** Raw row shape. NUMERIC/DATE are cast to text in SQL and parsed at the edge. */
 export interface AdvanceRow {
@@ -17,6 +19,8 @@ export interface AdvanceRow {
   created_by: string | null;
   plan_id: string | null;
   installment_id: string | null;
+  recovery_kind: AdvanceRecoveryKind | null;
+  payment_method: AdvancePaymentMethod | null;
   created_at: string;
   updated_at: string;
   employee_code?: string;
@@ -36,6 +40,8 @@ export interface AdvanceEntry {
   /** Set when this entry is a plan's principal ("taken") or an installment repayment ("returned"). */
   planId: string | null;
   installmentId: string | null;
+  recoveryKind: AdvanceRecoveryKind | null;
+  paymentMethod: AdvancePaymentMethod | null;
   employeeCode?: string;
   employeeName?: string;
   createdAt: string;
@@ -66,13 +72,16 @@ const SELECT_FIELDS = `
   a.created_by,
   a.plan_id,
   a.installment_id,
-  a.created_at,
-  a.updated_at
+  a.recovery_kind,
+  a.payment_method,
+  a.created_at::text AS created_at,
+  a.updated_at::text AS updated_at
 `;
 
 const RETURNING_FIELDS = `
   id, employee_id, entry_date::text AS entry_date, amount::text AS amount,
-  entry_type, note, created_by, plan_id, installment_id, created_at, updated_at
+  entry_type, note, created_by, plan_id, installment_id, recovery_kind, payment_method,
+  created_at::text AS created_at, updated_at::text AS updated_at
 `;
 
 export function mapAdvance(row: AdvanceRow): AdvanceEntry {
@@ -87,6 +96,8 @@ export function mapAdvance(row: AdvanceRow): AdvanceEntry {
     createdByName: row.created_by_name ?? null,
     planId: row.plan_id,
     installmentId: row.installment_id,
+    recoveryKind: row.recovery_kind ?? null,
+    paymentMethod: row.payment_method ?? null,
     employeeCode: row.employee_code,
     employeeName: row.employee_name,
     createdAt: row.created_at,
@@ -104,12 +115,17 @@ export async function createAdvance(
     createdBy: string;
     planId?: string | null;
     installmentId?: string | null;
+    recoveryKind?: AdvanceRecoveryKind | null;
+    paymentMethod?: AdvancePaymentMethod | null;
   },
   db: Queryable = pool
 ): Promise<AdvanceEntry> {
   const res = await db.query<AdvanceRow>(
-    `INSERT INTO employee_advances (employee_id, entry_date, amount, entry_type, note, created_by, plan_id, installment_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO employee_advances (
+       employee_id, entry_date, amount, entry_type, note, created_by,
+       plan_id, installment_id, recovery_kind, payment_method
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING ${RETURNING_FIELDS}`,
     [
       input.employeeId,
@@ -120,6 +136,8 @@ export async function createAdvance(
       input.createdBy,
       input.planId ?? null,
       input.installmentId ?? null,
+      input.recoveryKind ?? null,
+      input.paymentMethod ?? null,
     ]
   );
   return mapAdvance(res.rows[0]);
@@ -315,4 +333,50 @@ export async function employeeExistsForAdvance(employeeId: string): Promise<bool
     [employeeId]
   );
   return res.rows.length > 0;
+}
+
+export interface AdvanceStatementTransaction extends AdvanceEntry {
+  runningBalance: number;
+}
+
+export interface EmployeeAdvanceStatement {
+  originalAdvance: number;
+  totalRecovered: number;
+  remainingBalance: number;
+  transactions: AdvanceStatementTransaction[];
+}
+
+/** Full ledger for one employee, oldest first, with a running remaining balance. */
+export async function getEmployeeAdvanceStatement(
+  employeeId: string
+): Promise<EmployeeAdvanceStatement> {
+  const entries = await listAdvances({ employeeId });
+  const chronological = [...entries].sort((a, b) => {
+    const dateCmp = String(a.entryDate).localeCompare(String(b.entryDate));
+    if (dateCmp !== 0) return dateCmp;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
+  let originalAdvance = 0;
+  let totalRecovered = 0;
+  let running = 0;
+  const transactions: AdvanceStatementTransaction[] = chronological.map((entry) => {
+    if (entry.entryType === "taken") {
+      originalAdvance += entry.amount;
+      running += entry.amount;
+    } else {
+      totalRecovered += entry.amount;
+      running -= entry.amount;
+    }
+    return { ...entry, runningBalance: Math.round(running * 100) / 100 };
+  });
+
+  originalAdvance = Math.round(originalAdvance * 100) / 100;
+  totalRecovered = Math.round(totalRecovered * 100) / 100;
+  return {
+    originalAdvance,
+    totalRecovered,
+    remainingBalance: Math.round((originalAdvance - totalRecovered) * 100) / 100,
+    transactions,
+  };
 }

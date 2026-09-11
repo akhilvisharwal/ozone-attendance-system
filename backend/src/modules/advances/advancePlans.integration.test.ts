@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import bcrypt from "bcryptjs";
 import { pool } from "../../config/db";
 import * as repo from "./advancePlans.repository";
+import * as ledger from "./advances.repository";
 
 /**
  * Regression coverage for two bugs caught only by testing against a real database
@@ -198,6 +199,182 @@ describe(
         await repo.deletePlanIfUnpaid(planA.id);
         await repo.deletePlanIfUnpaid(planB.id);
       }
+    });
+
+    it("records a partial salary deduction without deleting the original advance", async () => {
+      const plan = await repo.createPlan({
+        employeeId,
+        principalAmount: 1000,
+        startDate: "2032-01-01",
+        planType: "equal_installments",
+        installmentCount: 2,
+        createdBy,
+      });
+
+      const { plan: after, recovered } = await repo.recordPlanRecovery({
+        planId: plan.id,
+        amount: 250,
+        entryDate: "2032-01-10",
+        kind: "salary_deduction",
+        paymentMethod: "salary",
+        note: "January salary",
+        createdBy,
+      });
+
+      assert.equal(recovered, 250);
+      assert.equal(after.totalPaid, 250);
+      assert.equal(after.remainingBalance, 750);
+      assert.equal(after.status, "active");
+      assert.equal(after.installments[0].paidAmount, 250);
+
+      const statement = await ledger.getEmployeeAdvanceStatement(employeeId);
+      const planTx = statement.transactions.filter((row) => row.planId === plan.id);
+      assert.equal(planTx.filter((row) => row.entryType === "taken").length, 1);
+      assert.equal(planTx.find((row) => row.entryType === "taken")!.amount, 1000);
+      const deduction = planTx.find((row) => row.recoveryKind === "salary_deduction");
+      assert.ok(deduction);
+      assert.equal(deduction!.amount, 250);
+      assert.equal(deduction!.paymentMethod, "salary");
+      assert.equal(deduction!.note, "January salary");
+      await repo.cancelPlan(plan.id);
+    });
+
+    it("records multiple repayments and keeps every ledger row", async () => {
+      const plan = await repo.createPlan({
+        employeeId,
+        principalAmount: 900,
+        startDate: "2032-02-01",
+        planType: "equal_installments",
+        installmentCount: 3,
+        createdBy,
+      });
+
+      await repo.recordPlanRecovery({
+        planId: plan.id,
+        amount: 200,
+        entryDate: "2032-02-05",
+        kind: "repayment",
+        paymentMethod: "upi",
+        createdBy,
+      });
+      const second = await repo.recordPlanRecovery({
+        planId: plan.id,
+        amount: 150,
+        entryDate: "2032-02-20",
+        kind: "repayment",
+        paymentMethod: "cash",
+        note: "Cash at office",
+        createdBy,
+      });
+
+      assert.equal(second.plan.totalPaid, 350);
+      assert.equal(second.plan.remainingBalance, 550);
+      assert.equal(second.plan.status, "active");
+
+      const statement = await ledger.getEmployeeAdvanceStatement(employeeId);
+      const planTx = statement.transactions.filter((row) => row.planId === plan.id);
+      assert.equal(planTx.filter((row) => row.recoveryKind === "repayment").length, 2);
+      const cash = planTx.find((row) => row.note === "Cash at office");
+      assert.ok(cash);
+      assert.equal(cash!.paymentMethod, "cash");
+      assert.equal(cash!.amount, 150);
+
+      const returned = await pool.query<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM employee_advances
+          WHERE plan_id = $1 AND entry_type = 'returned'`,
+        [plan.id]
+      );
+      const taken = await pool.query<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM employee_advances
+          WHERE plan_id = $1 AND entry_type = 'taken'`,
+        [plan.id]
+      );
+      assert.equal(Number(returned.rows[0].n), 2);
+      assert.equal(Number(taken.rows[0].n), 1);
+      await repo.cancelPlan(plan.id);
+    });
+
+    it("settles the remaining balance in full and rejects an over-recovery", async () => {
+      const plan = await repo.createPlan({
+        employeeId,
+        principalAmount: 400,
+        startDate: "2032-03-01",
+        planType: "equal_installments",
+        installmentCount: 2,
+        createdBy,
+      });
+
+      await assert.rejects(
+        () =>
+          repo.recordPlanRecovery({
+            planId: plan.id,
+            amount: 401,
+            entryDate: "2032-03-02",
+            kind: "adjustment",
+            paymentMethod: "other",
+            createdBy,
+          }),
+        repo.RecoveryExceedsBalanceError
+      );
+
+      const settled = await repo.recordPlanRecovery({
+        planId: plan.id,
+        amount: 400,
+        entryDate: "2032-03-15",
+        kind: "adjustment",
+        paymentMethod: "bank_transfer",
+        note: "Settled in full",
+        createdBy,
+      });
+      assert.equal(settled.plan.remainingBalance, 0);
+      assert.equal(settled.plan.totalPaid, 400);
+      assert.equal(settled.plan.status, "completed");
+
+      const statement = await ledger.getEmployeeAdvanceStatement(employeeId);
+      const planTx = statement.transactions.filter((row) => row.planId === plan.id);
+      assert.equal(planTx.filter((row) => row.entryType === "taken").length, 1);
+      assert.equal(planTx.filter((row) => row.entryType === "returned").length, 1);
+      assert.equal(planTx.find((row) => row.entryType === "returned")!.recoveryKind, "adjustment");
+      assert.equal(planTx.find((row) => row.entryType === "returned")!.note, "Settled in full");
+
+      const history = await pool.query<{ n: string }>(
+        `SELECT COUNT(*)::text AS n FROM employee_advances WHERE plan_id = $1`,
+        [plan.id]
+      );
+      assert.equal(Number(history.rows[0].n), 2, "original taken row plus one recovery must both remain");
+    });
+
+    it("builds a statement when two recoveries share the same date", async () => {
+      const plan = await repo.createPlan({
+        employeeId,
+        principalAmount: 100,
+        startDate: "2033-01-01",
+        planType: "equal_installments",
+        installmentCount: 1,
+        createdBy,
+      });
+
+      await repo.recordPlanRecovery({
+        planId: plan.id,
+        amount: 40,
+        entryDate: "2033-01-01",
+        kind: "repayment",
+        paymentMethod: "upi",
+        createdBy,
+      });
+      await repo.recordPlanRecovery({
+        planId: plan.id,
+        amount: 60,
+        entryDate: "2033-01-01",
+        kind: "salary_deduction",
+        paymentMethod: "salary",
+        createdBy,
+      });
+
+      const statement = await ledger.getEmployeeAdvanceStatement(employeeId);
+      const planTx = statement.transactions.filter((row) => row.planId === plan.id);
+      assert.equal(planTx.length, 3);
+      assert.equal(planTx.filter((row) => row.entryType === "returned").length, 2);
     });
   }
 );

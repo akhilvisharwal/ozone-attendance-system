@@ -9,6 +9,7 @@ export {
   resolveDayStatus as resolveMonthlyDayStatus,
   computeWorkingDays,
   computePresentEquivalent,
+  computeWorkedOnOffDays,
   formatPresentEquivalent,
   computeAttendancePercentage,
   buildSummaryFromDays,

@@ -4,6 +4,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/errors";
 import { logAudit } from "../audit/audit.repository";
 import * as repo from "./advancePlans.repository";
+import * as ledger from "./advances.repository";
 import {
   CustomScheduleMismatchError,
   InstallmentNotFoundError,
@@ -11,10 +12,12 @@ import {
   PlanNotEditableError,
   PlanNotFoundError,
   PlanPrincipalTooLowError,
+  RecoveryExceedsBalanceError,
 } from "./advancePlans.repository";
 import {
   createPlanSchema,
   planListQuerySchema,
+  recordPlanRecoverySchema,
   recordRepaymentSchema,
   updatePlanSchema,
 } from "./advancePlans.validators";
@@ -29,7 +32,8 @@ function toApiError(err: unknown): ApiError | null {
     err instanceof PlanNotEditableError ||
     err instanceof PlanPrincipalTooLowError ||
     err instanceof CustomScheduleMismatchError ||
-    err instanceof PlanHasPaymentsError
+    err instanceof PlanHasPaymentsError ||
+    err instanceof RecoveryExceedsBalanceError
   ) {
     return ApiError.badRequest(err.message);
   }
@@ -198,6 +202,53 @@ export const recordRepayment = asyncHandler(async (req: Request, res: Response) 
     });
 
     res.status(201).json({ plan, installment });
+  } catch (err) {
+    const apiErr = toApiError(err);
+    if (apiErr) throw apiErr;
+    throw err;
+  }
+});
+
+export const recordPlanRecovery = asyncHandler(async (req: Request, res: Response) => {
+  const id = z.string().uuid().parse(req.params.id);
+  const { otpChallengeId, otpCode, rest } = extractOtpFields(req.body);
+  const input = recordPlanRecoverySchema.parse(rest);
+
+  const before = await repo.getPlanById(id);
+  if (!before) throw ApiError.notFound("Advance plan not found");
+
+  await requireAdvanceOtp(req, "create", before.employeeId, otpChallengeId, otpCode);
+
+  try {
+    const { plan, recovered } = await repo.recordPlanRecovery({
+      planId: id,
+      amount: input.amount,
+      entryDate: input.entryDate,
+      kind: input.kind,
+      paymentMethod: input.paymentMethod,
+      note: input.note ?? null,
+      createdBy: req.user!.id,
+    });
+
+    const statement = await ledger.getEmployeeAdvanceStatement(plan.employeeId);
+
+    await logAudit(req, "advance.plan_recovery", "employee_advance_plan", plan.id, {
+      employeeId: plan.employeeId,
+      kind: input.kind,
+      paymentMethod: input.paymentMethod,
+      amount: recovered,
+      entryDate: input.entryDate,
+      remainingBalance: statement.remainingBalance,
+      planStatus: plan.status,
+    });
+
+    res.status(201).json({
+      plan,
+      recovered,
+      originalAdvance: statement.originalAdvance,
+      totalRecovered: statement.totalRecovered,
+      remainingBalance: statement.remainingBalance,
+    });
   } catch (err) {
     const apiErr = toApiError(err);
     if (apiErr) throw apiErr;

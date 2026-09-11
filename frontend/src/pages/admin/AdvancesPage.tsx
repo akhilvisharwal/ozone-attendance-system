@@ -104,7 +104,7 @@ export function AdvancesPage() {
     <div className="min-w-0 space-y-6">
       <PageHeader
         title="Employee Advances"
-        description="Record advances taken by employees and track their repayment plans."
+        description="Record advances, recoveries, and remaining balances for employees."
         icon={<Wallet className="h-5 w-5" />}
         action={
           <Button

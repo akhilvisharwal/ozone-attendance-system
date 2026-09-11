@@ -44,13 +44,14 @@ export interface MonthlyDayCell {
 export interface MonthlySummary {
   present: number;
   halfDay: number;
+  /** Actual A cells plus approved leave. Leave still displays as `L` on the grid. */
   absent: number;
   leave: number;
   weeklyOff: number;
   holidays: number;
   holidayWorked: number;
   weeklyOffWorked: number;
-  /** P + HW + WW + (H × 0.5). Used as Present/Worked in simple PDF and Att%. */
+  /** P + (H × 0.5). HW/WW are excluded and shown as worked-on-off-days. */
   presentEquivalent: number;
   totalMinutes: number;
   workingDays: number;

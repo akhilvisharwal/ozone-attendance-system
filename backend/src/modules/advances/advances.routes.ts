@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, requireAdminPanel, requirePermission } from "../../middleware/auth";
+import { requireAuth, requireAdminPanel, requireMasterAdmin, requirePermission } from "../../middleware/auth";
 import * as controller from "./advances.controller";
 import * as plansController from "./advancePlans.controller";
 
@@ -23,13 +23,15 @@ router.get("/plans/:id", ...manageAdvances, plansController.getPlan);
 router.post("/plans", ...manageAdvances, plansController.createPlan);
 router.patch("/plans/:id", ...manageAdvances, plansController.updatePlan);
 router.post("/plans/:id/cancel", ...manageAdvances, plansController.cancelPlan);
+router.post("/plans/:id/recover", requireMasterAdmin(), plansController.recordPlanRecovery);
 router.delete("/plans/:id", ...manageAdvances, plansController.deletePlan);
-router.post("/plans/repayments", ...manageAdvances, plansController.recordRepayment);
+router.post("/plans/repayments", requireMasterAdmin(), plansController.recordRepayment);
 
 // Raw ledger — kept for one-off entries not tied to a plan (see advances.controller.ts
 // guards: entries linked to a plan can only be edited/deleted through the plan above).
 router.get("/", ...manageAdvances, controller.listAdvances);
 router.get("/balances", ...manageAdvances, controller.getAllBalances);
+router.get("/employees/:employeeId/statement", ...manageAdvances, controller.getEmployeeStatement);
 router.post("/", ...manageAdvances, controller.createAdvance);
 router.patch("/:id", ...manageAdvances, controller.updateAdvance);
 router.delete("/:id", ...manageAdvances, controller.deleteAdvance);

@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { pool, withTransaction } from "../../config/db";
 import { createAdvance, updatePlanTakenEntryAmount } from "./advances.repository";
+import type { AdvancePaymentMethod, AdvanceRecoveryKind } from "./advances.repository";
 
 type Queryable = Pick<typeof pool, "query"> | PoolClient;
 
@@ -196,13 +197,46 @@ export async function listInstallmentsForPlan(planId: string, db: Queryable = po
   return res.rows.map(mapInstallment);
 }
 
+export function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Spreads a recovery across unpaid installments in due order. Does not mutate
+ * the input. Throws if `amount` exceeds the unpaid remainder.
+ */
+export function allocateRecoveryToInstallments(
+  installments: Installment[],
+  amount: number
+): { installmentId: string; apply: number }[] {
+  const remaining = roundMoney(
+    installments.reduce((sum, i) => sum + Math.max(0, i.scheduledAmount - i.paidAmount), 0)
+  );
+  const recovery = roundMoney(amount);
+  if (recovery > remaining + 0.001) {
+    throw new RecoveryExceedsBalanceError(remaining);
+  }
+
+  let leftover = recovery;
+  const allocations: { installmentId: string; apply: number }[] = [];
+  for (const installment of installments) {
+    if (leftover <= 0.001) break;
+    const due = roundMoney(Math.max(0, installment.scheduledAmount - installment.paidAmount));
+    if (due <= 0) continue;
+    const apply = roundMoney(Math.min(due, leftover));
+    allocations.push({ installmentId: installment.id, apply });
+    leftover = roundMoney(leftover - apply);
+  }
+  return allocations;
+}
+
 function withTotals(plan: AdvancePlan, installments: Installment[]): AdvancePlanWithSchedule {
   const totalPaid = installments.reduce((sum, i) => sum + i.paidAmount, 0);
   return {
     ...plan,
     installments,
     totalPaid,
-    remainingBalance: Math.max(0, Math.round((plan.principalAmount - totalPaid) * 100) / 100),
+    remainingBalance: Math.max(0, roundMoney(plan.principalAmount - totalPaid)),
   };
 }
 
@@ -575,6 +609,13 @@ export async function recordRepayment(
     const plan = mapPlan(planRes.rows[0]);
     if (plan.status === "cancelled") throw new PlanNotEditableError(plan.status);
 
+    const remainingOnInstallment = roundMoney(
+      Math.max(0, installment.scheduledAmount - installment.paidAmount)
+    );
+    if (roundMoney(input.amount) > remainingOnInstallment + 0.001) {
+      throw new RecoveryExceedsBalanceError(remainingOnInstallment);
+    }
+
     const updatedRes = await client.query<InstallmentRow>(
       `UPDATE employee_advance_installments
           SET paid_amount = paid_amount + $2, paid_at = now(), updated_at = now()
@@ -596,6 +637,7 @@ export async function recordRepayment(
         createdBy: input.createdBy,
         planId: plan.id,
         installmentId: installment.id,
+        recoveryKind: "repayment",
       },
       client
     );
@@ -611,6 +653,83 @@ export async function recordRepayment(
     }
 
     return { plan: withTotals(plan, allInstallments), installment: updatedInstallment };
+  });
+}
+
+export interface RecordPlanRecoveryInput {
+  planId: string;
+  amount: number;
+  entryDate: string;
+  kind: AdvanceRecoveryKind;
+  paymentMethod: AdvancePaymentMethod;
+  note?: string | null;
+  createdBy: string;
+}
+
+/**
+ * Records a repayment, salary deduction, or balance adjustment against a plan.
+ * Writes a new ledger row and never deletes history. Completes the plan when
+ * remaining balance reaches zero.
+ */
+export async function recordPlanRecovery(
+  input: RecordPlanRecoveryInput
+): Promise<{ plan: AdvancePlanWithSchedule; recovered: number }> {
+  return withTransaction(async (client) => {
+    const planRes = await client.query<PlanRow>(
+      `SELECT ${PLAN_SELECT_FIELDS} FROM employee_advance_plans p WHERE p.id = $1 FOR UPDATE`,
+      [input.planId]
+    );
+    if (!planRes.rows[0]) throw new PlanNotFoundError();
+    const plan = mapPlan(planRes.rows[0]);
+    if (plan.status === "cancelled") throw new PlanNotEditableError(plan.status);
+
+    const installments = await listInstallmentsForPlan(plan.id, client);
+    const remaining = roundMoney(
+      Math.max(0, plan.principalAmount - installments.reduce((sum, i) => sum + i.paidAmount, 0))
+    );
+    const amount = roundMoney(input.amount);
+    if (amount > remaining + 0.001) {
+      throw new RecoveryExceedsBalanceError(remaining);
+    }
+
+    const allocations = allocateRecoveryToInstallments(installments, amount);
+    for (const allocation of allocations) {
+      await client.query(
+        `UPDATE employee_advance_installments
+            SET paid_amount = paid_amount + $2, paid_at = now(), updated_at = now()
+          WHERE id = $1`,
+        [allocation.installmentId, allocation.apply]
+      );
+    }
+
+    const primaryInstallmentId = allocations[0]?.installmentId ?? null;
+    await createAdvance(
+      {
+        employeeId: plan.employeeId,
+        entryDate: input.entryDate,
+        amount,
+        entryType: "returned",
+        note: input.note ?? null,
+        createdBy: input.createdBy,
+        planId: plan.id,
+        installmentId: primaryInstallmentId,
+        recoveryKind: input.kind,
+        paymentMethod: input.paymentMethod,
+      },
+      client
+    );
+
+    const allInstallments = await listInstallmentsForPlan(plan.id, client);
+    const totalPaid = roundMoney(allInstallments.reduce((sum, i) => sum + i.paidAmount, 0));
+    if (totalPaid >= plan.principalAmount - 0.005 && plan.status === "active") {
+      await client.query(
+        `UPDATE employee_advance_plans SET status = 'completed', updated_at = now() WHERE id = $1`,
+        [plan.id]
+      );
+      plan.status = "completed";
+    }
+
+    return { plan: withTotals(plan, allInstallments), recovered: amount };
   });
 }
 
@@ -642,5 +761,10 @@ export class CustomScheduleMismatchError extends Error {
 export class PlanHasPaymentsError extends Error {
   constructor() {
     super("This plan has recorded payments — cancel it instead of deleting");
+  }
+}
+export class RecoveryExceedsBalanceError extends Error {
+  constructor(remaining: number) {
+    super(`Recovered amount cannot exceed the remaining balance (${remaining.toFixed(2)})`);
   }
 }

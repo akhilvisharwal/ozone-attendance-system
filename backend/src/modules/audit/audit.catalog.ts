@@ -201,6 +201,11 @@ const CATALOG: Record<string, AuditActionMeta> = {
     module: "Advances",
     actionType: "Update",
   },
+  "advance.plan_recovery": {
+    label: "Advance recovery recorded",
+    module: "Advances",
+    actionType: "Update",
+  },
   "advance.update": {
     label: "Advance entry updated",
     module: "Advances",
