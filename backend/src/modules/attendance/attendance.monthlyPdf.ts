@@ -5,6 +5,7 @@ import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import { formatMinutesAsHours } from "../../utils/date";
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
+import { formatPresentEquivalent } from "./attendanceCalculation.service";
 import {
   attendancePdfFooterHeight,
   drawAttendancePdfSignature,
@@ -339,7 +340,7 @@ export async function buildMonthlyCalendarPdf(
       const s = emp.summary;
       const hoursLabel = formatMinutesAsHours(s.totalMinutes).replace(" ", "");
       const summaryValues = [
-        String(s.present),
+        formatPresentEquivalent(s.presentEquivalent),
         String(s.halfDay),
         String(s.absent),
         String(s.leave),

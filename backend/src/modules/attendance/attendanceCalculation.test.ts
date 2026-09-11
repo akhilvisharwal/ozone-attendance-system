@@ -31,7 +31,7 @@ function day(
 }
 
 describe("attendance calculation service", () => {
-  it("computes working days as present + half-day + absent + leave (excludes offs, holidays, pending)", () => {
+  it("computes working days as present + half-day + absent + leave + holiday (excludes weekly offs, pending)", () => {
     const days = [
       day("2026-07-01", "absent"),
       day("2026-07-02", "absent"),
@@ -70,10 +70,10 @@ describe("attendance calculation service", () => {
     assert.equal(summary.weeklyOffWorked, 1);
     assert.equal(summary.totalMinutes, 480 + 240 + 360 + 300);
     assert.equal(summary.lateCheckIns, 1);
-    assert.equal(summary.workingDays, 4);
-    assert.equal(summary.presentEquivalent, 1.5);
+    assert.equal(summary.workingDays, 5);
+    assert.equal(summary.presentEquivalent, 2.5);
     assert.equal(computeWorkedOnOffDays(summary), 2);
-    assert.equal(summary.attendancePercentage, 37.5);
+    assert.equal(summary.attendancePercentage, 50);
   });
 
   it("counts approved leave as absent in the monthly total and attendance percentage", () => {
@@ -258,7 +258,7 @@ describe("attendance calculation service", () => {
     assert.equal(result[2].status, "absent");
   });
 
-  it("applies sandwich rule across consecutive weekly offs and holidays", () => {
+  it("does not convert a declared holiday to absent via the sandwich rule", () => {
     const days = [
       day("2026-07-10", "absent"),
       day("2026-07-11", "weekly_off"),
@@ -270,13 +270,14 @@ describe("attendance calculation service", () => {
     const result = applyAbsentSandwichRule(days);
     assert.deepEqual(
       result.map((d) => d.status),
-      ["absent", "absent", "absent", "absent", "absent", "present"]
+      ["absent", "weekly_off", "holiday", "weekly_off", "absent", "present"]
     );
     const summary = buildSummaryFromDays(result, "2026-07-15");
-    assert.equal(summary.absent, 5);
-    assert.equal(summary.weeklyOff, 0);
-    assert.equal(summary.holidays, 0);
-    assert.equal(summary.workingDays, 6);
+    assert.equal(summary.absent, 2);
+    assert.equal(summary.weeklyOff, 2);
+    assert.equal(summary.holidays, 1);
+    assert.equal(summary.presentEquivalent, 2);
+    assert.equal(summary.workingDays, 4);
   });
 
   it("does not sandwich when one side is present or leave", () => {
@@ -416,7 +417,7 @@ describe("attendance calculation service", () => {
     assert.equal(summary.attendancePercentage, 100);
   });
 
-  it("does not count a holiday or weekly off without work as absent", () => {
+  it("counts an unworked holiday as 1 Present day without counting it as absent", () => {
     assert.equal(
       resolveDayStatus({
         record: null,
@@ -458,8 +459,9 @@ describe("attendance calculation service", () => {
     assert.equal(summary.absent, 0);
     assert.equal(summary.holidays, 1);
     assert.equal(summary.weeklyOff, 1);
-    assert.equal(summary.workingDays, 1);
-    assert.equal(summary.presentEquivalent, 1);
+    assert.equal(summary.present, 1);
+    assert.equal(summary.workingDays, 2);
+    assert.equal(summary.presentEquivalent, 2);
     assert.equal(computeWorkedOnOffDays(summary), 0);
     assert.equal(summary.attendancePercentage, 100);
   });
@@ -601,7 +603,9 @@ describe("attendance calculation service", () => {
     );
     assert.equal(summary.absent, 0);
     assert.equal(summary.leave, 0);
-    assert.equal(summary.workingDays, 0);
-    assert.equal(summary.attendancePercentage, 0);
+    assert.equal(summary.holidays, 1);
+    assert.equal(summary.presentEquivalent, 1);
+    assert.equal(summary.workingDays, 1);
+    assert.equal(summary.attendancePercentage, 100);
   });
 });

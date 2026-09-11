@@ -103,7 +103,7 @@ export function cellStatusFromRecord(
  * Resolves a day cell status from attendance data and calendar rules.
  * Today without check-in stays pending (none) until closing cutoff or admin action.
  * Approved leave on a working day is `leave` (shown as L, counted as absent).
- * Unworked holidays and weekly offs never become absent, even if leave is approved.
+ * Declared holidays stay `HO` and count as Present. Unworked weekly offs are never absent.
  */
 export function resolveDayStatus(input: {
   record: AttendanceRecordLike | null;
@@ -139,20 +139,20 @@ export function resolveDayStatus(input: {
  * Statuses that are not eligible scheduled working days for Att% / WD.
  * HW and WW are excluded from Present and Attendance %; they are counted
  * separately as worked-on-off-days for review. Approved leave stays `L` on
- * the grid but is an eligible working day (counted as absent).
+ * the grid but is an eligible working day (counted as absent). Declared
+ * holidays (`HO`) stay `HO` on the grid but count as 1 Present day.
  */
 export const NON_SCHEDULED_WORKING_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set([
   "not_applicable",
   "weekly_off",
-  "holiday",
   "holiday_worked",
   "weekly_off_worked",
   "none",
 ]);
 
 /**
- * Eligible scheduled working days: present + half-day + absent + approved leave.
- * Excludes holidays, weekly offs (worked or not), pre-join dates, and pending.
+ * Eligible scheduled working days: present + half-day + absent + approved leave + holiday.
+ * Excludes weekly offs (worked or not), HW, pre-join dates, and pending.
  */
 export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): number {
   let count = 0;
@@ -164,11 +164,11 @@ export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): nu
   return count;
 }
 
-/** Present = P + (H × 0.5). HW and WW are not included. */
+/** Present = P + HO + (H × 0.5). HW and WW are not included. */
 export function computePresentEquivalent(
-  summary: Pick<MonthlySummary, "present" | "halfDay">
+  summary: Pick<MonthlySummary, "present" | "halfDay" | "holidays">
 ): number {
-  return summary.present + summary.halfDay * 0.5;
+  return summary.present + summary.holidays + summary.halfDay * 0.5;
 }
 
 /** HW + WW, each counted as 1. Unworked holidays/weekly offs are not included. */
@@ -244,7 +244,7 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
   }
 
   const workingDays = computeWorkingDays(days, todayStr);
-  const presentEquivalent = computePresentEquivalent({ present, halfDay });
+  const presentEquivalent = computePresentEquivalent({ present, halfDay, holidays });
   const partial: MonthlySummary = {
     present,
     halfDay,
@@ -264,11 +264,8 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
   return partial;
 }
 
-/** Off-day statuses that can be converted to Absent by the sandwich rule. */
-export const SANDWICH_OFF_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set([
-  "weekly_off",
-  "holiday",
-]);
+/** Off-day statuses that can be converted to Absent by the sandwich rule. Holidays stay Present. */
+export const SANDWICH_OFF_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set(["weekly_off"]);
 
 /** Stored on auto-created sandwich absent rows so they can be recalculated/removed safely. */
 export const ABSENT_SANDWICH_REASON = "Absent sandwich rule";
@@ -276,10 +273,10 @@ export const ABSENT_SANDWICH_REASON = "Absent sandwich rule";
 /**
  * Absent Sandwich Rule:
  * If an employee is Absent immediately before and after one or more consecutive
- * Weekly Off and/or Holiday days, those middle days become Absent.
+ * Weekly Off days, those middle days become Absent.
  *
  * Example: Sat Absent → Sun Weekly Off → Mon Absent ⇒ Sun becomes Absent.
- * Also covers mixed blocks (WO + holidays) of any length.
+ * Declared holidays are never sandwiched — they stay Present.
  */
 export function applyAbsentSandwichRule(days: MonthlyDayCell[]): MonthlyDayCell[] {
   if (days.length < 3) return days;
@@ -318,6 +315,7 @@ export function dashboardBucketFromStatus(
 ): "present" | "half_day" | "absent" | "pending" {
   switch (status) {
     case "present":
+    case "holiday":
     case "holiday_worked":
     case "weekly_off_worked":
       return "present";
@@ -326,7 +324,6 @@ export function dashboardBucketFromStatus(
     case "none":
     case "not_applicable":
     case "weekly_off":
-    case "holiday":
       return "pending";
     default:
       return "absent";

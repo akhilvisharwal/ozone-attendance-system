@@ -15,6 +15,7 @@ import { resolveCompanyLogoPath } from "../../utils/pdfBranding";
 import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
+import { formatPresentEquivalent } from "./attendanceCalculation.service";
 
 export interface MonthlyExcelMeta {
   generatedBy: string;
@@ -402,7 +403,7 @@ export async function buildMonthlyCalendarExcel(
 
       const s = emp.summary;
       const summaryValues = [
-        s.present,
+        formatPresentEquivalent(s.presentEquivalent),
         s.halfDay,
         s.absent,
         s.leave,

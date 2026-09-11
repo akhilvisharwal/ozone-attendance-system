@@ -89,7 +89,7 @@ export async function getScoreboard(filters: { from: string; to: string }): Prom
     const summary = row.summary;
     const tasks = taskByEmployee.get(row.employeeId) ?? { totalTasks: 0, completedTasks: 0 };
     const daysPresent =
-      summary.present + summary.holidayWorked + summary.weeklyOffWorked;
+      summary.present + summary.holidays + summary.holidayWorked + summary.weeklyOffWorked;
 
     return {
       employee_id: row.employeeId,
