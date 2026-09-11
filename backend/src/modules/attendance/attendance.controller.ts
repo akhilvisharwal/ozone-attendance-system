@@ -17,6 +17,7 @@ import {
   adminListQuerySchema,
   monthlyQuerySchema,
   monthlyExportQuerySchema,
+  monthlyExportSignatureSchema,
   manualAttendanceSchema,
   manualAttendanceDeleteSchema,
   bulkManualAttendanceSchema,
@@ -30,6 +31,7 @@ import {
 import { buildMonthlyCalendarPdf } from "./attendance.monthlyPdf";
 import { buildMonthlyCalendarPdfSimple } from "./attendance.monthlyPdfSimple";
 import { buildMonthlyCalendarExcel } from "./attendance.monthlyExcel";
+import { resolveAttendancePdfSignature, isAuthorizedSignatureRole, normalizeSignatureImage } from "./attendance.signature";
 import * as employeesRepo from "../employees/employees.repository";
 import { resolveOffDayContext } from "./attendance.offDay";
 import { logAudit } from "../audit/audit.repository";
@@ -315,8 +317,25 @@ export const adminMonthly = asyncHandler(async (req: Request, res: Response) => 
 });
 
 /** Downloads a monthly attendance report (Excel / PDF). */
+function compactFormFields(input: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!input) return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value === "" || value === undefined || value === null) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+function truthyFlag(value: unknown): boolean {
+  return value === true || value === "true" || value === "1";
+}
+
 export const adminMonthlyExport = asyncHandler(async (req: Request, res: Response) => {
-  const query = monthlyExportQuerySchema.parse(req.query);
+  const query = monthlyExportQuerySchema.parse({
+    ...req.query,
+    ...compactFormFields(req.body as Record<string, unknown> | undefined),
+  });
   const format =
     query.format ??
     (getSettings().reports.defaultFormat === "pdf" ? "pdf" : "excel");
@@ -334,7 +353,29 @@ export const adminMonthlyExport = asyncHandler(async (req: Request, res: Respons
   const admin = await employeesRepo.findEmployeeById(req.user!.id);
   if (admin?.name) generatedBy = admin.name;
 
-  const meta = { generatedBy, generatedAt: new Date() };
+  const sigFields = monthlyExportSignatureSchema.parse(
+    compactFormFields(req.body as Record<string, unknown> | undefined)
+  );
+  let savedBuffer: Buffer | null = null;
+  if (format === "pdf" && truthyFlag(sigFields.useSavedSignature)) {
+    const savedPath = await employeesRepo.getEmployeeSignaturePath(req.user!.id);
+    if (savedPath) savedBuffer = (await storage.read(savedPath)) ?? null;
+  }
+
+  const signature = await resolveAttendancePdfSignature({
+    format,
+    requireSignature: Boolean(getSettings().reports.requireSignatureOnAttendancePdfs),
+    source: {
+      file: req.file,
+      useSaved: truthyFlag(sigFields.useSavedSignature),
+      savedBuffer,
+      name: sigFields.signerName?.trim() || admin?.name || generatedBy,
+      designation: sigFields.signerDesignation?.trim() || admin?.designation || "",
+      date: sigFields.signerDate?.trim() || "",
+    },
+  });
+
+  const meta = { generatedBy, generatedAt: new Date(), signature };
   const filenameBase = `attendance-${year}-${String(month).padStart(2, "0")}`;
 
   if (format === "pdf") {
@@ -353,6 +394,45 @@ export const adminMonthlyExport = asyncHandler(async (req: Request, res: Respons
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${filenameBase}.xlsx"`);
   res.send(buffer);
+});
+
+export const getMyAttendanceSignature = asyncHandler(async (req: Request, res: Response) => {
+  if (!isAuthorizedSignatureRole(req.user!.role)) {
+    throw ApiError.forbidden("Saved official signatures are limited to administrators.");
+  }
+  const signaturePath = await employeesRepo.getEmployeeSignaturePath(req.user!.id);
+  res.json({ hasSignature: Boolean(signaturePath), signaturePath });
+});
+
+export const saveMyAttendanceSignature = asyncHandler(async (req: Request, res: Response) => {
+  if (!isAuthorizedSignatureRole(req.user!.role)) {
+    throw ApiError.forbidden("Saved official signatures are limited to administrators.");
+  }
+  if (!req.file?.buffer) {
+    throw ApiError.badRequest("Upload a PNG or JPG signature image.");
+  }
+  const png = await normalizeSignatureImage(req.file.buffer);
+  const previous = await employeesRepo.getEmployeeSignaturePath(req.user!.id);
+  const saved = await storage.save(png, "signature.png", `signatures/${req.user!.employeeCode}`);
+  await employeesRepo.updateEmployeeSignaturePath(req.user!.id, saved.relativePath);
+  if (previous && previous !== saved.relativePath) {
+    await storage.remove(previous);
+  }
+  await logAudit(req, "attendance.signature_save", "employee", req.user!.id, {
+    path: saved.relativePath,
+  });
+  res.json({ hasSignature: true, signaturePath: saved.relativePath });
+});
+
+export const deleteMyAttendanceSignature = asyncHandler(async (req: Request, res: Response) => {
+  if (!isAuthorizedSignatureRole(req.user!.role)) {
+    throw ApiError.forbidden("Saved official signatures are limited to administrators.");
+  }
+  const previous = await employeesRepo.getEmployeeSignaturePath(req.user!.id);
+  await employeesRepo.updateEmployeeSignaturePath(req.user!.id, null);
+  if (previous) await storage.remove(previous);
+  await logAudit(req, "attendance.signature_delete", "employee", req.user!.id);
+  res.json({ hasSignature: false, signaturePath: null });
 });
 
 /** Returns the configured timing rules so the frontend can display live status. */

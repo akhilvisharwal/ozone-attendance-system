@@ -81,6 +81,7 @@ describe("employee reset password flow", { skip: process.env.SKIP_DB_TESTS === "
 
     const pub = toPublicEmployee(row!);
     assert.equal("password_hash" in pub, false);
+    assert.equal("signature_image_path" in pub, false);
   });
 
   it("logs password resets with admin, employee, IP, and device — never the password", async () => {

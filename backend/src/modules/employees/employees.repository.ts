@@ -547,7 +547,7 @@ export async function countEmployeeDependencies(id: string): Promise<{
 }
 
 export function toPublicEmployee(employee: Employee): PublicEmployee {
-  const { password_hash, admin_permissions, ...rest } = employee;
+  const { password_hash, admin_permissions, signature_image_path: _signature, ...rest } = employee;
   const permissions =
     employee.role === "admin"
       ? fullPermissions()
@@ -555,6 +555,24 @@ export function toPublicEmployee(employee: Employee): PublicEmployee {
         ? normalizePermissions(admin_permissions)
         : emptyPermissions();
   return { ...rest, admin_permissions: permissions };
+}
+
+export async function getEmployeeSignaturePath(employeeId: string): Promise<string | null> {
+  const result = await pool.query<{ signature_image_path: string | null }>(
+    `SELECT signature_image_path FROM employees WHERE id = $1 AND deleted_at IS NULL`,
+    [employeeId]
+  );
+  return result.rows[0]?.signature_image_path ?? null;
+}
+
+export async function updateEmployeeSignaturePath(
+  employeeId: string,
+  relativePath: string | null
+): Promise<void> {
+  await pool.query(
+    `UPDATE employees SET signature_image_path = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL`,
+    [employeeId, relativePath]
+  );
 }
 
 export async function getEmployeePermissions(employeeId: string): Promise<AdminPermissions> {

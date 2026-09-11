@@ -3,6 +3,11 @@ import type { ReimbursementPeriodType } from "./expensePeriod";
 import { formatPeriodLabel } from "./expensePeriod";
 import * as repo from "./expenses.repository";
 import type { ExpenseRow } from "./expenses.repository";
+import {
+  canArchiveCompletedRequest,
+  deriveReimbursementRequestStatus,
+  type ExpenseLineStatus,
+} from "./expenses.reimbursementStatus";
 
 export type ReimbursementRequestStatus =
   | "pending_approval"
@@ -36,6 +41,7 @@ export interface ReimbursementRequestRow {
   reviewed_by_name?: string | null;
   paid_by_name?: string | null;
   expense_count?: number;
+  all_items_completed?: boolean;
 }
 
 const SELECT_REQUEST = `
@@ -46,7 +52,15 @@ const SELECT_REQUEST = `
   r.created_at, r.updated_at,
   emp.name AS employee_name, emp.employee_code,
   emp.profile_photo_path AS employee_profile_photo_path,
-  rev.name AS reviewed_by_name, payer.name AS paid_by_name
+  rev.name AS reviewed_by_name, payer.name AS paid_by_name,
+  (
+    EXISTS (SELECT 1 FROM expenses e WHERE e.request_id = r.id)
+    AND NOT EXISTS (
+      SELECT 1 FROM expenses e
+       WHERE e.request_id = r.id
+         AND e.status NOT IN ('approved', 'paid', 'archived')
+    )
+  ) AS all_items_completed
 `;
 
 const FROM_REQUEST = `
@@ -57,6 +71,7 @@ const FROM_REQUEST = `
 `;
 
 export async function findRequestById(id: string): Promise<ReimbursementRequestRow | null> {
+  await reconcileStalePendingRequests(id);
   const result = await pool.query<ReimbursementRequestRow>(
     `SELECT ${SELECT_REQUEST},
             (SELECT COUNT(*)::int FROM expenses e WHERE e.request_id = r.id) AS expense_count
@@ -73,6 +88,7 @@ export async function listRequests(params: {
   from?: string;
   to?: string;
 }): Promise<ReimbursementRequestRow[]> {
+  await reconcileStalePendingRequests();
   const conditions: string[] = [];
   const values: unknown[] = [];
 
@@ -208,6 +224,7 @@ export interface RequestExpenseSummary {
   approvedCount: number;
   rejectedCount: number;
   reviewedCount: number;
+  paidCount: number;
 }
 
 async function getRequestExpenseSummaryWithClient(
@@ -222,6 +239,7 @@ async function getRequestExpenseSummaryWithClient(
     pending_count: string;
     approved_count: string;
     rejected_count: string;
+    paid_count: string;
   }>(
     `SELECT
        COALESCE(SUM(amount), 0)::text AS total_submitted,
@@ -230,7 +248,8 @@ async function getRequestExpenseSummaryWithClient(
        COALESCE(SUM(amount) FILTER (WHERE status = 'pending'), 0)::text AS pending_amount,
        COUNT(*) FILTER (WHERE status = 'pending')::text AS pending_count,
        COUNT(*) FILTER (WHERE status = 'approved')::text AS approved_count,
-       COUNT(*) FILTER (WHERE status = 'rejected')::text AS rejected_count
+       COUNT(*) FILTER (WHERE status = 'rejected')::text AS rejected_count,
+       COUNT(*) FILTER (WHERE status IN ('paid', 'archived'))::text AS paid_count
       FROM expenses
      WHERE request_id = $1`,
     [requestId]
@@ -242,6 +261,7 @@ async function getRequestExpenseSummaryWithClient(
   const pendingCount = parseInt(row?.pending_count ?? "0", 10);
   const approvedCount = parseInt(row?.approved_count ?? "0", 10);
   const rejectedCount = parseInt(row?.rejected_count ?? "0", 10);
+  const paidCount = parseInt(row?.paid_count ?? "0", 10);
   return {
     totalSubmitted: Number(row?.total_submitted ?? 0),
     approvedAmount,
@@ -252,6 +272,7 @@ async function getRequestExpenseSummaryWithClient(
     approvedCount,
     rejectedCount,
     reviewedCount: approvedCount + rejectedCount,
+    paidCount,
   };
 }
 
@@ -259,36 +280,100 @@ export async function getRequestExpenseSummary(requestId: string): Promise<Reque
   return getRequestExpenseSummaryWithClient(pool, requestId);
 }
 
+async function loadRequestStatus(
+  client: { query: typeof pool.query },
+  requestId: string
+): Promise<ReimbursementRequestStatus | null> {
+  const result = await client.query<{ status: ReimbursementRequestStatus }>(
+    `SELECT status FROM expense_reimbursement_requests WHERE id = $1`,
+    [requestId]
+  );
+  return result.rows[0]?.status ?? null;
+}
+
 async function syncRequestStatusFromExpenses(
   client: { query: typeof pool.query },
   requestId: string,
-  reviewedBy: string
+  reviewedBy?: string | null
 ): Promise<void> {
-  const summary = await getRequestExpenseSummaryWithClient(client, requestId);
+  const current = await loadRequestStatus(client, requestId);
+  if (!current) return;
 
-  if (summary.pendingCount > 0) {
+  const summary = await getRequestExpenseSummaryWithClient(client, requestId);
+  const nextStatus = deriveReimbursementRequestStatus(current, {
+    pendingCount: summary.pendingCount,
+    approvedCount: summary.approvedCount,
+    rejectedCount: summary.rejectedCount,
+    paidCount: summary.paidCount,
+  });
+
+  if (nextStatus === "pending_approval") {
     await client.query(
       `UPDATE expense_reimbursement_requests SET
          status = 'pending_approval',
          approved_amount = CASE WHEN $2 > 0 THEN $2 ELSE NULL END,
          updated_at = now()
-       WHERE id = $1`,
+       WHERE id = $1
+         AND status NOT IN ('paid', 'archived')`,
       [requestId, summary.approvedAmount]
     );
     return;
   }
 
-  const nextStatus = summary.approvedCount > 0 ? "approved" : "rejected";
   await client.query(
     `UPDATE expense_reimbursement_requests SET
        status = $1,
        approved_amount = $2,
-       reviewed_by = $3,
-       reviewed_at = now(),
+       reviewed_by = COALESCE($3, reviewed_by),
+       reviewed_at = COALESCE(reviewed_at, now()),
        updated_at = now()
-     WHERE id = $4`,
-    [nextStatus, summary.approvedCount > 0 ? summary.approvedAmount : null, reviewedBy, requestId]
+     WHERE id = $4
+       AND status NOT IN ('paid', 'archived')`,
+    [
+      nextStatus,
+      summary.approvedCount > 0 ? summary.approvedAmount : null,
+      reviewedBy ?? null,
+      requestId,
+    ]
   );
+}
+
+/** Repair requests whose expenses are fully reviewed but the parent is still pending. */
+export async function reconcileStalePendingRequests(requestId?: string): Promise<number> {
+  const result = await pool.query<{ id: string }>(
+    `UPDATE expense_reimbursement_requests r
+        SET status = CASE
+              WHEN EXISTS (
+                SELECT 1 FROM expenses e
+                 WHERE e.request_id = r.id AND e.status IN ('approved', 'paid', 'archived')
+              ) THEN 'approved'
+              ELSE 'rejected'
+            END,
+            approved_amount = CASE
+              WHEN EXISTS (
+                SELECT 1 FROM expenses e
+                 WHERE e.request_id = r.id AND e.status IN ('approved', 'paid', 'archived')
+              ) THEN (
+                SELECT COALESCE(SUM(e.amount), 0)
+                  FROM expenses e
+                 WHERE e.request_id = r.id
+                   AND e.status IN ('approved', 'paid', 'archived')
+              )
+              ELSE NULL
+            END,
+            reviewed_at = COALESCE(r.reviewed_at, now()),
+            updated_at = now()
+      WHERE r.status = 'pending_approval'
+        AND ($1::uuid IS NULL OR r.id = $1)
+        AND EXISTS (SELECT 1 FROM expenses e WHERE e.request_id = r.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM expenses e
+           WHERE e.request_id = r.id AND e.status IN ('pending', 'draft')
+        )
+      RETURNING r.id`,
+    [requestId ?? null]
+  );
+  return result.rowCount ?? result.rows.length;
 }
 
 export async function reviewRequestExpense(
@@ -477,6 +562,66 @@ export async function markRequestPaid(
   }
 }
 
+export async function archiveCompletedRequest(id: string): Promise<ReimbursementRequestRow | null> {
+  const existing = await findRequestById(id);
+  if (!existing) return null;
+
+  const expenseRes = await pool.query<{ status: ExpenseLineStatus }>(
+    `SELECT status FROM expenses WHERE request_id = $1`,
+    [id]
+  );
+  if (!canArchiveCompletedRequest(existing.status, expenseRes.rows.map((row) => row.status))) {
+    return null;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE expense_reimbursement_requests
+          SET status = 'archived', archived_at = COALESCE(archived_at, now()), updated_at = now()
+        WHERE id = $1`,
+      [id]
+    );
+    await client.query(
+      `UPDATE expenses SET status = 'archived', updated_at = now()
+        WHERE request_id = $1 AND status = 'paid'`,
+      [id]
+    );
+    await client.query("COMMIT");
+    return findRequestById(id);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function syncRequestStatusForExpense(
+  expenseId: string,
+  reviewedBy: string
+): Promise<void> {
+  const result = await pool.query<{ request_id: string | null }>(
+    `SELECT request_id FROM expenses WHERE id = $1`,
+    [expenseId]
+  );
+  const requestId = result.rows[0]?.request_id;
+  if (!requestId) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await syncRequestStatusFromExpenses(client, requestId, reviewedBy);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function archivePaidRequest(id: string): Promise<ReimbursementRequestRow | null> {
   const existing = await findRequestById(id);
   if (!existing || existing.status !== "paid") return null;
@@ -541,6 +686,7 @@ export async function getPendingReimbursementTotal(): Promise<{
   requestCount: number;
   totalAmount: number;
 }> {
+  await reconcileStalePendingRequests();
   const result = await pool.query<{ request_count: string; total_amount: string }>(
     `SELECT COUNT(*)::text AS request_count,
             COALESCE(SUM(requested_amount), 0)::text AS total_amount

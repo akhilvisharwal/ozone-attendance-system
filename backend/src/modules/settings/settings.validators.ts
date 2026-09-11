@@ -256,15 +256,11 @@ export const mobileSettingsSchema = z
 
 
 export const reportsSettingsSchema = z.object({
-
   includeLogo: z.boolean(),
-
   signatureText: z.string().max(200),
-
   defaultFormat: z.enum(["pdf", "excel"]),
-
   autoPageNumbers: z.boolean(),
-
+  requireSignatureOnAttendancePdfs: z.boolean().default(false),
 });
 
 

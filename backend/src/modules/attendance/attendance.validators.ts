@@ -50,6 +50,13 @@ export const monthlyExportQuerySchema = z.object({
   sort: z.enum(CHRONOLOGICAL_SORTS).default("oldest"),
 });
 
+export const monthlyExportSignatureSchema = z.object({
+  signerName: z.string().max(120).optional(),
+  signerDesignation: z.string().max(120).optional(),
+  signerDate: z.string().max(40).optional(),
+  useSavedSignature: z.enum(["true", "false", "1", "0"]).optional(),
+});
+
 export const adminListQuerySchema = z
   .object({
     employeeId: z.string().uuid().optional(),

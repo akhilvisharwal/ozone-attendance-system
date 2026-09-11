@@ -427,6 +427,265 @@ describe("expense reimbursement workflow", { skip: process.env.SKIP_DB_TESTS ===
     createdRequestIds.length = 0;
   });
 
+  it("moves a fully approved request out of pending and archives it without deleting history", async () => {
+    await updateCategory("expenses", buildDefaultExpenseSettings(), adminId);
+
+    const expenseA = await expenseRepo.createExpense({
+      employeeId: juniorAdminId,
+      expenseDate: today,
+      amount: 120,
+      paymentMethod: "upi",
+      category: "travel",
+      description: "Full A",
+      receiptPath: null,
+    });
+    const expenseB = await expenseRepo.createExpense({
+      employeeId: juniorAdminId,
+      expenseDate: today,
+      amount: 80,
+      paymentMethod: "cash",
+      category: "food",
+      description: "Full B",
+      receiptPath: null,
+    });
+    createdExpenseIds.push(expenseA.id, expenseB.id);
+
+    const request = await requestsRepo.submitReimbursementRequest({
+      employeeId: juniorAdminId,
+      periodType: "weekly",
+      periodStart: period.start,
+      periodEnd: period.end,
+      expenseIds: [expenseA.id, expenseB.id],
+      requestedAmount: 200,
+    });
+    createdRequestIds.push(request.id);
+
+    const first = await requestsRepo.reviewRequestExpense(request.id, expenseA.id, {
+      status: "approved",
+      remarks: null,
+      reviewedBy: adminId,
+    });
+    assert.equal(first!.request.status, "pending_approval");
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "pending_approval" })).some(
+        (row) => row.id === request.id
+      ),
+      true
+    );
+    assert.equal(await requestsRepo.archiveCompletedRequest(request.id), null);
+
+    const second = await requestsRepo.reviewRequestExpense(request.id, expenseB.id, {
+      status: "approved",
+      remarks: null,
+      reviewedBy: adminId,
+    });
+    assert.equal(second!.request.status, "approved");
+    assert.equal(Number(second!.request.approved_amount), 200);
+    assert.equal(second!.request.all_items_completed, true);
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "pending_approval" })).some(
+        (row) => row.id === request.id
+      ),
+      false
+    );
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "approved" })).some(
+        (row) => row.id === request.id
+      ),
+      true
+    );
+
+    const stillPending = await pool.query(
+      `SELECT id FROM expense_reimbursement_requests WHERE id = $1 AND status = 'pending_approval'`,
+      [request.id]
+    );
+    assert.equal(stillPending.rowCount, 0);
+
+    const archived = await requestsRepo.archiveCompletedRequest(request.id);
+    assert.ok(archived);
+    assert.equal(archived!.status, "archived");
+    assert.ok(archived!.archived_at);
+    assert.equal((await expenseRepo.findExpenseById(expenseA.id))?.status, "approved");
+    assert.equal((await expenseRepo.findExpenseById(expenseB.id))?.status, "approved");
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "approved" })).some(
+        (row) => row.id === request.id
+      ),
+      false
+    );
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "archived" })).some(
+        (row) => row.id === request.id
+      ),
+      true
+    );
+    assert.ok(await expenseRepo.findExpenseById(expenseA.id));
+    assert.ok(await expenseRepo.findExpenseById(expenseB.id));
+  });
+
+  it("keeps a partially approved request pending and refuses archive", async () => {
+    await updateCategory("expenses", buildDefaultExpenseSettings(), adminId);
+
+    const expenseA = await expenseRepo.createExpense({
+      employeeId: juniorAdminId,
+      expenseDate: today,
+      amount: 40,
+      paymentMethod: "upi",
+      category: "travel",
+      description: "Partial A",
+      receiptPath: null,
+    });
+    const expenseB = await expenseRepo.createExpense({
+      employeeId: juniorAdminId,
+      expenseDate: today,
+      amount: 60,
+      paymentMethod: "upi",
+      category: "travel",
+      description: "Partial B",
+      receiptPath: null,
+    });
+    createdExpenseIds.push(expenseA.id, expenseB.id);
+
+    const request = await requestsRepo.submitReimbursementRequest({
+      employeeId: juniorAdminId,
+      periodType: "weekly",
+      periodStart: period.start,
+      periodEnd: period.end,
+      expenseIds: [expenseA.id, expenseB.id],
+      requestedAmount: 100,
+    });
+    createdRequestIds.push(request.id);
+
+    await requestsRepo.reviewRequestExpense(request.id, expenseA.id, {
+      status: "approved",
+      remarks: null,
+      reviewedBy: adminId,
+    });
+
+    const current = await requestsRepo.findRequestById(request.id);
+    assert.equal(current!.status, "pending_approval");
+    assert.equal(current!.all_items_completed, false);
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "pending_approval" })).some(
+        (row) => row.id === request.id
+      ),
+      true
+    );
+    assert.equal(await requestsRepo.archiveCompletedRequest(request.id), null);
+  });
+
+  it("archives a paid request and heals a desynced pending parent", async () => {
+    await updateCategory("expenses", buildDefaultExpenseSettings(), adminId);
+
+    const expense = await expenseRepo.createExpense({
+      employeeId: juniorAdminId,
+      expenseDate: today,
+      amount: 55,
+      paymentMethod: "upi",
+      category: "fuel",
+      description: "Paid archive",
+      receiptPath: null,
+    });
+    createdExpenseIds.push(expense.id);
+
+    const request = await requestsRepo.submitReimbursementRequest({
+      employeeId: juniorAdminId,
+      periodType: "weekly",
+      periodStart: period.start,
+      periodEnd: period.end,
+      expenseIds: [expense.id],
+      requestedAmount: 55,
+    });
+    createdRequestIds.push(request.id);
+
+    await requestsRepo.reviewRequestExpense(request.id, expense.id, {
+      status: "approved",
+      remarks: null,
+      reviewedBy: adminId,
+    });
+    const paid = await requestsRepo.markRequestPaid(request.id, {
+      paidBy: adminId,
+      notes: "UPI",
+      archiveImmediately: false,
+    });
+    assert.equal(paid!.status, "paid");
+    assert.equal((await expenseRepo.findExpenseById(expense.id))?.status, "paid");
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "pending_approval" })).some(
+        (row) => row.id === request.id
+      ),
+      false
+    );
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "paid" })).some((row) => row.id === request.id),
+      true
+    );
+
+    const archived = await requestsRepo.archiveCompletedRequest(request.id);
+    assert.equal(archived!.status, "archived");
+    assert.equal((await expenseRepo.findExpenseById(expense.id))?.status, "archived");
+    assert.equal(Number((await expenseRepo.findExpenseById(expense.id))?.amount), 55);
+    assert.equal(archived!.payment_notes, "UPI");
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "paid" })).some((row) => row.id === request.id),
+      false
+    );
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "archived" })).some(
+        (row) => row.id === request.id
+      ),
+      true
+    );
+
+    const desyncExpense = await expenseRepo.createExpense({
+      employeeId: juniorAdminId,
+      expenseDate: today,
+      amount: 33,
+      paymentMethod: "cash",
+      category: "food",
+      description: "Desync heal",
+      receiptPath: null,
+    });
+    createdExpenseIds.push(desyncExpense.id);
+    const desyncRequest = await requestsRepo.submitReimbursementRequest({
+      employeeId: juniorAdminId,
+      periodType: "weekly",
+      periodStart: period.start,
+      periodEnd: period.end,
+      expenseIds: [desyncExpense.id],
+      requestedAmount: 33,
+    });
+    createdRequestIds.push(desyncRequest.id);
+    await requestsRepo.reviewRequestExpense(desyncRequest.id, desyncExpense.id, {
+      status: "approved",
+      remarks: null,
+      reviewedBy: adminId,
+    });
+    await pool.query(
+      `UPDATE expense_reimbursement_requests SET status = 'pending_approval' WHERE id = $1`,
+      [desyncRequest.id]
+    );
+
+    const stuck = await pool.query<{ status: string }>(
+      `SELECT status FROM expense_reimbursement_requests WHERE id = $1`,
+      [desyncRequest.id]
+    );
+    assert.equal(stuck.rows[0]?.status, "pending_approval");
+
+    await requestsRepo.getPendingReimbursementTotal();
+    const healedRow = await pool.query<{ status: string }>(
+      `SELECT status FROM expense_reimbursement_requests WHERE id = $1`,
+      [desyncRequest.id]
+    );
+    assert.equal(healedRow.rows[0]?.status, "approved");
+    assert.equal(
+      (await requestsRepo.listRequests({ status: "pending_approval" })).some(
+        (row) => row.id === desyncRequest.id
+      ),
+      false
+    );
+  });
+
   it("rejects disabled cycles and enforces amount limits via settings", async () => {
     const settings = buildDefaultExpenseSettings();
     settings.cycles = { weekly: false, monthly: true, custom: false };

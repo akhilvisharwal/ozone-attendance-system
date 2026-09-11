@@ -187,15 +187,36 @@ export async function downloadMonthlyReport(
     format: "excel" | "pdf";
     /** PDF only. Omit/"detailed" for today's full grid; "simple" for the large-print variant. */
     style?: "detailed" | "simple";
+    signature?: {
+      file?: Blob | null;
+      useSaved?: boolean;
+      name?: string;
+      designation?: string;
+      date?: string;
+    };
   }
 ): Promise<void> {
   try {
-    const { data, headers } = await apiClient.get("/attendance/admin/monthly/export", {
-      params,
-      responseType: "blob",
-      validateStatus: (status) => status >= 200 && status < 300,
-    });
+    const usePost = params.format === "pdf";
+    const response = usePost
+      ? await apiClient.post("/attendance/admin/monthly/export", buildMonthlyExportForm(params), {
+          responseType: "blob",
+          validateStatus: (status) => status >= 200 && status < 300,
+        })
+      : await apiClient.get("/attendance/admin/monthly/export", {
+          params: {
+            month: params.month,
+            employeeId: params.employeeId,
+            siteId: params.siteId,
+            sort: params.sort,
+            format: params.format,
+            style: params.style,
+          },
+          responseType: "blob",
+          validateStatus: (status) => status >= 200 && status < 300,
+        });
 
+    const { data, headers } = response;
     const blob = data as Blob;
     const contentType = String(headers["content-type"] ?? "");
     if (contentType.includes("application/json")) {
@@ -233,6 +254,61 @@ export async function downloadMonthlyReport(
     if (blobMessage) throw new Error(blobMessage);
     throw error;
   }
+}
+
+function buildMonthlyExportForm(
+  params: MonthlyParams & {
+    format: "excel" | "pdf";
+    style?: "detailed" | "simple";
+    signature?: {
+      file?: Blob | null;
+      useSaved?: boolean;
+      name?: string;
+      designation?: string;
+      date?: string;
+    };
+  }
+): FormData {
+  const form = new FormData();
+  if (params.month) form.append("month", params.month);
+  if (params.employeeId) form.append("employeeId", params.employeeId);
+  if (params.siteId) form.append("siteId", params.siteId);
+  if (params.sort) form.append("sort", params.sort);
+  form.append("format", params.format);
+  if (params.style) form.append("style", params.style);
+  if (params.signature?.name) form.append("signerName", params.signature.name);
+  if (params.signature?.designation) form.append("signerDesignation", params.signature.designation);
+  if (params.signature?.date) form.append("signerDate", params.signature.date);
+  form.append("useSavedSignature", params.signature?.useSaved ? "true" : "false");
+  if (params.signature?.file) {
+    form.append("signature", params.signature.file, "signature.png");
+  }
+  return form;
+}
+
+export async function getSavedAttendanceSignature(): Promise<{
+  hasSignature: boolean;
+  signaturePath: string | null;
+}> {
+  const { data } = await apiClient.get("/attendance/admin/signature");
+  return data;
+}
+
+export async function saveAttendanceSignature(
+  file: Blob
+): Promise<{ hasSignature: boolean; signaturePath: string | null }> {
+  const form = new FormData();
+  form.append("signature", file, "signature.png");
+  const { data } = await apiClient.post("/attendance/admin/signature", form);
+  return data;
+}
+
+export async function deleteAttendanceSignature(): Promise<{
+  hasSignature: boolean;
+  signaturePath: string | null;
+}> {
+  const { data } = await apiClient.delete("/attendance/admin/signature");
+  return data;
 }
 
 // ─── Admin manual marking ──────────────────────────────────────────────────

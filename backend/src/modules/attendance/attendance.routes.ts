@@ -38,9 +38,34 @@ router.get("/admin/monthly", requireAdminPanel(), requirePermission("viewAttenda
 router.get(
   "/admin/monthly/export",
   requireAdminPanel(),
-  // Same gate as the monthly calendar — Junior Admins export only what they can view.
   requirePermission("viewAttendance"),
   controller.adminMonthlyExport
+);
+router.post(
+  "/admin/monthly/export",
+  requireAdminPanel(),
+  requirePermission("viewAttendance"),
+  upload.single("signature"),
+  controller.adminMonthlyExport
+);
+router.get(
+  "/admin/signature",
+  requireAdminPanel(),
+  requirePermission("viewAttendance"),
+  controller.getMyAttendanceSignature
+);
+router.post(
+  "/admin/signature",
+  requireAdminPanel(),
+  requirePermission("viewAttendance"),
+  upload.single("signature"),
+  controller.saveMyAttendanceSignature
+);
+router.delete(
+  "/admin/signature",
+  requireAdminPanel(),
+  requirePermission("viewAttendance"),
+  controller.deleteMyAttendanceSignature
 );
 router.post(
   "/admin/mark-present",

@@ -24,6 +24,9 @@ async function canAccessFile(req: Request, relativePath: string): Promise<boolea
   if (isOwner) return true;
   if (req.user!.role === "admin") return true;
 
+  // Official signatures are never shared with other junior admins.
+  if (category === "signatures") return false;
+
   if (req.user!.role !== "junior_admin") return false;
 
   const perms = await getEmployeePermissions(req.user!.id);

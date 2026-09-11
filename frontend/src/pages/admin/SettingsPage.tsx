@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Users,
   ScanFace,
+  FileText,
   Shield,
   HardDrive,
   Database,
@@ -29,6 +30,7 @@ import { AttendanceSettingsSection } from "@/components/settings/AttendanceSetti
 import { WeeklyOffSettingsSection } from "@/components/settings/WeeklyOffSettingsSection";
 import { EmployeeSettingsSection } from "@/components/settings/EmployeeSettingsSection";
 import { AttendanceCaptureSettingsSection } from "@/components/settings/AttendanceCaptureSettingsSection";
+import { ReportsSettingsSection } from "@/components/settings/ReportsSettingsSection";
 import { NotificationSettingsSection } from "@/components/settings/NotificationSettingsSection";
 import { SecuritySettingsSection } from "@/components/settings/SecuritySettingsSection";
 import { JuniorAdminSettingsSection } from "@/components/settings/JuniorAdminSettingsSection";
@@ -46,6 +48,7 @@ const ICONS: Record<SettingsTabId, ReactNode> = {
   weeklyOff: <CalendarDays className="h-4 w-4" />,
   employee: <Users className="h-4 w-4" />,
   mobile: <ScanFace className="h-4 w-4" />,
+  reports: <FileText className="h-4 w-4" />,
   notifications: <Bell className="h-4 w-4" />,
   security: <Shield className="h-4 w-4" />,
   juniorAdmins: <UserCog className="h-4 w-4" />,
@@ -176,6 +179,8 @@ export function SettingsPage() {
                 <EmployeeSettingsSection />
               ) : activeTab === "mobile" ? (
                 <AttendanceCaptureSettingsSection />
+              ) : activeTab === "reports" ? (
+                <ReportsSettingsSection />
               ) : activeTab === "notifications" ? (
                 <NotificationSettingsSection />
               ) : activeTab === "security" ? (

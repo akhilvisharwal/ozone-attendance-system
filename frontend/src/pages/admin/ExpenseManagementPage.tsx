@@ -19,6 +19,7 @@ import * as juniorAdminsApi from "@/api/juniorAdmins";
 import { extractErrorMessage } from "@/api/client";
 import type { Employee, Expense, ExpenseReimbursementRequest, ReimbursementPeriodType, RequestExpenseSummary } from "@/types";
 import { formatDate } from "@/utils/format";
+import { canClearCompletedReimbursementRequest } from "@/utils/reimbursementRequestStatus";
 
 type StatusFilter = "" | "pending_approval" | "approved" | "paid" | "archived" | "rejected";
 
@@ -105,6 +106,14 @@ function computeSummary(expenses: Expense[]): RequestExpenseSummary {
   };
 }
 
+function canArchiveRequest(request: ExpenseReimbursementRequest, expenses: Expense[] = []) {
+  return canClearCompletedReimbursementRequest(
+    request.status,
+    expenses.map((row) => row.status),
+    request.all_items_completed
+  );
+}
+
 function payableAmount(request: ExpenseReimbursementRequest, summary?: RequestExpenseSummary | null) {
   if (summary) return summary.payableAmount;
   if (request.approved_amount != null) return Number(request.approved_amount);
@@ -163,8 +172,8 @@ export function ExpenseManagementPage() {
   const [exportEmployeeId, setExportEmployeeId] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const [requestData, summaryData, admins] = await Promise.all([
@@ -183,7 +192,7 @@ export function ExpenseManagementPage() {
     } catch (err) {
       setError(extractErrorMessage(err, "Could not load reimbursement requests."));
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [employeeId, from, to, status]);
 
@@ -231,7 +240,10 @@ export function ExpenseManagementPage() {
       );
       setDetailSummary(data.summary);
       setMessage("Expense approved.");
-      await load();
+      if (data.request.status !== "pending_approval") {
+        await refreshDetail(detailRequest.id);
+      }
+      await load({ silent: true });
     } catch (err) {
       setError(extractErrorMessage(err, "Could not approve expense."));
     } finally {
@@ -262,7 +274,10 @@ export function ExpenseManagementPage() {
       setMessage("Expense rejected.");
       setLineRejectTarget(null);
       setRejectReason("");
-      await load();
+      if (data.request.status !== "pending_approval") {
+        await refreshDetail(detailRequest.id);
+      }
+      await load({ silent: true });
     } catch (err) {
       setError(extractErrorMessage(err, "Could not reject expense."));
     } finally {
@@ -281,7 +296,7 @@ export function ExpenseManagementPage() {
       setDetailExpenses(refreshed.expenses);
       setDetailSummary(data.summary);
       setMessage("All remaining expenses approved.");
-      await load();
+      await load({ silent: true });
     } catch (err) {
       setError(extractErrorMessage(err, "Could not approve remaining expenses."));
     } finally {
@@ -301,7 +316,7 @@ export function ExpenseManagementPage() {
       setPayTarget(null);
       setPayNotes("");
       if (detailRequest?.id === payTarget.id) setDetailRequest(null);
-      await load();
+      await load({ silent: true });
     } catch (err) {
       setError(extractErrorMessage(err, "Could not mark request as paid."));
     } finally {
@@ -315,10 +330,10 @@ export function ExpenseManagementPage() {
     setError(null);
     try {
       await expensesApi.adminArchiveRequest(archiveTarget.id);
-      setMessage("Request archived for audit retention.");
+      setMessage("Request cleared from active lists. Records remain in Archived.");
       setArchiveTarget(null);
       if (detailRequest?.id === archiveTarget.id) setDetailRequest(null);
-      await load();
+      await load({ silent: true });
     } catch (err) {
       setError(extractErrorMessage(err, "Could not archive request."));
     } finally {
@@ -511,14 +526,14 @@ export function ExpenseManagementPage() {
                       Mark paid
                     </Button>
                   )}
-                  {request.status === "paid" && (
+                  {canArchiveRequest(request) && (
                     <Button
                       size="sm"
                       variant="outline"
                       icon={<Archive className="h-3.5 w-3.5" />}
                       onClick={() => setArchiveTarget(request)}
                     >
-                      Archive
+                      Clear / Archive
                     </Button>
                   )}
                 </div>
@@ -562,6 +577,16 @@ export function ExpenseManagementPage() {
                 }}
               >
                 Mark paid
+              </Button>
+            )}
+            {detailRequest && canArchiveRequest(detailRequest, detailExpenses) && (
+              <Button
+                type="button"
+                variant="outline"
+                icon={<Archive className="h-4 w-4" />}
+                onClick={() => setArchiveTarget(detailRequest)}
+              >
+                Clear / Archive
               </Button>
             )}
             <Button type="button" variant="secondary" onClick={() => setDetailRequest(null)}>
@@ -787,8 +812,8 @@ export function ExpenseManagementPage() {
       <Modal
         open={Boolean(archiveTarget)}
         onClose={() => setArchiveTarget(null)}
-        title="Archive request?"
-        description="Archived records are kept for audit. They can be permanently removed later from Database cleanup."
+        title="Clear / archive completed request?"
+        description="This hides the request from active lists. Expense and payment history are kept and remain available in the Archived tab."
         footer={
           <ModalFooterActions>
             <Button type="button" variant="secondary" onClick={() => setArchiveTarget(null)}>
@@ -801,8 +826,9 @@ export function ExpenseManagementPage() {
         }
       >
         <p className="text-sm text-slate-600">
-          Archive paid request for {archiveTarget?.employee_name} (
-          {archiveTarget ? formatMoney(payableAmount(archiveTarget)) : ""})?
+          Archive the completed request for {archiveTarget?.employee_name} (
+          {archiveTarget ? formatMoney(payableAmount(archiveTarget)) : ""})? This does not delete
+          expenses or payment records.
         </p>
       </Modal>
 

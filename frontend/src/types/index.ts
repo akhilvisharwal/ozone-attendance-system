@@ -118,6 +118,7 @@ export interface ExpenseReimbursementRequest {
   reviewed_by_name?: string | null;
   paid_by_name?: string | null;
   expense_count?: number;
+  all_items_completed?: boolean;
 }
 
 export interface RequestExpenseSummary {
@@ -130,6 +131,7 @@ export interface RequestExpenseSummary {
   approvedCount: number;
   rejectedCount: number;
   reviewedCount: number;
+  paidCount?: number;
 }
 
 export interface ExpenseWeekGroup {

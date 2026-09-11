@@ -26,6 +26,8 @@ export interface Employee {
   first_login_completed: boolean;
   password_changed_at?: string | null;
   profile_photo_path: string | null;
+  /** Private saved signature path. Stripped from public employee payloads. */
+  signature_image_path?: string | null;
   created_by: string | null;
   deleted_at: string | null;
   weekly_off_days: number[];
@@ -77,7 +79,7 @@ export interface ScoreboardEntry {
   score: number;
 }
 
-export type PublicEmployee = Omit<Employee, "password_hash">;
+export type PublicEmployee = Omit<Employee, "password_hash" | "signature_image_path">;
 
 export interface JwtAccessPayload {
   sub: string; // employee id

@@ -5,6 +5,10 @@ import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import { formatAdvanceAmount } from "./attendance.monthlyPdf";
 import { computePresentEquivalent, formatPresentEquivalent } from "./attendanceCalculation.service";
+import {
+  attendancePdfFooterHeight,
+  drawAttendancePdfSignature,
+} from "./attendance.monthlyPdfSignature";
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
 import type { MonthlyPdfMeta } from "./attendance.monthlyPdf";
 
@@ -90,7 +94,7 @@ export async function buildMonthlyCalendarPdfSimple(
     const pageW = doc.page.width;
     const pageH = doc.page.height;
     const margin = 20;
-    const footerH = 22;
+    const footerH = attendancePdfFooterHeight(Boolean(meta.signature));
 
     const generatedAt = meta.generatedAt ?? new Date();
     const dateStr = formatDisplayDateTime(generatedAt);
@@ -381,11 +385,13 @@ export async function buildMonthlyCalendarPdfSimple(
         }
         if (reports.autoPageNumbers) {
           doc.text(`Page ${i - range.start + 1} of ${range.count}`, margin, fy, {
-            width: contentW,
+            width: meta.signature ? contentW - 180 : contentW,
             align: "right",
           });
         }
-        if (reports.signatureText?.trim()) {
+        if (meta.signature) {
+          drawAttendancePdfSignature(doc, { pageW, pageH, margin, signature: meta.signature });
+        } else if (reports.signatureText?.trim()) {
           doc.text(reports.signatureText.trim(), margin, fy - 10, { width: contentW, align: "right" });
         }
       }

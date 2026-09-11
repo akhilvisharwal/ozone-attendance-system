@@ -92,6 +92,8 @@ export interface ReportsSettings {
   signatureText: string;
   defaultFormat: "pdf" | "excel";
   autoPageNumbers: boolean;
+  /** When true, monthly attendance PDF downloads require an authorized signature. */
+  requireSignatureOnAttendancePdfs: boolean;
 }
 
 export interface SecuritySettings {
@@ -230,6 +232,7 @@ export function buildDefaultSettings(): AppSettings {
       signatureText: "",
       defaultFormat: "pdf",
       autoPageNumbers: true,
+      requireSignatureOnAttendancePdfs: false,
     },
     security: {
       sessionTimeoutMinutes: 15,

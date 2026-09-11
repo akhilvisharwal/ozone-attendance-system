@@ -4,17 +4,23 @@ import { drawPdfLogo } from "../../utils/pdfBranding";
 import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import { formatMinutesAsHours } from "../../utils/date";
+import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
+import {
+  attendancePdfFooterHeight,
+  drawAttendancePdfSignature,
+  type AttendancePdfSignature,
+} from "./attendance.monthlyPdfSignature";
+
+export interface MonthlyPdfMeta {
+  generatedBy: string;
+  generatedAt?: Date;
+  signature?: AttendancePdfSignature;
+}
 
 /** Compact advance amount for the width-constrained PDF grid ("-" when nothing). */
 export function formatAdvanceAmount(value: number | undefined): string {
   if (!value) return "-";
   return Math.round(value).toLocaleString("en-IN");
-}
-import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
-
-export interface MonthlyPdfMeta {
-  generatedBy: string;
-  generatedAt?: Date;
 }
 
 interface StatusStyle {
@@ -80,7 +86,7 @@ export async function buildMonthlyCalendarPdf(
     const pageW = doc.page.width;
     const pageH = doc.page.height;
     const margin = 20;
-    const footerH = 22;
+    const footerH = attendancePdfFooterHeight(Boolean(meta.signature));
 
     const generatedAt = meta.generatedAt ?? new Date();
     const dateStr = formatDisplayDateTime(generatedAt);
@@ -375,10 +381,12 @@ export async function buildMonthlyCalendarPdf(
             `Page ${i - range.start + 1} of ${range.count}`,
             margin,
             fy,
-            { width: contentW, align: "right" }
+            { width: meta.signature ? contentW - 180 : contentW, align: "right" }
           );
         }
-        if (reports.signatureText?.trim()) {
+        if (meta.signature) {
+          drawAttendancePdfSignature(doc, { pageW, pageH, margin, signature: meta.signature });
+        } else if (reports.signatureText?.trim()) {
           doc.text(reports.signatureText.trim(), margin, fy - 10, { width: contentW, align: "right" });
         }
       }

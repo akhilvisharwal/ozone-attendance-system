@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { CalendarRange, ChevronLeft, ChevronRight, FileSpreadsheet, FileText } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -13,6 +13,10 @@ import { HolidayFormModal } from "@/components/HolidayFormModal";
 import { ManualAttendanceModal } from "@/components/ManualAttendanceModal";
 import { EmployeeAdvanceDetailModal } from "@/components/EmployeeAdvanceDetailModal";
 import { EmployeeCombobox } from "@/components/EmployeeCombobox";
+import {
+  AttendancePdfSignaturePanel,
+  type AttendancePdfSignatureHandle,
+} from "@/components/AttendancePdfSignaturePanel";
 import * as attendanceApi from "@/api/attendance";
 import * as sitesApi from "@/api/sites";
 import { extractErrorMessage } from "@/api/client";
@@ -20,8 +24,10 @@ import { useToast } from "@/components/ui/Toast";
 import type { MonthlyCellStatus, MonthlyGrid, Site } from "@/types";
 import { formatMinutesAsHours } from "@/utils/format";
 import { formatPresentDays } from "@/utils/employeeAttendanceStats";
+import { todayInputDate, validateAttendancePdfSignature } from "@/utils/attendancePdfSignature";
 import { usePermissions } from "@/auth/usePermissions";
 import { useAuth } from "@/auth/AuthContext";
+import { usePublicSettings } from "@/contexts/SettingsContext";
 import type { ChronologicalSort } from "@/utils/chronologicalSort";
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -58,7 +64,14 @@ function weekdayOf(dateStr: string): number {
 export function MonthlyAttendancePage() {
   const { can, isMasterAdmin, isJuniorAdmin } = usePermissions();
   const { employee: currentAdmin } = useAuth();
+  const { publicSettings } = usePublicSettings();
   const { showToast } = useToast();
+  const requirePdfSignature = Boolean(publicSettings?.reports.requireSignatureOnAttendancePdfs);
+  const signatureRef = useRef<AttendancePdfSignatureHandle>(null);
+  const [signerName, setSignerName] = useState(currentAdmin?.name ?? "");
+  const [signerDesignation, setSignerDesignation] = useState(currentAdmin?.designation ?? "");
+  const [signerDate, setSignerDate] = useState(todayInputDate());
+  const [hasSignatureImage, setHasSignatureImage] = useState(false);
   const canEditCell = can("editAttendance") || can("manualAttendance");
   const canManageAdvances = isMasterAdmin || can("manageAdvances");
   const [advanceTarget, setAdvanceTarget] = useState<{ id: string; name: string } | null>(null);
@@ -105,10 +118,28 @@ export function MonthlyAttendancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, employeeId, siteId, sortOrder]);
 
+  useEffect(() => {
+    if (!signerName && currentAdmin?.name) setSignerName(currentAdmin.name);
+    if (!signerDesignation && currentAdmin?.designation) setSignerDesignation(currentAdmin.designation);
+  }, [currentAdmin, signerName, signerDesignation]);
+
   async function handleDownload(format: "excel" | "pdf", style?: "detailed" | "simple") {
     const key = style ? `${format}-${style}` : format;
+    if (format === "pdf") {
+      const error = validateAttendancePdfSignature({
+        requireSignature: requirePdfSignature,
+        hasImage: signatureRef.current?.hasImage() ?? hasSignatureImage,
+        name: signerName,
+        date: signerDate,
+      });
+      if (error) {
+        showToast(error, "error");
+        return;
+      }
+    }
     setDownloading(key);
     try {
+      const signatureFile = format === "pdf" ? await signatureRef.current?.getFile() : null;
       await attendanceApi.downloadMonthlyReport({
         month,
         employeeId: employeeId || undefined,
@@ -116,6 +147,16 @@ export function MonthlyAttendancePage() {
         sort: sortOrder,
         format,
         style,
+        signature:
+          format === "pdf"
+            ? {
+                file: signatureFile,
+                useSaved: signatureRef.current?.isUsingSaved() ?? false,
+                name: signerName,
+                designation: signerDesignation,
+                date: signerDate,
+              }
+            : undefined,
       });
     } catch (err) {
       showToast(extractErrorMessage(err, `Could not download ${format.toUpperCase()} report.`), "error");
@@ -207,6 +248,20 @@ export function MonthlyAttendancePage() {
             <p className="text-xs text-slate-400">Tip: click any day number in the calendar header to mark it as a holiday.</p>
           )}
 
+          <AttendancePdfSignaturePanel
+            ref={signatureRef}
+            signerName={signerName}
+            designation={signerDesignation}
+            date={signerDate}
+            required={requirePdfSignature}
+            onImageChange={setHasSignatureImage}
+            onFieldsChange={(patch) => {
+              if (patch.name !== undefined) setSignerName(patch.name);
+              if (patch.designation !== undefined) setSignerDesignation(patch.designation);
+              if (patch.date !== undefined) setSignerDate(patch.date);
+            }}
+          />
+
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-slate-500">Download {employeeId ? "employee" : "all"}:</span>
             <Button
@@ -223,6 +278,7 @@ export function MonthlyAttendancePage() {
               size="sm"
               icon={<FileText className="h-4 w-4" />}
               isLoading={downloading === "pdf-detailed"}
+              disabled={requirePdfSignature && !hasSignatureImage}
               onClick={() => void handleDownload("pdf", "detailed")}
               title="Full daily grid, per-status counts, and full advance breakdown"
             >
@@ -233,6 +289,7 @@ export function MonthlyAttendancePage() {
               size="sm"
               icon={<FileText className="h-4 w-4" />}
               isLoading={downloading === "pdf-simple"}
+              disabled={requirePdfSignature && !hasSignatureImage}
               onClick={() => void handleDownload("pdf", "simple")}
               title="Large-print daily grid with just the headline totals"
             >

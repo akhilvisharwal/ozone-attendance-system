@@ -125,6 +125,7 @@ export interface ReportsSettings {
   signatureText: string;
   defaultFormat: "pdf" | "excel";
   autoPageNumbers: boolean;
+  requireSignatureOnAttendancePdfs: boolean;
 }
 
 export interface SecuritySettings {
@@ -418,7 +419,7 @@ export interface PublicSettings {
   employee: Pick<EmployeeSettings, "idFormat" | "profilePhotoRequired">;
   attendance: AttendanceSettings;
   attendanceOverride?: AttendanceOverrideNotice | null;
-  reports: Pick<ReportsSettings, "defaultFormat">;
+  reports: Pick<ReportsSettings, "defaultFormat" | "requireSignatureOnAttendancePdfs">;
   maps: {
     /** Browser Maps JavaScript API key (referrer-restricted; safe to expose to clients). */
     apiKey: string;
@@ -499,6 +500,7 @@ export type SettingsTabId =
   | "weeklyOff"
   | "employee"
   | "mobile"
+  | "reports"
   | "notifications"
   | "security"
   | "juniorAdmins"
@@ -520,6 +522,7 @@ export const SETTINGS_NAV: {
   { id: "weeklyOff", label: "Weekly Off & Holidays", description: "Default weekly off and related links", group: "Operations" },
   { id: "employee", label: "Employees", description: "Employee defaults and ID format", group: "Operations" },
   { id: "mobile", label: "Attendance Capture", description: "GPS, selfie, and capture rules for mobile and web", group: "Operations" },
+  { id: "reports", label: "Reports", description: "Attendance PDF signature and export options", group: "Operations" },
   { id: "notifications", label: "Notifications", description: "Email and in-app notification toggles", group: "Communications" },
   { id: "security", label: "Security", description: "Password policy and session controls", group: "Administration" },
   {

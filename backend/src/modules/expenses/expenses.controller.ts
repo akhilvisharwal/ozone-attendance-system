@@ -445,8 +445,10 @@ export const adminMarkRequestPaid = asyncHandler(async (req: Request, res: Respo
 });
 
 export const adminArchiveRequest = asyncHandler(async (req: Request, res: Response) => {
-  const request = await requestsRepo.archivePaidRequest(req.params.id);
-  if (!request) throw ApiError.conflict("Only paid requests can be archived");
+  const request = await requestsRepo.archiveCompletedRequest(req.params.id);
+  if (!request) {
+    throw ApiError.conflict("Only fully approved or paid requests can be archived");
+  }
 
   await logAudit(req, "expense.request_archive", "expense", request.id, {
     employeeId: request.employee_id,
@@ -480,6 +482,10 @@ export const adminReviewExpense = asyncHandler(async (req: Request, res: Respons
     reviewedBy: req.user!.id,
   });
   if (!expense) throw ApiError.notFound("Expense not found");
+
+  if (expense.request_id) {
+    await requestsRepo.syncRequestStatusForExpense(expense.id, req.user!.id);
+  }
 
   await logAudit(
     req,
