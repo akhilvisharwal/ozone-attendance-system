@@ -149,15 +149,21 @@ export function computeAttendanceStreak(
   return streak;
 }
 
+/** Present/Worked = P + HW + WW + (H × 0.5). */
+export function presentEquivalentDays(summary: MonthlySummary): number {
+  if (typeof summary.presentEquivalent === "number") return summary.presentEquivalent;
+  return summary.present + summary.holidayWorked + summary.weeklyOffWorked + summary.halfDay * 0.5;
+}
+
+export function formatPresentDays(summary: MonthlySummary): string {
+  const value = Math.round(presentEquivalentDays(summary) * 10) / 10;
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 export function getPerformanceLevel(summary: MonthlySummary): PerformanceLevel {
+  const presentEquivalent = presentEquivalentDays(summary);
   if (summary.workingDays <= 0) {
-    const credited =
-      summary.present +
-      summary.halfDay +
-      summary.leave +
-      summary.holidayWorked +
-      summary.weeklyOffWorked;
-    if (credited === 0) return "needs_improvement";
+    if (presentEquivalent === 0) return "needs_improvement";
   }
 
   const lateRate = summary.workingDays > 0 ? summary.lateCheckIns / summary.workingDays : 0;

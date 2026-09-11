@@ -33,7 +33,7 @@ const STATUS_STYLES: Record<MonthlyCellStatus, StatusStyle> = {
   holiday_worked: { code: "HW", bg: "#ccfbf1", fg: "#000000" },
   weekly_off_worked: { code: "WW", bg: "#e0e7ff", fg: "#000000" },
   none: { code: "", bg: "#ffffff", fg: "#000000" },
-  not_applicable: { code: "", bg: "#f3f4f6", fg: "#000000" },
+  not_applicable: { code: "NA", bg: "#f3f4f6", fg: "#000000" },
 };
 
 /** Late check-in overlay — light orange with black text for print readability. */
@@ -49,7 +49,7 @@ const LEGEND_ITEMS: { code: string; label: string; bg: string; fg: string }[] = 
   { code: "HW", label: "Worked on Holiday", bg: "#ccfbf1", fg: "#000000" },
   { code: "WW", label: "Worked on Weekly Off", bg: "#e0e7ff", fg: "#000000" },
   { code: "LT", label: "Late Check-in", bg: "#ffedd5", fg: "#000000" },
-  { code: "—", label: "Not Applicable (before joining)", bg: "#f3f4f6", fg: "#000000" },
+  { code: "NA", label: "Not Applicable (before joining)", bg: "#f3f4f6", fg: "#000000" },
 ];
 
 const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];

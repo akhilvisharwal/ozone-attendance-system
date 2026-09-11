@@ -40,6 +40,7 @@ function buildMockGrid(year: number, month: number, employeeCount: number): Mont
       holidays: 1,
       holidayWorked: 0,
       weeklyOffWorked: 0,
+      presentEquivalent: 20.5,
       workingDays: 22,
       totalMinutes: 9600,
       attendancePercentage: 91,

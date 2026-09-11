@@ -12,7 +12,11 @@ import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
 import type { MonthlySummary } from "@/types";
 import { formatMinutesAsHours } from "@/utils/format";
-import type { ExtendedMonthlyStats, PerformanceLevel } from "@/utils/employeeAttendanceStats";
+import {
+  formatPresentDays,
+  type ExtendedMonthlyStats,
+  type PerformanceLevel,
+} from "@/utils/employeeAttendanceStats";
 
 const PERFORMANCE_STYLES: Record<
   PerformanceLevel,
@@ -169,7 +173,7 @@ export function EmployeeMonthlySummaryPanel({
               </p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <StatTile label="Working Days" value={summary.workingDays} />
-                <StatTile label="Present" value={summary.present} accent="emerald" />
+                <StatTile label="Present / Worked" value={formatPresentDays(summary)} accent="emerald" />
                 <StatTile label="Absent" value={summary.absent} accent="rose" />
                 <StatTile label="Half Days" value={summary.halfDay} accent="amber" />
                 <StatTile label="Weekly Offs" value={summary.weeklyOff} />

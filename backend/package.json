@@ -15,7 +15,7 @@
     "deploy:setup": "npm run migrate && npm run seed",
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
-    "reset-admin-password": "node scripts/reset-admin-password.js",
+    "reset-admin-password": "tsx scripts/reset-admin-password.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test src/**/*.test.ts",
     "test:http": "tsx --test src/qa/http.integration.test.ts"

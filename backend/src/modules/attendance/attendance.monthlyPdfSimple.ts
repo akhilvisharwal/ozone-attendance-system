@@ -4,6 +4,7 @@ import { drawPdfLogo } from "../../utils/pdfBranding";
 import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import { formatAdvanceAmount } from "./attendance.monthlyPdf";
+import { computePresentEquivalent, formatPresentEquivalent } from "./attendanceCalculation.service";
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
 import type { MonthlyPdfMeta } from "./attendance.monthlyPdf";
 
@@ -30,7 +31,7 @@ const STATUS_STYLES: Record<MonthlyCellStatus, StatusStyle> = {
   holiday_worked: { code: "HW", bg: "#ccfbf1", fg: "#134e4a" },
   weekly_off_worked: { code: "WW", bg: "#e0e7ff", fg: "#312e81" },
   none: { code: "", bg: "#ffffff", fg: "#000000" },
-  not_applicable: { code: "", bg: "#f3f4f6", fg: "#94a3b8" },
+  not_applicable: { code: "NA", bg: "#f3f4f6", fg: "#94a3b8" },
 };
 
 /** Late check-in overlay — same tint family as the Detailed PDF for consistency. */
@@ -46,7 +47,7 @@ const LEGEND_ITEMS: { code: string; label: string; bg: string; fg: string }[] = 
   { code: "HW", label: "Worked on Holiday", bg: STATUS_STYLES.holiday_worked.bg, fg: STATUS_STYLES.holiday_worked.fg },
   { code: "WW", label: "Worked on Weekly Off", bg: STATUS_STYLES.weekly_off_worked.bg, fg: STATUS_STYLES.weekly_off_worked.fg },
   { code: "LT", label: "Late Check-in", bg: LATE_STYLE.bg, fg: LATE_STYLE.fg },
-  { code: "—", label: "Not Applicable (before joining)", bg: "#f3f4f6", fg: "#000000" },
+  { code: "NA", label: "Not Applicable (before joining)", bg: "#f3f4f6", fg: "#000000" },
 ];
 
 const WEEKDAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -343,7 +344,7 @@ export async function buildMonthlyCalendarPdfSimple(
 
       const s = emp.summary;
       const summaryValues = [
-        String(s.present),
+        formatPresentEquivalent(s.presentEquivalent ?? computePresentEquivalent(s)),
         String(s.absent),
         String(s.halfDay),
         `${s.attendancePercentage}%`,

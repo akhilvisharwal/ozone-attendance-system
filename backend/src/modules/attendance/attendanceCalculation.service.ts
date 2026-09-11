@@ -36,23 +36,26 @@ export function isIncompleteAttendanceDay(record: unknown): boolean {
   return !row.check_in_time;
 }
 
-export function cellStatusFromRecord(
-  record: AttendanceRecordLike,
-  isWeeklyOff: boolean,
-  isHoliday: boolean
-): MonthlyCellStatus {
+/** True when the row represents actual work (check-in / present / half-day / HW / WW). */
+export function recordRepresentsWork(record: AttendanceRecordLike): boolean {
+  if (record.is_admin_marked && record.admin_mark_status) {
+    return WORKED_MINUTE_STATUSES.has(record.admin_mark_status as MonthlyCellStatus);
+  }
+  if (record.special_day_status === "holiday_worked" || record.special_day_status === "weekly_off_worked") {
+    return true;
+  }
+  if (record.day_status === "present" || record.day_status === "half_day") return true;
+  if (record.status === "checked_in") return true;
+  if (record.check_in_time) return true;
+  return false;
+}
+
+function baseStatusFromRecord(record: AttendanceRecordLike): MonthlyCellStatus {
   if (record.is_admin_marked && record.admin_mark_status) {
     return record.admin_mark_status as MonthlyCellStatus;
   }
-
-  const special = record.special_day_status;
-  if (special === "holiday_worked" || (isHoliday && !special)) {
-    return "holiday_worked";
-  }
-  if (special === "weekly_off_worked" || (isWeeklyOff && !isHoliday)) {
-    return "weekly_off_worked";
-  }
-
+  if (record.special_day_status === "holiday_worked") return "holiday_worked";
+  if (record.special_day_status === "weekly_off_worked") return "weekly_off_worked";
   if (record.day_status === "present") return "present";
   if (record.day_status === "half_day") return "half_day";
   if (record.day_status === "absent") return "absent";
@@ -61,7 +64,39 @@ export function cellStatusFromRecord(
     return "present";
   }
   if (record.status === "absent") return "absent";
+  if (record.check_in_time) return "present";
   return "present";
+}
+
+/**
+ * Promote real work on a holiday/weekly off to HW/WW.
+ * Non-work rows (auto-absent, empty) stay as holiday/weekly off — they are not absences.
+ */
+function applyCalendarWorkStatus(
+  status: MonthlyCellStatus,
+  isWeeklyOff: boolean,
+  isHoliday: boolean
+): MonthlyCellStatus {
+  const worked = WORKED_MINUTE_STATUSES.has(status);
+  if (isHoliday) {
+    if (worked) return "holiday_worked";
+    if (status === "leave") return "leave";
+    return "holiday";
+  }
+  if (isWeeklyOff) {
+    if (worked) return "weekly_off_worked";
+    if (status === "leave") return "leave";
+    return "weekly_off";
+  }
+  return status;
+}
+
+export function cellStatusFromRecord(
+  record: AttendanceRecordLike,
+  isWeeklyOff: boolean,
+  isHoliday: boolean
+): MonthlyCellStatus {
+  return applyCalendarWorkStatus(baseStatusFromRecord(record), isWeeklyOff, isHoliday);
 }
 
 /**
@@ -94,37 +129,48 @@ export function resolveDayStatus(input: {
 }
 
 /**
- * Working Days = elapsed calendar days in range − weekly offs − holidays − pending days.
- * Pending days (status "none") include today before cutoff; future days are excluded.
+ * Statuses that are not eligible scheduled working days for Att% / WD.
+ * HW and WW count as extra worked days in the numerator only.
+ */
+export const NON_SCHEDULED_WORKING_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set([
+  "not_applicable",
+  "weekly_off",
+  "holiday",
+  "holiday_worked",
+  "weekly_off_worked",
+  "leave",
+  "none",
+]);
+
+/**
+ * Eligible scheduled working days: present + half-day + absent.
+ * Excludes holidays, weekly offs (worked or not), pre-join dates, approved leave, and pending.
  */
 export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): number {
-  let elapsed = 0;
-  let weeklyOff = 0;
-  let holidays = 0;
-  let pending = 0;
-
+  let count = 0;
   for (const day of days) {
-    if (day.status === "not_applicable") continue;
     if (day.date > todayStr) continue;
-    elapsed += 1;
-    if (day.status === "weekly_off") weeklyOff += 1;
-    else if (day.status === "holiday") holidays += 1;
-    else if (day.status === "none") pending += 1;
+    if (NON_SCHEDULED_WORKING_STATUSES.has(day.status)) continue;
+    count += 1;
   }
+  return count;
+}
 
-  return Math.max(0, elapsed - weeklyOff - holidays - pending);
+/** Present/Worked = P + HW + WW + (H × 0.5). */
+export function computePresentEquivalent(
+  summary: Pick<MonthlySummary, "present" | "halfDay" | "holidayWorked" | "weeklyOffWorked">
+): number {
+  return summary.present + summary.holidayWorked + summary.weeklyOffWorked + summary.halfDay * 0.5;
+}
+
+export function formatPresentEquivalent(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 export function computeAttendancePercentage(summary: MonthlySummary): number {
   if (summary.workingDays <= 0) return 0;
-
-  const credited =
-    summary.present +
-    summary.halfDay * 0.5 +
-    summary.leave +
-    summary.holidayWorked +
-    summary.weeklyOffWorked;
-
+  const credited = computePresentEquivalent(summary);
   return Math.round((credited / summary.workingDays) * 1000) / 10;
 }
 
@@ -182,6 +228,12 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
   }
 
   const workingDays = computeWorkingDays(days, todayStr);
+  const presentEquivalent = computePresentEquivalent({
+    present,
+    halfDay,
+    holidayWorked,
+    weeklyOffWorked,
+  });
   const partial: MonthlySummary = {
     present,
     halfDay,
@@ -191,6 +243,7 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
     holidays,
     holidayWorked,
     weeklyOffWorked,
+    presentEquivalent,
     totalMinutes,
     workingDays,
     attendancePercentage: 0,

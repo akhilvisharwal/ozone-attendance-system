@@ -50,6 +50,8 @@ export interface MonthlySummary {
   holidays: number;
   holidayWorked: number;
   weeklyOffWorked: number;
+  /** P + HW + WW + (H × 0.5). Used as Present/Worked in simple PDF and Att%. */
+  presentEquivalent: number;
   totalMinutes: number;
   workingDays: number;
   attendancePercentage: number;

@@ -21,7 +21,7 @@ describe("monthly attendance PDF print colors", () => {
     assert.match(source, /holiday:\s*\{\s*code:\s*"HO",\s*bg:\s*"#ede9fe",\s*fg:\s*"#000000"/);
     assert.match(source, /holiday_worked:\s*\{\s*code:\s*"HW",\s*bg:\s*"#ccfbf1",\s*fg:\s*"#000000"/);
     assert.match(source, /weekly_off_worked:\s*\{\s*code:\s*"WW",\s*bg:\s*"#e0e7ff",\s*fg:\s*"#000000"/);
-    assert.match(source, /not_applicable:\s*\{\s*code:\s*"",\s*bg:\s*"#f3f4f6",\s*fg:\s*"#000000"/);
+    assert.match(source, /not_applicable:\s*\{\s*code:\s*"NA",\s*bg:\s*"#f3f4f6",\s*fg:\s*"#000000"/);
   });
 
   it("uses light orange for late check-in cells and includes it in the legend", () => {
@@ -39,3 +39,19 @@ describe("monthly attendance PDF print colors", () => {
     assert.doesNotMatch(source, /bg:\s*"#4f46e5"/);
   });
 });
+
+describe("monthly attendance simple PDF summary", () => {
+  const simpleSource = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "attendance.monthlyPdfSimple.ts"),
+    "utf8"
+  );
+
+  it("prints Present/Worked from presentEquivalent so HW and WW are included", () => {
+    assert.match(simpleSource, /formatPresentEquivalent\(s\.presentEquivalent/);
+    assert.match(simpleSource, /holiday_worked:\s*\{\s*code:\s*"HW"/);
+    assert.match(simpleSource, /weekly_off_worked:\s*\{\s*code:\s*"WW"/);
+    assert.match(simpleSource, /label:\s*"Worked on Holiday"/);
+    assert.match(simpleSource, /label:\s*"Worked on Weekly Off"/);
+  });
+});
+
