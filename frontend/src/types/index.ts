@@ -540,7 +540,7 @@ export interface MonthlySummary {
   holidays: number;
   holidayWorked: number;
   weeklyOffWorked: number;
-  /** P + HO + (H × 0.5). HW/WW are excluded and shown as worked-on-off-days. */
+  /** P + HO + HW + WW + (H × 0.5). Worked-on-off-days is a breakdown of HW+WW, not extra Present. */
   presentEquivalent: number;
   totalMinutes: number;
   workingDays: number;

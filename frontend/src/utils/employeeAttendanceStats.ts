@@ -149,10 +149,16 @@ export function computeAttendanceStreak(
   return streak;
 }
 
-/** Present = P + HO + (H × 0.5). HW/WW are excluded from this figure. */
+/** Present = P + HO + HW + WW + (H × 0.5). Unworked weekly offs are excluded. */
 export function presentEquivalentDays(summary: MonthlySummary): number {
   if (typeof summary.presentEquivalent === "number") return summary.presentEquivalent;
-  return summary.present + summary.holidays + summary.halfDay * 0.5;
+  return (
+    summary.present +
+    summary.holidays +
+    summary.holidayWorked +
+    summary.weeklyOffWorked +
+    summary.halfDay * 0.5
+  );
 }
 
 export function formatPresentDays(summary: MonthlySummary): string {

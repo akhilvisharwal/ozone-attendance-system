@@ -44,7 +44,8 @@ describe("monthly attendance PDF print colors", () => {
     assert.match(source, /key: "Signature"/);
     assert.match(source, /holidayWorked \+ s\.weeklyOffWorked/);
     assert.match(source, /formatPresentEquivalent\(s\.presentEquivalent\)/);
-    assert.match(source, /blank: true/);
+    assert.match(source, /Total\\nAtt\./);
+    assert.match(source, /presentTotal/);
     assert.doesNotMatch(source, /\{ key: "HW", w: /);
     assert.doesNotMatch(source, /\{ key: "WW", w: /);
   });
@@ -56,10 +57,12 @@ describe("monthly attendance simple PDF summary", () => {
     "utf8"
   );
 
-  it("prints Present as P + holiday + half-day equivalent, with HW/WW in a separate Off Days column", () => {
-    assert.match(simpleSource, /formatPresentEquivalent\(s\.presentEquivalent/);
+  it("prints Present including HW/WW, with Total Attendance before Signature", () => {
+    assert.match(simpleSource, /formatPresentEquivalent\(/);
+    assert.match(simpleSource, /presentTotal/);
     assert.match(simpleSource, /holidayWorked \+ s\.weeklyOffWorked/);
     assert.match(simpleSource, /Worked on\\nOff Days/);
+    assert.match(simpleSource, /Total\\nAttendance/);
     assert.match(simpleSource, /key: "Signature"/);
     assert.match(simpleSource, /holiday_worked:\s*\{\s*code:\s*"HW"/);
     assert.match(simpleSource, /weekly_off_worked:\s*\{\s*code:\s*"WW"/);

@@ -63,7 +63,7 @@ const WEEKDAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  * same MonthlyGrid data (no separate DB queries) but renders a simplified layout:
  * bigger day cells and fonts, a two-row date+weekday header, and a compact
  * monthly summary (Present/Absent/Half Day/Worked on Off Days/Att%/Advance
- * Owed plus a blank Signature column). Role (Employee Details) and Hrs
+ * Owed/Total Attendance plus a blank Signature column). Role (Employee Details) and Hrs
  * (Monthly Summary) are dropped here specifically — Simple-only trims, the
  * Detailed PDF keeps both — and the width they free is redistributed into
  * the daily grid, not left as blank margin (see computeLayout below).
@@ -105,16 +105,18 @@ export async function buildMonthlyCalendarPdfSimple(
     const colId = 44;
     const infoW = colSn + colName + colId;
 
-    // Compact summary: Present excludes HW/WW. Off-day work is a separate
-    // review column; Signature is a blank handwriting box at the far right.
+    // Compact summary: Present includes HW/WW. Off-day work is also listed as a
+    // breakdown. Total Attendance (same figure as Present) sits just before the
+    // blank Signature box.
     const sumCols = [
-      { key: "Present", w: 32 },
-      { key: "Absent", w: 30 },
-      { key: "Half Day", w: 32 },
-      { key: "Worked on\nOff Days", w: 42, wrap: true },
-      { key: "Att%", w: 28 },
-      { key: "Adv Owed", w: 40 },
-      { key: "Signature", w: 54, blank: true },
+      { key: "Present", w: 30 },
+      { key: "Absent", w: 28 },
+      { key: "Half Day", w: 30 },
+      { key: "Worked on\nOff Days", w: 38, wrap: true },
+      { key: "Att%", w: 26 },
+      { key: "Adv Owed", w: 36 },
+      { key: "Total\nAttendance", w: 40, wrap: true },
+      { key: "Signature", w: 50, blank: true },
     ] as const;
     const summaryW = sumCols.reduce((s, c) => s + c.w, 0);
 
@@ -352,8 +354,11 @@ export async function buildMonthlyCalendarPdfSimple(
       }
 
       const s = emp.summary;
+      const presentTotal = formatPresentEquivalent(
+        s.presentEquivalent ?? computePresentEquivalent(s)
+      );
       const summaryValues = [
-        formatPresentEquivalent(s.presentEquivalent ?? computePresentEquivalent(s)),
+        presentTotal,
         String(s.absent),
         String(s.halfDay),
         String(s.holidayWorked + s.weeklyOffWorked),
@@ -363,6 +368,7 @@ export async function buildMonthlyCalendarPdfSimple(
         // Detailed PDF's "Bal" column both read, collapsed here to one number
         // instead of the four separate taken/returned/balance/due columns.
         formatAdvanceAmount(emp.advances?.balance),
+        presentTotal,
         "",
       ];
 

@@ -113,7 +113,8 @@ export async function buildMonthlyCalendarPdf(
       { key: "Adv-", w: 22 },
       { key: "Bal", w: 24 },
       { key: "Due", w: 20 },
-      { key: "Signature", w: 54, blank: true },
+      { key: "Total\nAtt.", w: 22, wrap: true },
+      { key: "Signature", w: 48, blank: true },
     ] as const;
     const summaryW = sumCols.reduce((s, c) => s + c.w, 0);
 
@@ -339,8 +340,9 @@ export async function buildMonthlyCalendarPdf(
 
       const s = emp.summary;
       const hoursLabel = formatMinutesAsHours(s.totalMinutes).replace(" ", "");
+      const presentTotal = formatPresentEquivalent(s.presentEquivalent);
       const summaryValues = [
-        formatPresentEquivalent(s.presentEquivalent),
+        presentTotal,
         String(s.halfDay),
         String(s.absent),
         String(s.leave),
@@ -354,6 +356,7 @@ export async function buildMonthlyCalendarPdf(
         formatAdvanceAmount(emp.advances?.returned),
         formatAdvanceAmount(emp.advances?.balance),
         formatAdvanceAmount(emp.advances?.scheduled),
+        presentTotal,
         "",
       ];
 

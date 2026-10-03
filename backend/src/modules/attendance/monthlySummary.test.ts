@@ -19,7 +19,7 @@ function day(date: string, status: MonthlyDayCell["status"]): MonthlyDayCell {
 }
 
 describe("monthly summary calculations", () => {
-  it("computes working days excluding weekly offs, HW, WW, and pending", () => {
+  it("computes working days excluding unworked weekly offs and pending", () => {
     const days = [
       day("2026-07-01", "present"),
       day("2026-07-02", "half_day"),
@@ -31,7 +31,7 @@ describe("monthly summary calculations", () => {
       day("2026-07-08", "weekly_off_worked"),
       day("2026-07-09", "none"),
     ];
-    assert.equal(computeWorkingDays(days, "2026-07-08"), 5);
+    assert.equal(computeWorkingDays(days, "2026-07-08"), 7);
   });
 
   it("finalizes working days from day cells instead of miscounting today as absent", () => {

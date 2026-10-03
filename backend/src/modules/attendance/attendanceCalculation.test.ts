@@ -31,7 +31,7 @@ function day(
 }
 
 describe("attendance calculation service", () => {
-  it("computes working days as present + half-day + absent + leave + holiday (excludes weekly offs, pending)", () => {
+  it("computes working days as present + half-day + absent + leave + holiday + HW + WW (excludes unworked weekly offs, pending)", () => {
     const days = [
       day("2026-07-01", "absent"),
       day("2026-07-02", "absent"),
@@ -70,10 +70,10 @@ describe("attendance calculation service", () => {
     assert.equal(summary.weeklyOffWorked, 1);
     assert.equal(summary.totalMinutes, 480 + 240 + 360 + 300);
     assert.equal(summary.lateCheckIns, 1);
-    assert.equal(summary.workingDays, 5);
-    assert.equal(summary.presentEquivalent, 2.5);
+    assert.equal(summary.workingDays, 7);
+    assert.equal(summary.presentEquivalent, 4.5);
     assert.equal(computeWorkedOnOffDays(summary), 2);
-    assert.equal(summary.attendancePercentage, 50);
+    assert.equal(summary.attendancePercentage, 64.3);
   });
 
   it("counts approved leave as absent in the monthly total and attendance percentage", () => {
@@ -351,7 +351,7 @@ describe("attendance calculation service", () => {
     assert.equal(summary.attendancePercentage, 0);
   });
 
-  it("treats work on a holiday as HW without adding it to Present or Attendance %", () => {
+  it("includes work on a holiday in Present and in Worked on Off Days without double-counting", () => {
     const status = resolveDayStatus({
       record: {
         day_status: "present",
@@ -377,15 +377,15 @@ describe("attendance calculation service", () => {
     );
     assert.equal(summary.present, 1);
     assert.equal(summary.holidayWorked, 1);
-    assert.equal(summary.presentEquivalent, 1);
+    assert.equal(summary.presentEquivalent, 2);
     assert.equal(computeWorkedOnOffDays(summary), 1);
     assert.equal(summary.absent, 0);
-    assert.equal(summary.workingDays, 1);
+    assert.equal(summary.workingDays, 2);
     assert.equal(summary.attendancePercentage, 100);
-    assert.equal(formatPresentEquivalent(summary.presentEquivalent), "1");
+    assert.equal(formatPresentEquivalent(summary.presentEquivalent), "2");
   });
 
-  it("treats work on a weekly off as WW without adding it to Present or Attendance %", () => {
+  it("includes work on a weekly off in Present and in Worked on Off Days without double-counting", () => {
     const status = resolveDayStatus({
       record: {
         day_status: "present",
@@ -410,10 +410,10 @@ describe("attendance calculation service", () => {
       "2026-08-09"
     );
     assert.equal(summary.weeklyOffWorked, 1);
-    assert.equal(summary.presentEquivalent, 1);
+    assert.equal(summary.presentEquivalent, 2);
     assert.equal(computeWorkedOnOffDays(summary), 1);
     assert.equal(summary.absent, 0);
-    assert.equal(summary.workingDays, 1);
+    assert.equal(summary.workingDays, 2);
     assert.equal(summary.attendancePercentage, 100);
   });
 
@@ -544,7 +544,7 @@ describe("attendance calculation service", () => {
     assert.equal(computePresentEquivalent(summary), 1);
   });
 
-  it("counts HW and WW only in Worked on Off Days, not Present/Worked or Attendance %", () => {
+  it("includes HW and WW in Present and Total Attendance without counting a day twice", () => {
     // Fragment of an August 2026 register: Independence Day (15th) worked, a Sunday worked,
     // an unworked Sunday, plus normal present/absent/half-day.
     const days = [
@@ -565,11 +565,31 @@ describe("attendance calculation service", () => {
     assert.equal(summary.weeklyOffWorked, 1);
     assert.equal(summary.weeklyOff, 1);
     assert.equal(summary.absent, 1);
-    assert.equal(summary.presentEquivalent, 4.5); // 4P + 0.5H, HW/WW excluded
+    assert.equal(summary.presentEquivalent, 6.5); // 4P + 0.5H + 1HW + 1WW
     assert.equal(computeWorkedOnOffDays(summary), 2);
-    assert.equal(summary.workingDays, 6); // P+H+A; HW/WW excluded
-    assert.equal(summary.attendancePercentage, 75);
-    assert.equal(formatPresentEquivalent(summary.presentEquivalent), "4.5");
+    assert.equal(summary.workingDays, 8); // P+H+A+HW+WW
+    assert.equal(summary.attendancePercentage, 81.3);
+    assert.equal(formatPresentEquivalent(summary.presentEquivalent), "6.5");
+  });
+
+  it("adds a Sunday WW to Present so 23.5 + 1 off-day work is 24.5", () => {
+    const days = [
+      ...Array.from({ length: 23 }, (_, i) =>
+        day(`2026-09-${String(i + 1).padStart(2, "0")}`, "present", 480)
+      ),
+      day("2026-09-24", "half_day", 240),
+      day("2026-09-25", "absent"),
+      day("2026-09-26", "absent"),
+      day("2026-09-27", "weekly_off_worked", 480),
+    ];
+    const summary = buildSummaryFromDays(days, "2026-09-30");
+    assert.equal(summary.present, 23);
+    assert.equal(summary.halfDay, 1);
+    assert.equal(summary.absent, 2);
+    assert.equal(summary.weeklyOffWorked, 1);
+    assert.equal(computeWorkedOnOffDays(summary), 1);
+    assert.equal(summary.presentEquivalent, 24.5);
+    assert.equal(formatPresentEquivalent(summary.presentEquivalent), "24.5");
   });
 
   it("does not count leave on a holiday or weekly off as absent", () => {

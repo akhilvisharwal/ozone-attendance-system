@@ -137,22 +137,21 @@ export function resolveDayStatus(input: {
 
 /**
  * Statuses that are not eligible scheduled working days for Att% / WD.
- * HW and WW are excluded from Present and Attendance %; they are counted
- * separately as worked-on-off-days for review. Approved leave stays `L` on
- * the grid but is an eligible working day (counted as absent). Declared
- * holidays (`HO`) stay `HO` on the grid but count as 1 Present day.
+ * Unworked weekly offs stay out of Present and Attendance %. HW and WW are
+ * real work, so they count in Present (and in working days) as well as in the
+ * Worked on Off Days breakdown — a day is never counted twice. Approved leave
+ * stays `L` on the grid but is an eligible working day (counted as absent).
+ * Declared holidays (`HO`) stay `HO` on the grid but count as 1 Present day.
  */
 export const NON_SCHEDULED_WORKING_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set([
   "not_applicable",
   "weekly_off",
-  "holiday_worked",
-  "weekly_off_worked",
   "none",
 ]);
 
 /**
- * Eligible scheduled working days: present + half-day + absent + approved leave + holiday.
- * Excludes weekly offs (worked or not), HW, pre-join dates, and pending.
+ * Eligible scheduled working days: present + half-day + absent + approved leave
+ * + holiday + HW + WW. Excludes unworked weekly offs, pre-join dates, and pending.
  */
 export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): number {
   let count = 0;
@@ -164,11 +163,17 @@ export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): nu
   return count;
 }
 
-/** Present = P + HO + (H × 0.5). HW and WW are not included. */
+/** Present = P + HO + HW + WW + (H × 0.5). Unworked weekly offs are not included. */
 export function computePresentEquivalent(
-  summary: Pick<MonthlySummary, "present" | "halfDay" | "holidays">
+  summary: Pick<MonthlySummary, "present" | "halfDay" | "holidays" | "holidayWorked" | "weeklyOffWorked">
 ): number {
-  return summary.present + summary.holidays + summary.halfDay * 0.5;
+  return (
+    summary.present +
+    summary.holidays +
+    summary.holidayWorked +
+    summary.weeklyOffWorked +
+    summary.halfDay * 0.5
+  );
 }
 
 /** HW + WW, each counted as 1. Unworked holidays/weekly offs are not included. */
@@ -244,7 +249,13 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
   }
 
   const workingDays = computeWorkingDays(days, todayStr);
-  const presentEquivalent = computePresentEquivalent({ present, halfDay, holidays });
+  const presentEquivalent = computePresentEquivalent({
+    present,
+    halfDay,
+    holidays,
+    holidayWorked,
+    weeklyOffWorked,
+  });
   const partial: MonthlySummary = {
     present,
     halfDay,
