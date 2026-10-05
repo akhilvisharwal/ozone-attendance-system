@@ -39,13 +39,30 @@ describe("monthly attendance PDF print colors", () => {
     assert.doesNotMatch(source, /bg:\s*"#4f46e5"/);
   });
 
-  it("adds Worked on Off Days and a blank Signature column in Monthly Summary", () => {
-    assert.match(source, /Worked on\\nOff Days/);
-    assert.match(source, /key: "Signature"/);
-    assert.match(source, /holidayWorked \+ s\.weeklyOffWorked/);
+  it("prints Total Attendance before Absent and omits the Present summary column", () => {
+    const summaryKeys = [...source.matchAll(/\{ key: "([^"]+)"/g)].map((match) =>
+      match[1].replace("\\n", "\n")
+    );
+    assert.deepEqual(summaryKeys, [
+      "Total\nAtt.",
+      "A",
+      "H",
+      "L",
+      "WO",
+      "HO",
+      "Worked on\nOff Days",
+      "WD",
+      "Hrs",
+      "Att%",
+      "Adv+",
+      "Adv-",
+      "Bal",
+      "Due",
+      "Signature",
+    ]);
+    assert.doesNotMatch(source, /\{ key: "P", w: /);
     assert.match(source, /formatPresentEquivalent\(s\.presentEquivalent\)/);
-    assert.match(source, /Total\\nAtt\./);
-    assert.match(source, /presentTotal/);
+    assert.match(source, /computeWorkedOnOffDays\(s\)/);
     assert.doesNotMatch(source, /\{ key: "HW", w: /);
     assert.doesNotMatch(source, /\{ key: "WW", w: /);
   });
@@ -73,11 +90,26 @@ describe("monthly attendance simple PDF summary", () => {
     assert.doesNotMatch(simpleSource, /\{ key: "Present"/);
     assert.match(simpleSource, /formatPresentEquivalent\(/);
     assert.match(simpleSource, /presentTotal/);
-    assert.match(simpleSource, /holidayWorked \+ s\.weeklyOffWorked/);
+    assert.match(simpleSource, /computeWorkedOnOffDays\(s\)/);
+    assert.doesNotMatch(simpleSource, /\{ key: "P"/);
     assert.match(simpleSource, /holiday_worked:\s*\{\s*code:\s*"HW"/);
     assert.match(simpleSource, /weekly_off_worked:\s*\{\s*code:\s*"WW"/);
     assert.match(simpleSource, /label:\s*"Worked on Holiday"/);
     assert.match(simpleSource, /label:\s*"Worked on Weekly Off"/);
+  });
+});
+
+describe("monthly attendance excel summary", () => {
+  const excelSource = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "attendance.monthlyExcel.ts"),
+    "utf8"
+  );
+
+  it("prints Total Att. before Absent and omits a separate Present column", () => {
+    assert.match(excelSource, /"Total Att\.", "A", "H"/);
+    assert.doesNotMatch(excelSource, /"P", "H", "A"/);
+    assert.match(excelSource, /computeWorkedOnOffDays\(s\)/);
+    assert.match(excelSource, /formatPresentEquivalent\(s\.presentEquivalent\)/);
   });
 });
 

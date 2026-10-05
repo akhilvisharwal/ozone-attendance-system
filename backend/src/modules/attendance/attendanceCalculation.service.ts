@@ -103,7 +103,7 @@ export function cellStatusFromRecord(
  * Resolves a day cell status from attendance data and calendar rules.
  * Today without check-in stays pending (none) until closing cutoff or admin action.
  * Approved leave on a working day is `leave` (shown as L, counted as absent).
- * Declared holidays stay `HO` and count as Present. Unworked weekly offs are never absent.
+ * Unworked holidays stay `HO` and do not count in Total Attendance. Unworked weekly offs are never absent.
  */
 export function resolveDayStatus(input: {
   record: AttendanceRecordLike | null;
@@ -137,21 +137,22 @@ export function resolveDayStatus(input: {
 
 /**
  * Statuses that are not eligible scheduled working days for Att% / WD.
- * Unworked weekly offs stay out of Present and Attendance %. HW and WW are
- * real work, so they count in Present (and in working days) as well as in the
- * Worked on Off Days breakdown — a day is never counted twice. Approved leave
- * stays `L` on the grid but is an eligible working day (counted as absent).
- * Declared holidays (`HO`) stay `HO` on the grid but count as 1 Present day.
+ * Unworked weekly offs and unworked holidays stay out of Total Attendance and
+ * Attendance %. HW and WW are real work, so they count in Total Attendance
+ * (and in working days) as well as in the Worked on Off Days breakdown — a day
+ * is never counted twice. Approved leave stays `L` on the grid but is an
+ * eligible working day (counted as absent).
  */
 export const NON_SCHEDULED_WORKING_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set([
   "not_applicable",
   "weekly_off",
+  "holiday",
   "none",
 ]);
 
 /**
  * Eligible scheduled working days: present + half-day + absent + approved leave
- * + holiday + HW + WW. Excludes unworked weekly offs, pre-join dates, and pending.
+ * + HW + WW. Excludes unworked weekly offs, unworked holidays, pre-join dates, and pending.
  */
 export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): number {
   let count = 0;
@@ -163,13 +164,37 @@ export function computeWorkingDays(days: MonthlyDayCell[], todayStr: string): nu
   return count;
 }
 
-/** Present = P + HO + HW + WW + (H × 0.5). Unworked weekly offs are not included. */
+/**
+ * Attendance credit for one calendar cell. Each day contributes at most this
+ * amount to Total Attendance — never twice.
+ *
+ * P / HW / WW = 1, H = 0.5.
+ * A / L / unworked HO / unworked WO / NA / pending = 0.
+ */
+export function attendanceCreditForStatus(status: MonthlyCellStatus): number {
+  switch (status) {
+    case "present":
+    case "holiday_worked":
+    case "weekly_off_worked":
+      return 1;
+    case "half_day":
+      return 0.5;
+    default:
+      return 0;
+  }
+}
+
+/** Total Attendance from the daily grid: sum of each cell's credit. */
+export function totalAttendanceFromDays(days: MonthlyDayCell[]): number {
+  return days.reduce((sum, day) => sum + attendanceCreditForStatus(day.status), 0);
+}
+
+/** Total Attendance from summary counters. Same formula as walking the grid. */
 export function computePresentEquivalent(
-  summary: Pick<MonthlySummary, "present" | "halfDay" | "holidays" | "holidayWorked" | "weeklyOffWorked">
+  summary: Pick<MonthlySummary, "present" | "halfDay" | "holidayWorked" | "weeklyOffWorked">
 ): number {
   return (
     summary.present +
-    summary.holidays +
     summary.holidayWorked +
     summary.weeklyOffWorked +
     summary.halfDay * 0.5
@@ -190,7 +215,7 @@ export function formatPresentEquivalent(value: number): string {
 
 export function computeAttendancePercentage(summary: MonthlySummary): number {
   if (summary.workingDays <= 0) return 0;
-  const credited = computePresentEquivalent(summary);
+  const credited = summary.presentEquivalent ?? computePresentEquivalent(summary);
   return Math.round((credited / summary.workingDays) * 1000) / 10;
 }
 
@@ -249,13 +274,7 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
   }
 
   const workingDays = computeWorkingDays(days, todayStr);
-  const presentEquivalent = computePresentEquivalent({
-    present,
-    halfDay,
-    holidays,
-    holidayWorked,
-    weeklyOffWorked,
-  });
+  const presentEquivalent = totalAttendanceFromDays(days);
   const partial: MonthlySummary = {
     present,
     halfDay,
@@ -275,7 +294,7 @@ export function buildSummaryFromDays(days: MonthlyDayCell[], todayStr: string): 
   return partial;
 }
 
-/** Off-day statuses that can be converted to Absent by the sandwich rule. Holidays stay Present. */
+/** Off-day statuses that can be converted to Absent by the sandwich rule. Holidays stay HO. */
 export const SANDWICH_OFF_STATUSES: ReadonlySet<MonthlyCellStatus> = new Set(["weekly_off"]);
 
 /** Stored on auto-created sandwich absent rows so they can be recalculated/removed safely. */
@@ -287,7 +306,7 @@ export const ABSENT_SANDWICH_REASON = "Absent sandwich rule";
  * Weekly Off days, those middle days become Absent.
  *
  * Example: Sat Absent → Sun Weekly Off → Mon Absent ⇒ Sun becomes Absent.
- * Declared holidays are never sandwiched — they stay Present.
+ * Declared holidays are never sandwiched — they stay HO and are not absent.
  */
 export function applyAbsentSandwichRule(days: MonthlyDayCell[]): MonthlyDayCell[] {
   if (days.length < 3) return days;
@@ -326,7 +345,6 @@ export function dashboardBucketFromStatus(
 ): "present" | "half_day" | "absent" | "pending" {
   switch (status) {
     case "present":
-    case "holiday":
     case "holiday_worked":
     case "weekly_off_worked":
       return "present";
@@ -335,6 +353,7 @@ export function dashboardBucketFromStatus(
     case "none":
     case "not_applicable":
     case "weekly_off":
+    case "holiday":
       return "pending";
     default:
       return "absent";

@@ -14,6 +14,7 @@ import type { MonthlySummary } from "@/types";
 import { formatMinutesAsHours } from "@/utils/format";
 import {
   formatPresentDays,
+  workedOnOffDays,
   type ExtendedMonthlyStats,
   type PerformanceLevel,
 } from "@/utils/employeeAttendanceStats";
@@ -173,14 +174,13 @@ export function EmployeeMonthlySummaryPanel({
               </p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <StatTile label="Working Days" value={summary.workingDays} />
-                <StatTile label="Present / Worked" value={formatPresentDays(summary)} accent="emerald" />
+                <StatTile label="Total Attendance" value={formatPresentDays(summary)} accent="emerald" />
                 <StatTile label="Absent" value={summary.absent} accent="rose" />
                 <StatTile label="Half Days" value={summary.halfDay} accent="amber" />
+                <StatTile label="Worked on Off Days" value={workedOnOffDays(summary)} accent="teal" />
                 <StatTile label="Weekly Offs" value={summary.weeklyOff} />
                 <StatTile label="Holidays" value={summary.holidays} accent="violet" />
                 <StatTile label="Late Check-Ins" value={summary.lateCheckIns} accent="orange" />
-                <StatTile label="Worked on Holidays" value={summary.holidayWorked} accent="teal" />
-                <StatTile label="WO Worked" value={summary.weeklyOffWorked} accent="indigo" />
               </div>
             </div>
 

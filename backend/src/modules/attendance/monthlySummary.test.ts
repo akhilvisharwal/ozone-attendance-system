@@ -31,7 +31,7 @@ describe("monthly summary calculations", () => {
       day("2026-07-08", "weekly_off_worked"),
       day("2026-07-09", "none"),
     ];
-    assert.equal(computeWorkingDays(days, "2026-07-08"), 7);
+    assert.equal(computeWorkingDays(days, "2026-07-08"), 6);
   });
 
   it("finalizes working days from day cells instead of miscounting today as absent", () => {

@@ -4,7 +4,7 @@ import { drawPdfLogo } from "../../utils/pdfBranding";
 import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import { formatAdvanceAmount } from "./attendance.monthlyPdf";
-import { computePresentEquivalent, formatPresentEquivalent } from "./attendanceCalculation.service";
+import { computePresentEquivalent, computeWorkedOnOffDays, formatPresentEquivalent } from "./attendanceCalculation.service";
 import {
   attendancePdfFooterHeight,
   drawAttendancePdfSignature,
@@ -105,9 +105,9 @@ export async function buildMonthlyCalendarPdfSimple(
     const colId = 44;
     const infoW = colSn + colName + colId;
 
-    // Compact summary: Total Attendance is the final present total (P + HO +
-    // HW + WW + half days). Off-day work stays as a breakdown. Present is
-    // omitted here because it duplicated Total Attendance.
+    // Compact summary: Total Attendance is days actually worked (P + HW + WW +
+    // half days). Unworked holidays and weekly offs are excluded. Off-day work
+    // stays as a breakdown. Present is omitted because it duplicated Total Attendance.
     const sumCols = [
       { key: "Total\nAttendance", w: 42, wrap: true },
       { key: "Absent", w: 28 },
@@ -360,7 +360,7 @@ export async function buildMonthlyCalendarPdfSimple(
         presentTotal,
         String(s.absent),
         String(s.halfDay),
-        String(s.holidayWorked + s.weeklyOffWorked),
+        String(computeWorkedOnOffDays(s)),
         `${s.attendancePercentage}%`,
         // Advance owed = the employee's current balance (cumulative through this
         // month's end) — the same canonical figure the Advances panel and the

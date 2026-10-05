@@ -10,6 +10,8 @@ export {
   computeWorkingDays,
   computePresentEquivalent,
   computeWorkedOnOffDays,
+  attendanceCreditForStatus,
+  totalAttendanceFromDays,
   formatPresentEquivalent,
   computeAttendancePercentage,
   buildSummaryFromDays,

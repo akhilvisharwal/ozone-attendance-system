@@ -5,7 +5,7 @@ import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import { formatMinutesAsHours } from "../../utils/date";
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
-import { formatPresentEquivalent } from "./attendanceCalculation.service";
+import { computeWorkedOnOffDays, formatPresentEquivalent } from "./attendanceCalculation.service";
 import {
   attendancePdfFooterHeight,
   drawAttendancePdfSignature,
@@ -99,9 +99,9 @@ export async function buildMonthlyCalendarPdf(
     const infoW = colSn + colName + colId + colDept;
 
     const sumCols = [
-      { key: "P", w: 14 },
-      { key: "H", w: 14 },
+      { key: "Total\nAtt.", w: 24, wrap: true },
       { key: "A", w: 14 },
+      { key: "H", w: 14 },
       { key: "L", w: 14 },
       { key: "WO", w: 16 },
       { key: "HO", w: 14 },
@@ -113,7 +113,6 @@ export async function buildMonthlyCalendarPdf(
       { key: "Adv-", w: 22 },
       { key: "Bal", w: 24 },
       { key: "Due", w: 20 },
-      { key: "Total\nAtt.", w: 22, wrap: true },
       { key: "Signature", w: 48, blank: true },
     ] as const;
     const summaryW = sumCols.reduce((s, c) => s + c.w, 0);
@@ -343,12 +342,12 @@ export async function buildMonthlyCalendarPdf(
       const presentTotal = formatPresentEquivalent(s.presentEquivalent);
       const summaryValues = [
         presentTotal,
-        String(s.halfDay),
         String(s.absent),
+        String(s.halfDay),
         String(s.leave),
         String(s.weeklyOff),
         String(s.holidays),
-        String(s.holidayWorked + s.weeklyOffWorked),
+        String(computeWorkedOnOffDays(s)),
         String(s.workingDays),
         hoursLabel,
         `${s.attendancePercentage}%`,
@@ -356,7 +355,6 @@ export async function buildMonthlyCalendarPdf(
         formatAdvanceAmount(emp.advances?.returned),
         formatAdvanceAmount(emp.advances?.balance),
         formatAdvanceAmount(emp.advances?.scheduled),
-        presentTotal,
         "",
       ];
 

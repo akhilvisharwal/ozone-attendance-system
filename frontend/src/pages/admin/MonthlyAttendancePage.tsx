@@ -23,7 +23,7 @@ import { extractErrorMessage } from "@/api/client";
 import { useToast } from "@/components/ui/Toast";
 import type { MonthlyCellStatus, MonthlyGrid, Site } from "@/types";
 import { formatMinutesAsHours } from "@/utils/format";
-import { formatPresentDays } from "@/utils/employeeAttendanceStats";
+import { formatPresentDays, workedOnOffDays } from "@/utils/employeeAttendanceStats";
 import { todayInputDate, validateAttendancePdfSignature } from "@/utils/attendancePdfSignature";
 import { usePermissions } from "@/auth/usePermissions";
 import { useAuth } from "@/auth/AuthContext";
@@ -447,14 +447,13 @@ export function MonthlyAttendancePage() {
                   <th className="sticky left-0 z-10 min-w-40 bg-slate-50 px-3 py-2 shadow-[8px_0_12px_-12px_rgb(15_23_42/0.35)]">
                     Employee
                   </th>
-                  <th className="px-3 py-2 text-center">Present / Worked</th>
-                  <th className="px-3 py-2 text-center">Half</th>
+                  <th className="px-3 py-2 text-center">Total Attendance</th>
                   <th className="px-3 py-2 text-center">Absent</th>
+                  <th className="px-3 py-2 text-center">Half Day</th>
+                  <th className="px-3 py-2 text-center">Worked on Off Days</th>
                   <th className="px-3 py-2 text-center">Leave</th>
                   <th className="px-3 py-2 text-center">Weekly Off</th>
                   <th className="px-3 py-2 text-center">Holiday</th>
-                  <th className="px-3 py-2 text-center">Hol. Worked</th>
-                  <th className="px-3 py-2 text-center">WO Worked</th>
                   <th className="px-3 py-2 text-center">Working Days</th>
                   <th className="px-3 py-2 text-center">Total Hours</th>
                   <th className="px-3 py-2 text-center">Attendance %</th>
@@ -480,13 +479,12 @@ export function MonthlyAttendancePage() {
                       <td className="px-3 py-2 text-center font-semibold text-emerald-600">
                         {formatPresentDays(s)}
                       </td>
-                      <td className="px-3 py-2 text-center font-semibold text-amber-600">{s.halfDay}</td>
                       <td className="px-3 py-2 text-center font-semibold text-rose-600">{s.absent}</td>
+                      <td className="px-3 py-2 text-center font-semibold text-amber-600">{s.halfDay}</td>
+                      <td className="px-3 py-2 text-center text-teal-600">{workedOnOffDays(s)}</td>
                       <td className="px-3 py-2 text-center font-semibold text-sky-600">{s.leave}</td>
                       <td className="px-3 py-2 text-center text-slate-500">{s.weeklyOff}</td>
                       <td className="px-3 py-2 text-center text-violet-600">{s.holidays}</td>
-                      <td className="px-3 py-2 text-center text-teal-600">{s.holidayWorked}</td>
-                      <td className="px-3 py-2 text-center text-indigo-600">{s.weeklyOffWorked}</td>
                       <td className="px-3 py-2 text-center text-slate-700">{s.workingDays}</td>
                       <td className="px-3 py-2 text-center text-slate-700">{formatMinutesAsHours(s.totalMinutes)}</td>
                       <td className="px-3 py-2 text-center">

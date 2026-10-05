@@ -15,7 +15,7 @@ import { resolveCompanyLogoPath } from "../../utils/pdfBranding";
 import { formatDisplayDateTime } from "../../utils/formatDisplay";
 import { getSettings } from "../settings/settings.cache";
 import type { MonthlyCellStatus, MonthlyGrid } from "./attendance.monthly";
-import { formatPresentEquivalent } from "./attendanceCalculation.service";
+import { computeWorkedOnOffDays, formatPresentEquivalent } from "./attendanceCalculation.service";
 
 export interface MonthlyExcelMeta {
   generatedBy: string;
@@ -57,9 +57,9 @@ const WEEKDAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
 const INFO_COL_COUNT = 4;
 // Last three are the per-month advance figures (money owed to the company).
-const SUMMARY_COL_COUNT = 15;
+const SUMMARY_COL_COUNT = 14;
 const SUMMARY_KEYS = [
-  "P", "H", "A", "L", "WO", "HO", "HW", "WW", "WD", "Hrs", "Att%",
+  "Total Att.", "A", "H", "L", "WO", "HO", "Off Days", "WD", "Hrs", "Att%",
   "Adv Taken", "Adv Ret", "Balance", "Adv Due",
 ] as const;
 const INFO_HEADERS = ["#", "Name", "ID", "Role"] as const;
@@ -149,15 +149,15 @@ export async function buildMonthlyCalendarExcel(
     { width: 10 },
     { width: 12 },
     ...Array.from({ length: grid.daysInMonth }, () => ({ width: 3.8 })),
-    { width: 4.5 },
-    { width: 4.5 },
-    { width: 4.5 },
-    { width: 4.5 },
-    { width: 5 },
-    { width: 4.5 },
-    { width: 5 },
-    { width: 5.5 },
     { width: 8 },
+    { width: 4.5 },
+    { width: 4.5 },
+    { width: 4.5 },
+    { width: 5 },
+    { width: 4.5 },
+    { width: 8 },
+    { width: 5 },
+    { width: 7 },
     { width: 7 },
     { width: 10 },
     { width: 10 },
@@ -404,13 +404,12 @@ export async function buildMonthlyCalendarExcel(
       const s = emp.summary;
       const summaryValues = [
         formatPresentEquivalent(s.presentEquivalent),
-        s.halfDay,
         s.absent,
+        s.halfDay,
         s.leave,
         s.weeklyOff,
         s.holidays,
-        s.holidayWorked,
-        s.weeklyOffWorked,
+        computeWorkedOnOffDays(s),
         s.workingDays,
         formatMinutesAsHours(s.totalMinutes).replace(" ", ""),
         `${s.attendancePercentage}%`,
