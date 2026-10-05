@@ -62,8 +62,8 @@ const WEEKDAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  * This is a sibling to buildMonthlyCalendarPdf, not a replacement — it reuses the
  * same MonthlyGrid data (no separate DB queries) but renders a simplified layout:
  * bigger day cells and fonts, a two-row date+weekday header, and a compact
- * monthly summary (Present/Absent/Half Day/Worked on Off Days/Att%/Advance
- * Owed/Total Attendance plus a blank Signature column). Role (Employee Details) and Hrs
+ * monthly summary (Total Attendance/Absent/Half Day/Worked on Off Days/Att%/
+ * Advance Owed plus a blank Signature column). Role (Employee Details) and Hrs
  * (Monthly Summary) are dropped here specifically — Simple-only trims, the
  * Detailed PDF keeps both — and the width they free is redistributed into
  * the daily grid, not left as blank margin (see computeLayout below).
@@ -105,17 +105,16 @@ export async function buildMonthlyCalendarPdfSimple(
     const colId = 44;
     const infoW = colSn + colName + colId;
 
-    // Compact summary: Present includes HW/WW. Off-day work is also listed as a
-    // breakdown. Total Attendance (same figure as Present) sits just before the
-    // blank Signature box.
+    // Compact summary: Total Attendance is the final present total (P + HO +
+    // HW + WW + half days). Off-day work stays as a breakdown. Present is
+    // omitted here because it duplicated Total Attendance.
     const sumCols = [
-      { key: "Present", w: 30 },
+      { key: "Total\nAttendance", w: 42, wrap: true },
       { key: "Absent", w: 28 },
       { key: "Half Day", w: 30 },
       { key: "Worked on\nOff Days", w: 38, wrap: true },
       { key: "Att%", w: 26 },
       { key: "Adv Owed", w: 36 },
-      { key: "Total\nAttendance", w: 40, wrap: true },
       { key: "Signature", w: 50, blank: true },
     ] as const;
     const summaryW = sumCols.reduce((s, c) => s + c.w, 0);
@@ -368,7 +367,6 @@ export async function buildMonthlyCalendarPdfSimple(
         // Detailed PDF's "Bal" column both read, collapsed here to one number
         // instead of the four separate taken/returned/balance/due columns.
         formatAdvanceAmount(emp.advances?.balance),
-        presentTotal,
         "",
       ];
 

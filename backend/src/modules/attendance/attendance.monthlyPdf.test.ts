@@ -57,13 +57,23 @@ describe("monthly attendance simple PDF summary", () => {
     "utf8"
   );
 
-  it("prints Present including HW/WW, with Total Attendance before Signature", () => {
+  it("prints Total Attendance before Absent and omits the Present summary column", () => {
+    const summaryKeys = [...simpleSource.matchAll(/\{ key: "([^"]+)"/g)].map((match) =>
+      match[1].replace("\\n", "\n")
+    );
+    assert.deepEqual(summaryKeys, [
+      "Total\nAttendance",
+      "Absent",
+      "Half Day",
+      "Worked on\nOff Days",
+      "Att%",
+      "Adv Owed",
+      "Signature",
+    ]);
+    assert.doesNotMatch(simpleSource, /\{ key: "Present"/);
     assert.match(simpleSource, /formatPresentEquivalent\(/);
     assert.match(simpleSource, /presentTotal/);
     assert.match(simpleSource, /holidayWorked \+ s\.weeklyOffWorked/);
-    assert.match(simpleSource, /Worked on\\nOff Days/);
-    assert.match(simpleSource, /Total\\nAttendance/);
-    assert.match(simpleSource, /key: "Signature"/);
     assert.match(simpleSource, /holiday_worked:\s*\{\s*code:\s*"HW"/);
     assert.match(simpleSource, /weekly_off_worked:\s*\{\s*code:\s*"WW"/);
     assert.match(simpleSource, /label:\s*"Worked on Holiday"/);
